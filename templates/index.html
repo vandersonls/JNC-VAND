@@ -43,6 +43,18 @@
         input[type=number]{
             width:70px;
         }
+        .loading {
+            color: #666;
+            text-align: center;
+            padding: 20px;
+        }
+        .error {
+            color: #d32f2f;
+            text-align: center;
+            padding: 20px;
+            background: #ffebee;
+            border-radius: 5px;
+        }
     </style>
 </head>
 
@@ -56,7 +68,8 @@
     <div class="container">
         <div class="lista">
             <h3>Lista Matrix</h3>
-            <table id="tabelaOriginal">
+            <div id="loadingMessage" class="loading">Carregando materiais...</div>
+            <table id="tabelaOriginal" style="display:none;">
                 <thead></thead>
                 <tbody></tbody>
             </table>
@@ -76,144 +89,176 @@
             </table>
             <br>
             <button onclick="baixarCSV()">Download Lista</button>
+            <button onclick="limparLista()" style="margin-left: 10px;">Limpar Lista</button>
         </div>
     </div>
 
     <script>
-            let dados = [];
-            let novaLista = [];
-            const cabecalhoOriginal = ["codigo", "descricao", "dimensao", "unidade"];
+        let dados = [];
+        let novaLista = [];
+        // 🔥 COLUNAS CORRETAS
+        const cabecalhoOriginal = ["codigo", "descricao", "fabricacao", "bitola", "unidade"];
 
-            // BUSCAR DADOS DO PYTHON ASSIM QUE A PÁGINA CARREGAR
-            window.addEventListener("DOMContentLoaded", () => {
-                fetch("/consultar_materiais")
-                    .then(response => response.json())
-                    .then(data => {
-                        dados = data; // Armazena os dados do banco
-                        montarTabela(dados);
-                    })
-                    .catch(error => console.error("Erro ao buscar materiais:", error));
+        // BUSCAR DADOS DO PYTHON ASSIM QUE A PÁGINA CARREGAR
+        window.addEventListener("DOMContentLoaded", () => {
+            const loadingMsg = document.getElementById('loadingMessage');
+            const tabelaOriginal = document.getElementById('tabelaOriginal');
+
+            // Mostra loading
+            loadingMsg.style.display = 'block';
+            loadingMsg.textContent = '⏳ Carregando materiais...';
+            loadingMsg.className = 'loading';
+            tabelaOriginal.style.display = 'none';
+
+            fetch('http://localhost:5000/listamatrix')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Dados recebidos:', data);
+
+                    if (data.erro) {
+                        throw new Error(data.erro);
+                    }
+
+                    dados = data;
+
+                    loadingMsg.style.display = 'none';
+                    tabelaOriginal.style.display = 'table';
+
+                    montarTabela(dados);
+                })
+                .catch(error => {
+                    console.error('Erro:', error);
+                    loadingMsg.innerHTML = `❌ Erro ao carregar dados: ${error.message}`;
+                    loadingMsg.className = 'error';
+                });
+        });
+
+        function montarTabela(lista) {
+            const thead = document.querySelector("#tabelaOriginal thead");
+            const tbody = document.querySelector("#tabelaOriginal tbody");
+
+            thead.innerHTML = "";
+            tbody.innerHTML = "";
+
+            if (!lista || !lista.length) {
+                tbody.innerHTML = "<tr><td colspan='7'>Nenhum dado disponível</td></tr>";
+                return;
+            }
+
+            // Cabeçalho com as colunas corretas
+            let h = "<tr>";
+            cabecalhoOriginal.forEach(c => h += "<th>" + c.toUpperCase() + "</th>");
+            h += "<th>Qtd</th><th>Ação</th></tr>";
+            thead.innerHTML = h;
+
+            // Corpo da tabela
+            lista.forEach(item => {
+                let tr = "<tr>";
+
+                cabecalhoOriginal.forEach(c => {
+                    tr += "<td>" + (item[c] !== null && item[c] !== undefined ? item[c] : "") + "</td>";
+                });
+
+                tr += `
+                    <td><input type='number' value='1' min='1' style='width:60px'></td>
+                    <td><button onclick="adicionar(this, '${item.codigo}', '${item.descricao}')">Adicionar</button></td>
+                `;
+
+                tbody.innerHTML += tr;
             });
+        }
 
-            function montarTabela(lista) {
-                const thead = document.querySelector("#tabelaOriginal thead");
-                const tbody = document.querySelector("#tabelaOriginal tbody");
+        function adicionar(botao, codigo, descricao) {
+            const linha = botao.parentElement.parentElement;
+            const qtdInput = linha.querySelector("input[type='number']");
+            const qtd = parseInt(qtdInput.value) || 1;
 
-                thead.innerHTML = "";
-                tbody.innerHTML = "";
+            const identificadorItem = `${codigo} - ${descricao}`;
 
-                if (!lista.length) {
-                    tbody.innerHTML = "<tr><td colspan='6'>Nenhum dado disponível</td></tr>";
-                    return;
-                }
-
-                // Monta o cabeçalho superior da tabela de origem
-                let h = "<tr>";
-                cabecalhoOriginal.forEach(c => h += "<th>" + c.toUpperCase() + "</th>");
-                h += "<th>Qtd</th><th>Ação</th></tr>";
-                thead.innerHTML = h;
-
-                // Alimenta as linhas da tabela
-                lista.forEach(item => {
-                    let tr = "<tr>";
-
-                    cabecalhoOriginal.forEach(c => {
-                        tr += "<td>" + (item[c] !== null ? item[c] : "") + "</td>";
-                    });
-
-                    // Passamos o código e descrição como atributos de texto para a função adicionar
-                    tr += `
-                        <td><input type='number' value='1' min='1' style='width:60px'></td>
-                        <td><button onclick="adicionar(this, '${item.codigo}', '${item.descricao}')">Adicionar</button></td>
-                    `;
-
-                    tbody.innerHTML += tr;
+            const existingIndex = novaLista.findIndex(item => item.item === identificadorItem);
+            if (existingIndex >= 0) {
+                novaLista[existingIndex].quantidade += qtd;
+            } else {
+                novaLista.push({
+                    item: identificadorItem,
+                    quantidade: qtd
                 });
             }
 
-            function adicionar(botao, codigo, descricao) {
-                const linha = botao.parentElement.parentElement;
-                const qtdInput = linha.querySelector("input[type='number']");
-                const qtd = parseInt(qtdInput.value) || 1;
+            atualizarNova();
+        }
 
-                // Texto descritivo que vai aparecer na nova lista
-                const identificadorItem = `${codigo} - ${descricao}`;
+        function atualizarNova() {
+            const tbody = document.querySelector("#tabelaNova tbody");
+            tbody.innerHTML = "";
 
-                // Verifica se o item já existe na nova lista
-                const existingIndex = novaLista.findIndex(item => item.item === identificadorItem);
-                if (existingIndex >= 0) {
-                    novaLista[existingIndex].quantidade += qtd;
-                } else {
-                    novaLista.push({
-                        item: identificadorItem,
-                        quantidade: qtd
-                    });
-                }
+            if (novaLista.length === 0) {
+                tbody.innerHTML = "<tr><td colspan='3'>Lista vazia</td></tr>";
+                return;
+            }
 
+            novaLista.forEach((item, index) => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${item.item}</td>
+                        <td>${item.quantidade}</td>
+                        <td><button onclick="remover(${index})">Remover</button></td>
+                    </tr>
+                `;
+            });
+        }
+
+        function remover(i) {
+            novaLista.splice(i, 1);
+            atualizarNova();
+        }
+
+        function limparLista() {
+            if (confirm('Tem certeza que deseja limpar toda a lista?')) {
+                novaLista = [];
                 atualizarNova();
             }
+        }
 
-            function atualizarNova() {
-                const tbody = document.querySelector("#tabelaNova tbody");
-                tbody.innerHTML = "";
+        // Pesquisa
+        document.getElementById("pesquisa").addEventListener("input", function() {
+            const texto = this.value.toLowerCase();
 
-                if (novaLista.length === 0) {
-                    tbody.innerHTML = "<tr><td colspan='3'>Lista vazia</td></tr>";
-                    return;
-                }
+            if (!dados.length) return;
 
-                novaLista.forEach((item, index) => {
-                    tbody.innerHTML += `
-                        <tr>
-                            <td>${item.item}</td>
-                            <td>${item.quantidade}</td>
-                            <td><button onclick="remover(${index})">Remover</button></td>
-                        </tr>
-                    `;
-                });
-            }
-
-            function remover(i) {
-                novaLista.splice(i, 1);
-                atualizarNova();
-            }
-
-            // Sistema de busca e filtragem em tempo real
-            document.getElementById("pesquisa").addEventListener("input", function() {
-                const texto = this.value.toLowerCase();
-
-                if (!dados.length) return;
-
-                const filtrado = dados.filter(obj => {
-                    return Object.values(obj).join(" ").toLowerCase().includes(texto);
-                });
-
-                montarTabela(filtrado);
+            const filtrado = dados.filter(obj => {
+                return Object.values(obj).join(" ").toLowerCase().includes(texto);
             });
 
-            function baixarCSV() {
-                if (novaLista.length === 0) {
-                    alert("A lista está vazia!");
-                    return;
-                }
+            montarTabela(filtrado);
+        });
 
-                let csv = "Item,Quantidade\n";
-                novaLista.forEach(item => {
-                    csv += `"${item.item}",${item.quantidade}\n`;
-                });
-
-                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = "NovaLista_" + new Date().toISOString().slice(0,10) + ".csv";
-                a.click();
-                URL.revokeObjectURL(url);
+        function baixarCSV() {
+            if (novaLista.length === 0) {
+                alert("A lista está vazia!");
+                return;
             }
-        </script>
 
+            let csv = "Item,Quantidade\n";
+            novaLista.forEach(item => {
+                csv += `"${item.item}",${item.quantidade}\n`;
+            });
 
-
+            const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "NovaLista_" + new Date().toISOString().slice(0,10) + ".csv";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
 </body>
-
 </html>

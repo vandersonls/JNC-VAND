@@ -1,49 +1,69 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, jsonify
+from flask_cors import CORS
 import mysql.connector
 
 app = Flask(__name__)
+CORS(app)
 
 
-# CONEXÃO
 def conectar():
     return mysql.connector.connect(
         host="localhost",
         user="root",
         passwd="root",
-        database="btm",
+        database="bmt",
         charset="utf8mb4"
     )
 
 
-# carregar html
 @app.route("/")
 def index():
     return render_template('index.html')
 
 
-# CONSULTA DE MATERIAIS (JSON)
 @app.route("/listamatrix")
 def consultar_materiais():
-    conn = conectar()
-    cur = conn.cursor(dictionary=True)
+    try:
+        print("🔄 Conectando ao MySQL...")
+        conn = conectar()
+        cursor = conn.cursor(dictionary=True)
 
-    cur.execute("""
-        SELECT
-            codigo,
-            descricao,
-            dimensao,
-            unidade
-        FROM materiais
-        ORDER BY descricao
-    """)
+        cursor.execute("SELECT * FROM listamatrix")
+        materiais = cursor.fetchall()
 
-    materiais = cur.fetchall()
+        cursor.close()
+        conn.close()
 
-    cur.close()
-    conn.close()
+        # 🔥 CORREÇÃO: Remove o BOM dos nomes das colunas
+        if materiais:
+            # Pega o primeiro item e corrige as chaves
+            primeiro = materiais[0]
+            chaves_corrigidas = {}
+            for chave in primeiro.keys():
+                # Remove o BOM e espaços extras
+                chave_limpa = chave.replace('\ufeff', '').strip()
+                chaves_corrigidas[chave] = chave_limpa
 
-    return jsonify(materiais)
+            # Recria a lista com as chaves corrigidas
+            materiais_corrigidos = []
+            for item in materiais:
+                novo_item = {}
+                for chave_original, chave_limpa in chaves_corrigidas.items():
+                    novo_item[chave_limpa] = item[chave_original]
+                materiais_corrigidos.append(novo_item)
+
+            print(f"✅ Colunas corrigidas: {list(materiais_corrigidos[0].keys())}")
+            return jsonify(materiais_corrigidos)
+
+        return jsonify(materiais)
+
+    except mysql.connector.Error as e:
+        print(f"❌ Erro MySQL: {e}")
+        return jsonify({"erro": f"MySQL: {str(e)}"}), 500
+    except Exception as e:
+        print(f"❌ Erro Geral: {e}")
+        return jsonify({"erro": f"Geral: {str(e)}"}), 500
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(port=5000, debug=True)
