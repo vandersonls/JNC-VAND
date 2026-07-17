@@ -393,13 +393,16 @@ function renderArvoreListas() {
 function renderNoLista(l) {
   const aberta = arvoreState.expandidas.has(l.id);
   const versoes = arvoreState.versoesPorLista[l.id];
+  const ICONE_PASTA = `<svg class="arvore-icone" viewBox="0 0 20 20" fill="none"><path d="M2.5 5.5a1 1 0 0 1 1-1h4l1.5 1.8h7.5a1 1 0 0 1 1 1v8.2a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V5.5Z" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
   return `
     <div class="arvore-no" data-lista-id="${l.id}">
-      <div class="arvore-linha">
-        <button class="arvore-toggle" onclick="toggleListaArvore(${l.id})">${aberta ? "−" : "+"}</button>
-        <span class="arvore-icone">📁</span>
+      <div class="arvore-linha arvore-linha-pasta">
+        <button class="arvore-toggle ${aberta ? "aberto" : ""}" onclick="toggleListaArvore(${l.id})" aria-label="Expandir">
+          <svg viewBox="0 0 12 12" fill="none"><path d="M4 2.5 8 6l-4 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleListaArvore(${l.id})">
-          ${l.numero_desenho}${l.titulo ? " — " + l.titulo : ""}
+          <span class="arvore-titulo">${l.numero_desenho}${l.titulo ? " — " + l.titulo : ""}</span>
           <span class="arvore-sub">${l.versao_atual ? "v" + l.versao_atual : "sem versão"}</span>
         </span>
         <span class="arvore-acoes">
@@ -414,15 +417,16 @@ function renderNoLista(l) {
 }
 
 function renderFilhosVersoes(listaId, versoes) {
-  if (!versoes) return `<div class="arvore-carregando">Carregando versões...</div>`;
+  if (!versoes) return `<div class="arvore-carregando">Carregando versões…</div>`;
   if (!versoes.length) return `<div class="arvore-carregando">Nenhuma versão salva.</div>`;
+  const ICONE_ARQUIVO = `<svg class="arvore-icone" viewBox="0 0 20 20" fill="none"><path d="M6 2.5h6l3 3v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M12 2.5V6h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
   return versoes.map((v) => `
-    <div class="arvore-linha">
-      <button class="arvore-toggle invisivel">•</button>
-      <span class="arvore-icone">📄</span>
+    <div class="arvore-linha arvore-linha-versao">
+      <span class="arvore-toggle invisivel"></span>
+      ${ICONE_ARQUIVO}
       <span class="arvore-label" onclick="verVersao(${v.id})">
-        v${v.versao} — ${new Date(v.criado_em).toLocaleString("pt-BR")}
-        <span class="arvore-sub">${v.criado_por_nome || "-"}</span>
+        <span class="arvore-titulo">v${v.versao}</span>
+        <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${v.criado_por_nome || "-"}</span>
       </span>
       <span class="arvore-acoes">
         <button class="link-acao" onclick="verVersao(${v.id})">Ver</button>
