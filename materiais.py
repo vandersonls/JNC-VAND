@@ -1,4 +1,5 @@
 import io
+import unicodedata
 
 from flask import Blueprint, request, jsonify, send_file
 from flask_login import login_required
@@ -123,6 +124,24 @@ def exportar_pdf():
     return send_file(buf, as_attachment=True, download_name="materiais.pdf", mimetype="application/pdf")
 
 
+def _normalizar(texto):
+    """Remove acentos e deixa minúsculo, para comparar cabeçalhos com tolerância a variações."""
+    if texto is None:
+        return ""
+    sem_acento = unicodedata.normalize("NFKD", str(texto)).encode("ascii", "ignore").decode("ascii")
+    return sem_acento.strip().lower()
+
+
+# Cada campo interno aceita várias grafias possíveis encontradas em planilhas reais
+SINONIMOS = {
+    "codigo": ["codigo"],
+    "descricao": ["descricao"],
+    "fabricante": ["fabricante", "fabricacao", "fabricado", "marca"],
+    "bitola": ["bitola"],
+    "unidade": ["unidade", "un", "und", "unid"],
+}
+
+
 @materiais_bp.post("/api/materiais/importar/excel")
 @perfis_permitidos("master", "administrador")
 def importar_excel():
@@ -137,19 +156,27 @@ def importar_excel():
     if not linhas:
         return jsonify({"erro": "Planilha vazia"}), 400
 
-    cabecalho = [str(c).strip().lower() if c else "" for c in linhas[0]]
-    esperado = ["código", "descrição", "fabricante", "bitola", "unidade"]
-    if not all(col in cabecalho for col in esperado):
-        return jsonify({"erro": f"Cabeçalho deve conter: {', '.join(esperado)}"}), 400
+    cabecalho = [_normalizar(c) for c in linhas[0]]
 
-    idx = {col: cabecalho.index(col) for col in esperado}
+    idx = {}
+    faltando = []
+    for campo, variantes in SINONIMOS.items():
+        posicao = next((cabecalho.index(v) for v in variantes if v in cabecalho), None)
+        if posicao is None:
+            faltando.append(campo)
+        else:
+            idx[campo] = posicao
+
+    if faltando:
+        return jsonify({"erro": f"Colunas não encontradas na planilha: {', '.join(faltando)}"}), 400
+
     inseridos, atualizados, erros = 0, 0, []
 
     for n, linha in enumerate(linhas[1:], start=2):
-        codigo = linha[idx["código"]]
+        codigo = linha[idx["codigo"]]
         if not codigo:
             continue
-        descricao = linha[idx["descrição"]] or ""
+        descricao = linha[idx["descricao"]] or ""
         fabricante = linha[idx["fabricante"]] or ""
         bitola = linha[idx["bitola"]] or ""
         unidade = linha[idx["unidade"]] or ""
