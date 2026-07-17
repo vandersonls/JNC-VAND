@@ -64,6 +64,17 @@ body {
   width: 100%; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 8px; font-size: 14px;
 }
 .card-login input:focus { outline: none; border-color: var(--dourado); box-shadow: 0 0 0 3px rgba(240,165,48,0.18); }
+
+.campo-senha { position: relative; }
+.campo-senha input { padding-right: 40px; }
+.toggle-senha {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; border: none; background: none; padding: 0;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  color: var(--cinza); border-radius: 6px; transition: color .15s, background .15s;
+}
+.toggle-senha:hover { color: var(--navy-escuro); background: rgba(0,0,0,0.05); }
+.toggle-senha .oculto { display: none; }
 .card-login button {
   margin-top: 20px; width: 100%; padding: 11px; border: none; border-radius: 8px;
   background: linear-gradient(135deg, var(--dourado-claro), var(--dourado-escuro));

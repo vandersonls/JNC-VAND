@@ -64,6 +64,16 @@ async function verificarSessao() {
   }
 }
 
+document.getElementById("toggle-login-senha").addEventListener("click", () => {
+  const input = document.getElementById("login-senha");
+  const btn = document.getElementById("toggle-login-senha");
+  const mostrando = input.type === "text";
+  input.type = mostrando ? "password" : "text";
+  btn.querySelector(".olho-aberto").classList.toggle("oculto", !mostrando);
+  btn.querySelector(".olho-fechado").classList.toggle("oculto", mostrando);
+  btn.setAttribute("aria-label", mostrando ? "Mostrar senha" : "Ocultar senha");
+});
+
 document.getElementById("form-login").addEventListener("submit", async (e) => {
   e.preventDefault();
   const email = document.getElementById("login-email").value.trim();
