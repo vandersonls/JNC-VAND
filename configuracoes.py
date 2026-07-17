@@ -3,6 +3,7 @@ from flask_login import login_required
 
 import db
 from auth import perfis_permitidos
+from auditoria import registrar
 
 config_bp = Blueprint("config", __name__)
 
@@ -24,4 +25,5 @@ def atualizar_configuracoes():
             "ON DUPLICATE KEY UPDATE valor = VALUES(valor)",
             (chave, valor),
         )
+    registrar("editar", "configuracao", None, "Atualizou as configurações do sistema", depois=data)
     return jsonify({"ok": True})

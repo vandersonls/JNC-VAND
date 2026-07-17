@@ -86,6 +86,27 @@ body {
 .tab { display: none; }
 .tab.ativo { display: block; }
 
+.subnav { display: flex; gap: 4px; border-bottom: 1px solid var(--borda); margin-bottom: 20px; }
+.subnav-item {
+  background: none; border: none; padding: 10px 16px; font-size: 13px; cursor: pointer; color: var(--cinza);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.subnav-item:hover { color: var(--azul); }
+.subnav-item.ativo { color: var(--azul); border-bottom-color: var(--azul); font-weight: 600; }
+.subtab { display: none; }
+.subtab.ativo { display: block; }
+
+.paginacao { display: flex; justify-content: center; margin-top: 16px; }
+.badge-acao {
+  display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; text-transform: uppercase;
+  color: white;
+}
+.badge-acao.criar { background: var(--sucesso); }
+.badge-acao.editar { background: #a06b00; }
+.badge-acao.excluir { background: var(--erro); }
+.badge-acao.importar { background: var(--azul-claro); }
+.badge-acao.login, .badge-acao.logout { background: var(--cinza); }
+
 h2 { margin-top: 0; color: var(--azul); }
 
 .tab-header {
@@ -142,6 +163,11 @@ input[type="number"], select, textarea {
   background: var(--branco); border-radius: var(--raio); padding: 28px; width: 480px; max-width: 92vw;
   max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.3);
 }
+/* Modal ampliado (150% maior) usado no editor de Lista por Desenho */
+.modal-grande {
+  width: 1200px; max-width: 96vw;
+  min-height: 500px; max-height: 92vh;
+}
 .modal h3 { margin-top: 0; color: var(--azul); }
 .form-grid { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
 .form-grid label { font-size: 12px; color: var(--cinza); margin-bottom: -6px; }
@@ -153,9 +179,13 @@ input[type="number"], select, textarea {
 .form-config button { margin-top: 20px; width: fit-content; }
 
 /* ---------- ITENS DA LISTA (editor de desenho) ---------- */
-.itens-editor { margin: 16px 0; }
-.item-linha { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 8px; align-items: center; margin-bottom: 6px; }
-.item-linha select, .item-linha input { width: 100%; }
+.itens-editor { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; }
+.item-linha { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
+.item-linha .item-material-busca { flex: 2 1 320px; min-width: 0; }
+.item-linha .item-qtd { flex: 0 0 90px; }
+.item-linha .item-obs { flex: 1 1 200px; min-width: 0; }
+.item-linha .btn-perigo { flex: 0 0 auto; }
+.item-material-busca.invalido { border-color: var(--erro); }
 
 /* ---------- TOAST ---------- */
 .toast {

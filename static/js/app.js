@@ -39,8 +39,10 @@ function aplicarPermissoes() {
   });
 }
 
-function abrirModal(html) {
-  document.getElementById("modal-conteudo").innerHTML = html;
+function abrirModal(html, extraClass = "") {
+  const modal = document.getElementById("modal-conteudo");
+  modal.className = `modal ${extraClass}`.trim();
+  modal.innerHTML = html;
   document.getElementById("modal-overlay").classList.remove("oculto");
 }
 function fecharModal() {
@@ -106,6 +108,17 @@ function ativarTab(nome) {
   if (nome === "projetos") carregarProjetos();
   if (nome === "usuarios") carregarUsuarios();
   if (nome === "configuracoes") carregarConfiguracoes();
+}
+
+document.querySelectorAll(".subnav-item").forEach((btn) => {
+  btn.addEventListener("click", () => ativarSubtab(btn.dataset.subtab));
+});
+
+function ativarSubtab(nome) {
+  document.querySelectorAll(".subnav-item").forEach((b) => b.classList.toggle("ativo", b.dataset.subtab === nome));
+  document.querySelectorAll(".subtab").forEach((t) => t.classList.remove("ativo"));
+  document.getElementById(`subtab-${nome}`).classList.add("ativo");
+  if (nome === "config-auditoria") carregarAuditoria(true);
 }
 
 function ativarTabInterna(nome) {
@@ -422,11 +435,13 @@ async function abrirEditorLista(listaId) {
 }
 
 function renderEditorLista(listaId, lista, itens) {
-  const opcoesMateriais = state.materiais.map((m) => `<option value="${m.id}">${m.codigo} — ${m.descricao}</option>`).join("");
+  const rotuloMaterial = (m) => `${m.codigo} — ${m.descricao}`;
+  const opcoesDatalist = state.materiais.map((m) => `<option value="${rotuloMaterial(m)}">`).join("");
 
   const linhaHtml = (item, idx) => `
     <div class="item-linha" data-idx="${idx}">
-      <select class="item-material">${`<option value="">-- Material --</option>` + opcoesMateriais}</select>
+      <input class="item-material-busca" list="materiais-datalist" placeholder="Buscar por código ou descrição..."
+             value="${item.codigo ? rotuloMaterial(item) : ""}">
       <input class="item-qtd" type="number" step="0.001" min="0" value="${item.quantidade}" placeholder="Qtd">
       <input class="item-obs" type="text" value="${item.observacao || ""}" placeholder="Observação">
       <button class="btn-perigo" onclick="removerItemLinha(${idx})">Remover</button>
@@ -437,13 +452,14 @@ function renderEditorLista(listaId, lista, itens) {
     <div class="form-grid">
       <label>Título</label><input id="editor-titulo" value="${lista.titulo || ""}">
     </div>
+    <datalist id="materiais-datalist">${opcoesDatalist}</datalist>
     <div class="itens-editor" id="itens-editor"></div>
     <button class="btn-secundario somente-admin" onclick="adicionarItemLinha()">+ Adicionar Material</button>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
       <button class="btn-primario somente-admin" onclick="salvarEditorLista(${listaId})">Salvar (nova versão)</button>
     </div>
-  `);
+  `, "modal-grande");
   aplicarPermissoes();
 
   window._itensEditor = itens.length ? [...itens] : [];
@@ -458,15 +474,33 @@ function renderEditorLista(listaId, lista, itens) {
     redesenharItensEditor();
   };
 
+  function resolverMaterial(texto) {
+    const alvo = texto.trim().toLowerCase();
+    if (!alvo) return null;
+    return state.materiais.find((m) => rotuloMaterial(m).toLowerCase() === alvo);
+  }
+
   function redesenharItensEditor() {
     const cont = document.getElementById("itens-editor");
     cont.innerHTML = window._itensEditor.map(linhaHtml).join("") || "<p>Nenhum material adicionado.</p>";
     cont.querySelectorAll(".item-linha").forEach((linha) => {
       const idx = Number(linha.dataset.idx);
       const item = window._itensEditor[idx];
-      const sel = linha.querySelector(".item-material");
-      sel.value = item.material_id || "";
-      sel.addEventListener("change", () => { item.material_id = sel.value; });
+      const busca = linha.querySelector(".item-material-busca");
+      busca.addEventListener("change", () => {
+        const material = resolverMaterial(busca.value);
+        if (material) {
+          item.material_id = material.id;
+          busca.value = rotuloMaterial(material);
+          busca.classList.remove("invalido");
+        } else if (busca.value.trim() === "") {
+          item.material_id = "";
+          busca.classList.remove("invalido");
+        } else {
+          item.material_id = "";
+          busca.classList.add("invalido");
+        }
+      });
       linha.querySelector(".item-qtd").addEventListener("input", (e) => { item.quantidade = e.target.value; });
       linha.querySelector(".item-obs").addEventListener("input", (e) => { item.observacao = e.target.value; });
     });
@@ -611,6 +645,69 @@ document.getElementById("form-configuracoes").addEventListener("submit", async (
     toast("Configurações salvas");
   } catch (err) { toast(err.message, "erro"); }
 });
+
+// ---------- AUDITORIA ----------
+const ROTULOS_ENTIDADE = {
+  material: "Materiais", cliente: "Clientes", projeto: "Projetos",
+  lista_desenho: "Listas por Desenho", usuario: "Usuários", configuracao: "Configurações",
+};
+const ROTULOS_ACAO = {
+  criar: "Criou", editar: "Editou", excluir: "Excluiu", importar: "Importou", login: "Login", logout: "Logout",
+};
+
+const auditoriaState = { offset: 0, limite: 50, entidadesCarregadas: false };
+
+async function carregarAuditoria(reiniciar = false) {
+  if (!auditoriaState.entidadesCarregadas) {
+    const entidades = await api("/api/auditoria/entidades");
+    const select = document.getElementById("auditoria-entidade");
+    entidades.forEach((ent) => {
+      const opt = document.createElement("option");
+      opt.value = ent;
+      opt.textContent = ROTULOS_ENTIDADE[ent] || ent;
+      select.appendChild(opt);
+    });
+    auditoriaState.entidadesCarregadas = true;
+  }
+
+  if (reiniciar) auditoriaState.offset = 0;
+
+  const params = new URLSearchParams({
+    limite: auditoriaState.limite,
+    offset: auditoriaState.offset,
+  });
+  const entidade = document.getElementById("auditoria-entidade").value;
+  const busca = document.getElementById("auditoria-busca").value.trim();
+  if (entidade) params.set("entidade", entidade);
+  if (busca) params.set("q", busca);
+
+  const resultado = await api(`/api/auditoria?${params}`);
+  const tbody = document.getElementById("tbody-auditoria");
+  const linhas = resultado.itens.map((ev) => `
+    <tr>
+      <td>${new Date(ev.criado_em).toLocaleString("pt-BR")}</td>
+      <td>${ev.usuario_nome}</td>
+      <td><span class="badge-acao ${ev.acao}">${ROTULOS_ACAO[ev.acao] || ev.acao}</span></td>
+      <td>${ROTULOS_ENTIDADE[ev.entidade] || ev.entidade}</td>
+      <td>${ev.descricao}</td>
+    </tr>`).join("");
+
+  tbody.innerHTML = reiniciar || auditoriaState.offset === 0
+    ? (linhas || `<tr><td colspan="5">Nenhum evento registrado.</td></tr>`)
+    : tbody.innerHTML + linhas;
+
+  auditoriaState.offset += resultado.itens.length;
+  document.getElementById("btn-auditoria-mais").style.display =
+    auditoriaState.offset < resultado.total ? "" : "none";
+}
+
+let buscaAuditoriaTimer;
+document.getElementById("auditoria-busca").addEventListener("input", () => {
+  clearTimeout(buscaAuditoriaTimer);
+  buscaAuditoriaTimer = setTimeout(() => carregarAuditoria(true), 300);
+});
+document.getElementById("auditoria-entidade").addEventListener("change", () => carregarAuditoria(true));
+document.getElementById("btn-auditoria-mais").addEventListener("click", () => carregarAuditoria(false));
 
 // ---------- INIT ----------
 verificarSessao();

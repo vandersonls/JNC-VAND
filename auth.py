@@ -64,12 +64,16 @@ def login():
         return jsonify({"erro": "Email ou senha inválidos"}), 401
 
     login_user(Usuario(row), remember=True)
+    from auditoria import registrar  # import local evita ciclo (auditoria importa perfis_permitidos daqui)
+    registrar("login", "usuario", row["id"], f"{row['nome']} entrou no sistema")
     return jsonify({"usuario": Usuario(row).to_dict()})
 
 
 @auth_bp.post("/api/logout")
 @login_required
 def logout():
+    from auditoria import registrar
+    registrar("logout", "usuario", current_user.id, f"{current_user.nome} saiu do sistema")
     logout_user()
     session.clear()
     return jsonify({"ok": True})

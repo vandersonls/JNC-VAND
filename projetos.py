@@ -3,6 +3,7 @@ from flask_login import login_required, current_user
 
 import db
 from auth import perfis_permitidos
+from auditoria import registrar
 
 projetos_bp = Blueprint("projetos", __name__)
 
@@ -53,6 +54,7 @@ def criar_projeto():
             current_user.id,
         ),
     )
+    registrar("criar", "projeto", novo_id, f"Criou o projeto {data['codigo']} — {data['nome']}", depois=data)
     return jsonify({"id": novo_id}), 201
 
 
@@ -62,6 +64,9 @@ def editar_projeto(projeto_id):
     data = request.get_json(force=True) or {}
     if not data.get("codigo") or not data.get("nome"):
         return jsonify({"erro": "Código e nome são obrigatórios"}), 400
+    antes = db.query_one(
+        "SELECT codigo, nome, cliente_id, descricao, status FROM projetos WHERE id = %s", (projeto_id,)
+    )
     db.execute(
         """UPDATE projetos SET codigo=%s, nome=%s, cliente_id=%s, descricao=%s, status=%s
            WHERE id=%s""",
@@ -71,13 +76,17 @@ def editar_projeto(projeto_id):
             projeto_id,
         ),
     )
+    registrar("editar", "projeto", projeto_id, f"Editou o projeto {data['codigo']} — {data['nome']}", antes=antes, depois=data)
     return jsonify({"ok": True})
 
 
 @projetos_bp.delete("/api/projetos/<int:projeto_id>")
 @perfis_permitidos("master")
 def excluir_projeto(projeto_id):
+    antes = db.query_one("SELECT codigo, nome FROM projetos WHERE id = %s", (projeto_id,))
     db.execute("DELETE FROM projetos WHERE id = %s", (projeto_id,))
+    if antes:
+        registrar("excluir", "projeto", projeto_id, f"Excluiu o projeto {antes['codigo']} — {antes['nome']}", antes=antes)
     return jsonify({"ok": True})
 
 
@@ -175,6 +184,11 @@ def criar_lista(projeto_id):
     )
     _salvar_itens(versao_id, data.get("itens"))
     db.execute("UPDATE listas_desenho SET versao_atual_id = %s WHERE id = %s", (versao_id, lista_id))
+    registrar(
+        "criar", "lista_desenho", lista_id,
+        f"Criou a lista por desenho {numero_desenho} (v1) no projeto #{projeto_id}",
+        depois=data,
+    )
     return jsonify({"id": lista_id, "versao_id": versao_id}), 201
 
 
@@ -207,12 +221,24 @@ def editar_lista(lista_id):
     _salvar_itens(versao_id, data.get("itens"))
     db.execute("UPDATE listas_desenho SET versao_atual_id = %s WHERE id = %s", (versao_id, lista_id))
 
+    registrar(
+        "editar", "lista_desenho", lista_id,
+        f"Salvou nova versão (v{proxima_versao}) da lista {lista['numero_desenho']}, mantendo as anteriores",
+        depois=data,
+    )
     return jsonify({"id": lista_id, "versao_id": versao_id, "versao": proxima_versao})
 
 
 @projetos_bp.delete("/api/listas/<int:lista_id>")
 @perfis_permitidos("master", "administrador")
 def excluir_lista(lista_id):
+    antes = db.query_one("SELECT numero_desenho, titulo FROM listas_desenho WHERE id = %s", (lista_id,))
     db.execute("UPDATE listas_desenho SET versao_atual_id = NULL WHERE id = %s", (lista_id,))
     db.execute("DELETE FROM listas_desenho WHERE id = %s", (lista_id,))
+    if antes:
+        registrar(
+            "excluir", "lista_desenho", lista_id,
+            f"Excluiu a lista por desenho {antes['numero_desenho']} e todo o histórico de versões",
+            antes=antes,
+        )
     return jsonify({"ok": True})

@@ -129,5 +129,24 @@ INSERT IGNORE INTO configuracoes (chave, valor, descricao) VALUES
     ('logo_url', '', 'URL/caminho do logotipo'),
     ('formato_data', 'DD/MM/YYYY', 'Formato de exibição de datas');
 
+-- =========================================================
+-- AUDITORIA (quem fez o quê, e quando)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS auditoria (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT NULL,
+    usuario_nome VARCHAR(150) NOT NULL,
+    acao ENUM('criar', 'editar', 'excluir', 'importar', 'login', 'logout') NOT NULL,
+    entidade VARCHAR(50) NOT NULL,
+    entidade_id INT NULL,
+    descricao VARCHAR(500) NOT NULL,
+    dados_antes JSON NULL,
+    dados_depois JSON NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_auditoria_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL,
+    INDEX idx_auditoria_entidade (entidade),
+    INDEX idx_auditoria_criado_em (criado_em)
+) ENGINE=InnoDB;
+
 -- Usuário master inicial (senha: admin123 - troque após o primeiro login)
 -- Hash gerado com werkzeug.security.generate_password_hash em tempo de execução (ver seed.py)

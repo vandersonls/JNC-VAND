@@ -11,6 +11,7 @@ from clientes import clientes_bp
 from projetos import projetos_bp
 from usuarios import usuarios_bp
 from configuracoes import config_bp
+from auditoria import auditoria_bp
 
 
 def _montar_db_config():
@@ -54,6 +55,7 @@ def create_app():
     app.register_blueprint(projetos_bp)
     app.register_blueprint(usuarios_bp)
     app.register_blueprint(config_bp)
+    app.register_blueprint(auditoria_bp)
 
     @app.route("/")
     def index():

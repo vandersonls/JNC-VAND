@@ -140,19 +140,48 @@
 
     <!-- CONFIGURAÇÕES -->
     <section id="tab-configuracoes" class="tab">
-      <h2>Configurações do Sistema</h2>
-      <form id="form-configuracoes" class="form-config">
-        <label>Nome da Empresa</label>
-        <input type="text" id="cfg-nome_empresa">
-        <label>URL do Logotipo</label>
-        <input type="text" id="cfg-logo_url">
-        <label>Formato de Data</label>
-        <select id="cfg-formato_data">
-          <option value="DD/MM/YYYY">DD/MM/AAAA</option>
-          <option value="YYYY-MM-DD">AAAA-MM-DD</option>
-        </select>
-        <button type="submit" class="btn-primario">Salvar Configurações</button>
-      </form>
+      <div class="tab-header">
+        <h2>Configurações do Sistema</h2>
+      </div>
+      <div class="subnav">
+        <button class="subnav-item ativo" data-subtab="config-geral">Geral</button>
+        <button class="subnav-item" data-subtab="config-auditoria">Auditoria</button>
+      </div>
+
+      <div id="subtab-config-geral" class="subtab ativo">
+        <form id="form-configuracoes" class="form-config">
+          <label>Nome da Empresa</label>
+          <input type="text" id="cfg-nome_empresa">
+          <label>URL do Logotipo</label>
+          <input type="text" id="cfg-logo_url">
+          <label>Formato de Data</label>
+          <select id="cfg-formato_data">
+            <option value="DD/MM/YYYY">DD/MM/AAAA</option>
+            <option value="YYYY-MM-DD">AAAA-MM-DD</option>
+          </select>
+          <button type="submit" class="btn-primario">Salvar Configurações</button>
+        </form>
+      </div>
+
+      <div id="subtab-config-auditoria" class="subtab">
+        <div class="tab-header">
+          <div class="acoes">
+            <input type="search" id="auditoria-busca" placeholder="Buscar por usuário ou descrição...">
+            <select id="auditoria-entidade">
+              <option value="">Todas as áreas</option>
+            </select>
+          </div>
+        </div>
+        <table class="tabela">
+          <thead>
+            <tr><th>Data/Hora</th><th>Usuário</th><th>Ação</th><th>Área</th><th>Descrição</th></tr>
+          </thead>
+          <tbody id="tbody-auditoria"></tbody>
+        </table>
+        <div class="paginacao">
+          <button class="btn-secundario" id="btn-auditoria-mais">Carregar mais</button>
+        </div>
+      </div>
     </section>
 
   </main>

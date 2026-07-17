@@ -3,6 +3,7 @@ from flask_login import login_required
 
 import db
 from auth import perfis_permitidos
+from auditoria import registrar
 
 clientes_bp = Blueprint("clientes", __name__)
 
@@ -36,6 +37,7 @@ def criar_cliente():
         f"""INSERT INTO clientes ({', '.join(CAMPOS)}) VALUES ({', '.join(['%s'] * len(CAMPOS))})""",
         tuple(data.get(c, "") for c in CAMPOS),
     )
+    registrar("criar", "cliente", novo_id, f"Criou o cliente {data['razao_social']}", depois=data)
     return jsonify({"id": novo_id}), 201
 
 
@@ -45,16 +47,21 @@ def editar_cliente(cliente_id):
     data = request.get_json(force=True) or {}
     if not data.get("razao_social"):
         return jsonify({"erro": "Razão social é obrigatória"}), 400
+    antes = db.query_one(f"SELECT {', '.join(CAMPOS)} FROM clientes WHERE id = %s", (cliente_id,))
     sets = ", ".join(f"{c}=%s" for c in CAMPOS)
     db.execute(
         f"UPDATE clientes SET {sets} WHERE id=%s",
         (*[data.get(c, "") for c in CAMPOS], cliente_id),
     )
+    registrar("editar", "cliente", cliente_id, f"Editou o cliente {data['razao_social']}", antes=antes, depois=data)
     return jsonify({"ok": True})
 
 
 @clientes_bp.delete("/api/clientes/<int:cliente_id>")
 @perfis_permitidos("master", "administrador")
 def excluir_cliente(cliente_id):
+    antes = db.query_one("SELECT razao_social FROM clientes WHERE id = %s", (cliente_id,))
     db.execute("UPDATE clientes SET ativo = 0 WHERE id = %s", (cliente_id,))
+    if antes:
+        registrar("excluir", "cliente", cliente_id, f"Excluiu o cliente {antes['razao_social']}", antes=antes)
     return jsonify({"ok": True})

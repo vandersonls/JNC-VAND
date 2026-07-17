@@ -12,6 +12,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 
 import db
 from auth import perfis_permitidos
+from auditoria import registrar
 
 materiais_bp = Blueprint("materiais", __name__)
 
@@ -47,6 +48,7 @@ def criar_material():
            VALUES (%s, %s, %s, %s, %s)""",
         tuple(data[c] for c in COLUNAS),
     )
+    registrar("criar", "material", novo_id, f"Criou o material {data['codigo']}", depois=data)
     return jsonify({"id": novo_id}), 201
 
 
@@ -57,18 +59,23 @@ def editar_material(material_id):
     faltando = [c for c in COLUNAS if not data.get(c)]
     if faltando:
         return jsonify({"erro": f"Campos obrigatórios: {', '.join(faltando)}"}), 400
+    antes = db.query_one("SELECT codigo, descricao, fabricante, bitola, unidade FROM materiais WHERE id = %s", (material_id,))
     db.execute(
         """UPDATE materiais SET codigo=%s, descricao=%s, fabricante=%s, bitola=%s, unidade=%s
            WHERE id=%s""",
         (*[data[c] for c in COLUNAS], material_id),
     )
+    registrar("editar", "material", material_id, f"Editou o material {data['codigo']}", antes=antes, depois=data)
     return jsonify({"ok": True})
 
 
 @materiais_bp.delete("/api/materiais/<int:material_id>")
 @perfis_permitidos("master", "administrador")
 def excluir_material(material_id):
+    antes = db.query_one("SELECT codigo, descricao FROM materiais WHERE id = %s", (material_id,))
     db.execute("UPDATE materiais SET ativo = 0 WHERE id = %s", (material_id,))
+    if antes:
+        registrar("excluir", "material", material_id, f"Excluiu o material {antes['codigo']}", antes=antes)
     return jsonify({"ok": True})
 
 
@@ -197,4 +204,8 @@ def importar_excel():
             )
             inseridos += 1
 
+    registrar(
+        "importar", "material", None,
+        f"Importou planilha '{arquivo.filename}': {inseridos} novos, {atualizados} atualizados",
+    )
     return jsonify({"inseridos": inseridos, "atualizados": atualizados, "erros": erros})
