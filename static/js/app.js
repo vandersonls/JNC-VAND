@@ -499,12 +499,12 @@ function renderFilhosVersoes(listaId, versoes) {
     <div class="arvore-linha arvore-linha-versao">
       <span class="arvore-toggle invisivel"></span>
       ${ICONE_ARQUIVO}
-      <span class="arvore-label" onclick="verVersao(${v.id})">
+      <span class="arvore-label" onclick="verVersao(${listaId}, ${v.id})">
         <span class="arvore-titulo">v${v.versao}</span>
         <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${v.criado_por_nome || "-"}</span>
       </span>
       <span class="arvore-acoes">
-        <button class="link-acao" onclick="verVersao(${v.id})">Ver</button>
+        <button class="link-acao" onclick="verVersao(${listaId}, ${v.id})">Ver</button>
       </span>
     </div>`).join("");
 }
@@ -591,6 +591,9 @@ function renderEditorLista(listaId, lista, itens) {
     <div class="itens-editor" id="itens-editor"></div>
     <button class="btn-secundario somente-admin" onclick="adicionarItemLinha()">+ Adicionar Material</button>
     <div class="modal-acoes">
+      <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/excel" target="_blank">Relatório Excel</a>
+      <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/pdf" target="_blank">Relatório PDF</a>
+      <span style="flex:1"></span>
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
       <button class="btn-primario somente-admin" onclick="salvarEditorLista(${listaId})">Salvar (nova versão)</button>
     </div>
@@ -656,7 +659,7 @@ async function salvarEditorLista(listaId) {
   } catch (err) { toast(err.message, "erro"); }
 }
 
-async function verVersao(versaoId) {
+async function verVersao(listaId, versaoId) {
   const dados = await api(`/api/versoes/${versaoId}`);
   abrirModal(`
     <h3>Versão ${dados.versao.versao}</h3>
@@ -666,7 +669,12 @@ async function verVersao(versaoId) {
         ${dados.itens.map((i) => `<tr><td>${i.codigo}</td><td>${i.descricao}</td><td>${i.quantidade}</td><td>${i.unidade}</td></tr>`).join("") || "<tr><td colspan='4'>Sem itens</td></tr>"}
       </tbody>
     </table>
-    <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
+    <div class="modal-acoes">
+      <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/excel?versao_id=${versaoId}" target="_blank">Relatório Excel</a>
+      <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/pdf?versao_id=${versaoId}" target="_blank">Relatório PDF</a>
+      <span style="flex:1"></span>
+      <button class="btn-secundario" onclick="fecharModal()">Fechar</button>
+    </div>
   `);
 }
 
