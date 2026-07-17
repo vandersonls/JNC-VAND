@@ -23,6 +23,33 @@ STATUS_DOCUMENTO = {
 }
 LEGENDA_STATUS = [("A", "Preliminar"), ("B", "Aprovado"), ("C", "Aprovado com Comentários"), ("D", "Cancelado")]
 
+CEL_ESTILO = ParagraphStyle("cel", fontSize=8, leading=10)
+CEL_ESTILO_CABECALHO = ParagraphStyle("cel_cab", fontSize=8, leading=10, textColor=colors.white, fontName="Helvetica-Bold")
+
+
+def _tabela_quebravel(dados, col_widths, alinhar_direita=None):
+    """Monta uma Table do reportlab em que toda célula é um Paragraph,
+    para que o texto quebre linha dentro da largura da coluna em vez de
+    transbordar/sobrepor o texto vizinho."""
+    alinhar_direita = alinhar_direita or set()
+    linhas = []
+    for i, linha in enumerate(dados):
+        estilo = CEL_ESTILO_CABECALHO if i == 0 else CEL_ESTILO
+        linhas.append([Paragraph(str(v), estilo) for v in linha])
+    tabela = Table(linhas, colWidths=col_widths, repeatRows=1)
+    estilo_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f3a5f")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f4f7")]),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    for col in alinhar_direita:
+        estilo_cmds.append(("ALIGN", (col, 0), (col, -1), "CENTER"))
+    tabela.setStyle(TableStyle(estilo_cmds))
+    return tabela
+
 
 def _carregar_contexto(lista_id, versao_id=None):
     lista = db.query_one(
@@ -260,35 +287,25 @@ def relatorio_pdf(lista_id):
 
     dados_materiais = [["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]]
     for idx, item in enumerate(itens, start=1):
-        dados_materiais.append([idx, item["codigo"], item["descricao"], item["fabricante"] or "",
-                                 item["bitola"] or "", str(item["quantidade"]), item["unidade"]])
+        dados_materiais.append([idx, item["codigo"], item["descricao"], item["fabricante"] or "-",
+                                 item["bitola"] or "-", item["quantidade"], item["unidade"]])
     if not itens:
-        dados_materiais.append(["-", "-", "Nenhum material nesta versão.", "", "", "", ""])
+        dados_materiais.append(["-", "-", "Nenhum material nesta versão.", "-", "-", "-", "-"])
 
-    tabela_materiais = Table(dados_materiais, repeatRows=1,
-                              colWidths=[1.5 * cm, 3 * cm, None, 4 * cm, 2.5 * cm, 2.5 * cm, 2.5 * cm])
-    tabela_materiais.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f3a5f")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f4f7")]),
-        ("ALIGN", (0, 0), (1, -1), "CENTER"),
-        ("ALIGN", (4, 0), (-1, -1), "CENTER"),
-    ]))
+    tabela_materiais = _tabela_quebravel(
+        dados_materiais,
+        col_widths=[1.3 * cm, 2.8 * cm, 8 * cm, 4.5 * cm, 2.8 * cm, 2.8 * cm, 2.3 * cm],
+        alinhar_direita={0, 5, 6},
+    )
     elementos.append(tabela_materiais)
 
     elementos.append(Paragraph("HISTÓRICO DE REVISÕES", secao_estilo))
     dados_rev = [["Rev.", "Data", "Responsável", "Descrição"]]
     for v in historico:
         dados_rev.append([v["versao"], v["criado_em"].strftime("%d/%m/%Y"), v["criado_por_nome"] or "-", v["observacoes"] or "-"])
-    tabela_rev = Table(dados_rev, colWidths=[1.5 * cm, 2.5 * cm, 4 * cm, None])
-    tabela_rev.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e5ea")),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("ALIGN", (0, 0), (2, -1), "CENTER"),
-    ]))
+    tabela_rev = _tabela_quebravel(
+        dados_rev, col_widths=[1.5 * cm, 2.5 * cm, 4 * cm, 16.5 * cm], alinhar_direita={0, 1},
+    )
     elementos.append(tabela_rev)
 
     codigo_atual = STATUS_DOCUMENTO.get(versao["status"], ("-", "-"))[0] if versao else "-"
@@ -440,20 +457,15 @@ def relatorio_projeto_pdf(projeto_id):
     elementos.append(Paragraph("RESUMO CONSOLIDADO (última versão de cada desenho)", secao_estilo))
     dados_consolidado = [["Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade", "Desenhos"]]
     for item in consolidado:
-        dados_consolidado.append([item["codigo"], item["descricao"], item["fabricante"] or "", item["bitola"] or "",
+        dados_consolidado.append([item["codigo"], item["descricao"], item["fabricante"] or "-", item["bitola"] or "-",
                                    f"{item['quantidade']:g}", item["unidade"], ", ".join(sorted(item["desenhos"]))])
     if not consolidado:
-        dados_consolidado.append(["-", "Nenhum material cadastrado em nenhuma lista deste projeto.", "", "", "", "", ""])
-    tabela_consolidado = Table(dados_consolidado, repeatRows=1,
-                                colWidths=[2.5 * cm, 5 * cm, 3.5 * cm, 2.5 * cm, 2.5 * cm, 2 * cm, None])
-    tabela_consolidado.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f3a5f")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f4f7")]),
-        ("ALIGN", (4, 0), (5, -1), "CENTER"),
-    ]))
+        dados_consolidado.append(["-", "Nenhum material cadastrado em nenhuma lista deste projeto.", "-", "-", "-", "-", "-"])
+    tabela_consolidado = _tabela_quebravel(
+        dados_consolidado,
+        col_widths=[2.3 * cm, 7 * cm, 4.5 * cm, 2.5 * cm, 2.5 * cm, 2 * cm, 3.5 * cm],
+        alinhar_direita={4, 5},
+    )
     elementos.append(tabela_consolidado)
     elementos.append(PageBreak())
 
@@ -468,18 +480,15 @@ def relatorio_projeto_pdf(projeto_id):
         ))
         dados = [["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]]
         for idx, item in enumerate(itens, start=1):
-            dados.append([idx, item["codigo"], item["descricao"], item["fabricante"] or "",
-                          item["bitola"] or "", str(item["quantidade"]), item["unidade"]])
+            dados.append([idx, item["codigo"], item["descricao"], item["fabricante"] or "-",
+                          item["bitola"] or "-", item["quantidade"], item["unidade"]])
         if not itens:
-            dados.append(["-", "-", "Nenhum material nesta versão.", "", "", "", ""])
-        tabela = Table(dados, repeatRows=1, colWidths=[1.5 * cm, 3 * cm, None, 4 * cm, 2.5 * cm, 2.5 * cm, 2.5 * cm])
-        tabela.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e5ea")),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("ALIGN", (0, 0), (1, -1), "CENTER"),
-            ("ALIGN", (4, 0), (-1, -1), "CENTER"),
-        ]))
+            dados.append(["-", "-", "Nenhum material nesta versão.", "-", "-", "-", "-"])
+        tabela = _tabela_quebravel(
+            dados,
+            col_widths=[1.3 * cm, 2.8 * cm, 8 * cm, 4.5 * cm, 2.8 * cm, 2.8 * cm, 2.3 * cm],
+            alinhar_direita={0, 5, 6},
+        )
         elementos.append(tabela)
         if i < len(desenhos) - 1:
             elementos.append(PageBreak())
