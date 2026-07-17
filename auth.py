@@ -1,6 +1,6 @@
 from functools import wraps
 
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify
 from flask_login import (
     LoginManager, UserMixin, login_user, logout_user,
     login_required, current_user,
@@ -74,8 +74,9 @@ def login():
 def logout():
     from auditoria import registrar
     registrar("logout", "usuario", current_user.id, f"{current_user.nome} saiu do sistema")
+    # logout_user() marca o cookie "lembrar-me" para expirar na resposta;
+    # session.clear() depois disso apagaria essa marcação e o cookie nunca seria removido.
     logout_user()
-    session.clear()
     return jsonify({"ok": True})
 
 
