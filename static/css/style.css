@@ -8,6 +8,13 @@
   --erro: #d32f2f;
   --sucesso: #2e7d32;
   --raio: 10px;
+
+  /* Tema escuro/dourado (marca) */
+  --navy-escuro: #060a12;
+  --navy-painel: #0e1520;
+  --dourado: #f0a530;
+  --dourado-claro: #ffd977;
+  --dourado-escuro: #b9720a;
 }
 
 * { box-sizing: border-box; }
@@ -25,28 +32,44 @@ body {
 .tela-login {
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--azul) 0%, var(--azul-claro) 100%);
+  gap: 28px;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 900px 500px at 50% 42%, rgba(64,132,214,0.22) 0%, rgba(6,10,18,0) 65%),
+    linear-gradient(180deg, #04060a 0%, #0a0f18 45%, #04060a 100%);
 }
+.tela-login::before {
+  content: ""; position: absolute; left: -10%; right: -10%; top: 42%; height: 2px;
+  background: linear-gradient(90deg, transparent, #4a92dd 50%, transparent);
+  box-shadow: 0 0 40px 8px rgba(74,146,221,0.55);
+  pointer-events: none;
+}
+.logo-login { position: relative; z-index: 1; filter: drop-shadow(0 8px 24px rgba(240,165,48,0.35)); }
 .card-login {
+  position: relative; z-index: 1;
   background: var(--branco);
   padding: 40px 36px;
   border-radius: var(--raio);
   width: 340px;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.45);
 }
-.card-login h1 { margin: 0 0 4px; color: var(--azul); }
+.card-login h1 { margin: 0 0 4px; color: var(--navy-escuro); }
 .subtitulo { color: var(--cinza); font-size: 13px; margin-bottom: 24px; }
 .card-login label { display: block; font-size: 13px; margin: 12px 0 4px; color: var(--cinza); }
 .card-login input {
   width: 100%; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 8px; font-size: 14px;
 }
+.card-login input:focus { outline: none; border-color: var(--dourado); box-shadow: 0 0 0 3px rgba(240,165,48,0.18); }
 .card-login button {
   margin-top: 20px; width: 100%; padding: 11px; border: none; border-radius: 8px;
-  background: var(--azul); color: white; font-size: 15px; cursor: pointer; transition: background .15s;
+  background: linear-gradient(135deg, var(--dourado-claro), var(--dourado-escuro));
+  color: #1c1400; font-weight: 600; font-size: 15px; cursor: pointer; transition: filter .15s;
 }
-.card-login button:hover { background: var(--azul-claro); }
+.card-login button:hover { filter: brightness(1.08); }
 .erro { color: var(--erro); font-size: 13px; min-height: 16px; margin-top: 8px; }
 
 /* ---------- LAYOUT ---------- */
@@ -54,32 +77,36 @@ body {
 
 .sidebar {
   width: 230px;
-  background: var(--azul);
+  background: linear-gradient(180deg, #0c1420 0%, #060a12 100%);
   color: white;
   display: flex;
   flex-direction: column;
   padding: 20px 0;
 }
-.sidebar .logo { font-size: 22px; font-weight: 700; padding: 0 24px 20px; letter-spacing: 1px; }
+.sidebar .logo {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 19px; font-weight: 700; padding: 0 24px 20px; letter-spacing: .5px;
+}
+.sidebar .logo svg { flex: 0 0 auto; filter: drop-shadow(0 2px 6px rgba(240,165,48,0.35)); }
 .sidebar nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .nav-item {
-  background: none; border: none; color: #cfd9e8; text-align: left; padding: 12px 24px;
-  font-size: 14px; cursor: pointer; transition: background .15s, color .15s;
+  background: none; border: none; border-left: 3px solid transparent; color: #8b93a3; text-align: left; padding: 12px 21px;
+  font-size: 14px; cursor: pointer; transition: background .15s, color .15s, border-color .15s;
 }
-.nav-item:hover { background: rgba(255,255,255,0.08); color: white; }
-.nav-item.ativo { background: var(--azul-claro); color: white; font-weight: 600; }
+.nav-item:hover { background: rgba(255,255,255,0.05); color: #e6e9ef; }
+.nav-item.ativo { background: rgba(240,165,48,0.1); border-left-color: var(--dourado); color: var(--dourado-claro); font-weight: 600; }
 
-.usuario-atual { padding: 16px 24px; border-top: 1px solid rgba(255,255,255,0.15); }
+.usuario-atual { padding: 16px 24px; border-top: 1px solid rgba(255,255,255,0.08); }
 #usuario-nome { font-size: 14px; font-weight: 600; }
 .badge-perfil {
   display: inline-block; margin: 4px 0 10px; font-size: 11px; text-transform: uppercase;
-  background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 20px;
+  background: rgba(240,165,48,0.15); color: var(--dourado-claro); padding: 2px 8px; border-radius: 20px;
 }
 .usuario-atual button {
-  width: 100%; padding: 8px; border: 1px solid rgba(255,255,255,0.3); background: transparent;
+  width: 100%; padding: 8px; border: 1px solid rgba(255,255,255,0.15); background: transparent;
   color: white; border-radius: 6px; cursor: pointer;
 }
-.usuario-atual button:hover { background: rgba(255,255,255,0.1); }
+.usuario-atual button:hover { background: rgba(255,255,255,0.06); }
 
 .conteudo { flex: 1; padding: 32px 40px; overflow-y: auto; }
 
