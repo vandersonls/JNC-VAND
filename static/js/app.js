@@ -442,6 +442,8 @@ document.getElementById("btn-voltar-projetos").addEventListener("click", () => a
 async function abrirProjeto(id) {
   state.projetoAtual = state.projetos.find((p) => p.id === id);
   document.getElementById("projeto-detalhe-titulo").textContent = `${state.projetoAtual.codigo} — ${state.projetoAtual.nome}`;
+  document.getElementById("link-relatorio-projeto-excel").href = `/api/projetos/${id}/relatorio/excel`;
+  document.getElementById("link-relatorio-projeto-pdf").href = `/api/projetos/${id}/relatorio/pdf`;
   ativarTabInterna("projeto-detalhe");
   await carregarListas(id);
 }

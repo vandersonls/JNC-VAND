@@ -9,7 +9,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 
 import db
 
@@ -64,6 +64,56 @@ def _carregar_contexto(lista_id, versao_id=None):
 
 def _doc_referencia(lista):
     return f"{lista['projeto_codigo']}-{lista['numero_desenho']}"
+
+
+def _carregar_contexto_projeto(projeto_id):
+    """Reúne, para cada Lista por Desenho do projeto, sempre a sua última versão salva."""
+    projeto = db.query_one(
+        """SELECT p.*, c.razao_social AS cliente_nome
+           FROM projetos p LEFT JOIN clientes c ON c.id = p.cliente_id
+           WHERE p.id = %s""",
+        (projeto_id,),
+    )
+    if not projeto:
+        return None
+
+    listas = db.query_all(
+        "SELECT * FROM listas_desenho WHERE projeto_id = %s ORDER BY numero_desenho",
+        (projeto_id,),
+    )
+
+    desenhos = []
+    consolidado = {}
+    for lista in listas:
+        versao, itens = None, []
+        if lista["versao_atual_id"]:
+            versao = db.query_one(
+                """SELECT v.*, u.nome AS criado_por_nome FROM lista_desenho_versoes v
+                   LEFT JOIN usuarios u ON u.id = v.criado_por WHERE v.id = %s""",
+                (lista["versao_atual_id"],),
+            )
+            itens = db.query_all(
+                """SELECT i.quantidade, i.observacao, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
+                   FROM lista_desenho_itens i JOIN materiais m ON m.id = i.material_id
+                   WHERE i.versao_id = %s ORDER BY m.codigo""",
+                (lista["versao_atual_id"],),
+            )
+        desenhos.append({"lista": lista, "versao": versao, "itens": itens})
+
+        for item in itens:
+            chave = item["codigo"]
+            if chave not in consolidado:
+                consolidado[chave] = {
+                    "codigo": item["codigo"], "descricao": item["descricao"], "fabricante": item["fabricante"],
+                    "bitola": item["bitola"], "unidade": item["unidade"], "quantidade": 0, "desenhos": set(),
+                }
+            consolidado[chave]["quantidade"] += float(item["quantidade"])
+            consolidado[chave]["desenhos"].add(lista["numero_desenho"])
+
+    consolidado_lista = sorted(consolidado.values(), key=lambda x: x["codigo"])
+    config = {c["chave"]: c["valor"] for c in db.query_all("SELECT chave, valor FROM configuracoes")}
+
+    return {"projeto": projeto, "desenhos": desenhos, "consolidado": consolidado_lista, "config": config}
 
 
 @relatorios_bp.get("/api/listas/<int:lista_id>/relatorio/excel")
@@ -279,3 +329,164 @@ def relatorio_pdf(lista_id):
     buf.seek(0)
     nome_arquivo = f"lista_{lista['numero_desenho']}_rev{versao['versao'] if versao else 0}.pdf"
     return send_file(buf, as_attachment=True, download_name=nome_arquivo, mimetype="application/pdf")
+
+
+@relatorios_bp.get("/api/projetos/<int:projeto_id>/relatorio/excel")
+@login_required
+def relatorio_projeto_excel(projeto_id):
+    ctx = _carregar_contexto_projeto(projeto_id)
+    if not ctx:
+        return jsonify({"erro": "Projeto não encontrado"}), 404
+    projeto, desenhos, consolidado = ctx["projeto"], ctx["desenhos"], ctx["consolidado"]
+    empresa = ctx["config"].get("nome_empresa", "")
+
+    wb = openpyxl.Workbook()
+    fino = Side(style="thin", color="000000")
+    borda = Border(left=fino, right=fino, top=fino, bottom=fino)
+    centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    esquerda = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    def cabecalho_pagina(ws, largura, subtitulo):
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=largura)
+        c = ws.cell(row=1, column=1, value=f"{projeto['codigo']} — {projeto['nome']}")
+        c.font, c.alignment = Font(bold=True, size=13), centro
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=largura)
+        c = ws.cell(row=2, column=1, value=subtitulo)
+        c.font, c.alignment = Font(bold=True, size=10), centro
+        ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=largura)
+        c = ws.cell(row=3, column=1, value=f"Cliente: {projeto['cliente_nome'] or '-'}    |    Empresa: {empresa}")
+        c.font, c.alignment = Font(size=9), centro
+
+    def tabela_com_cabecalho(ws, linha, largura, titulos):
+        for col, titulo in enumerate(titulos, start=1):
+            cel = ws.cell(row=linha, column=col, value=titulo)
+            cel.font = Font(bold=True, size=10, color="FFFFFF")
+            cel.fill = openpyxl.styles.PatternFill("solid", fgColor="1f3a5f")
+            cel.alignment, cel.border = centro, borda
+        return linha + 1
+
+    ws_resumo = wb.active
+    ws_resumo.title = "Resumo Consolidado"
+    cabecalho_pagina(ws_resumo, 7, "RESUMO CONSOLIDADO DE MATERIAIS (todas as listas, última versão)")
+    linha = tabela_com_cabecalho(ws_resumo, 5, 7, ["Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade", "Desenhos"])
+    for item in consolidado:
+        valores = [item["codigo"], item["descricao"], item["fabricante"] or "", item["bitola"] or "",
+                   item["quantidade"], item["unidade"], ", ".join(sorted(item["desenhos"]))]
+        for col, valor in enumerate(valores, start=1):
+            cel = ws_resumo.cell(row=linha, column=col, value=valor)
+            cel.border = borda
+            cel.alignment = esquerda if col in (2, 7) else centro
+        linha += 1
+    if not consolidado:
+        ws_resumo.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=7)
+        ws_resumo.cell(row=linha, column=1, value="Nenhum material cadastrado em nenhuma lista deste projeto.").alignment = centro
+    for i, w in enumerate([14, 34, 20, 12, 12, 10, 20], start=1):
+        ws_resumo.column_dimensions[get_column_letter(i)].width = w
+
+    for d in desenhos:
+        lista, versao, itens = d["lista"], d["versao"], d["itens"]
+        ws = wb.create_sheet(title=lista["numero_desenho"][:31])
+        cabecalho_pagina(ws, 6, f"Desenho {lista['numero_desenho']} — {lista['titulo'] or ''}")
+        ws.merge_cells(start_row=4, start_column=1, end_row=4, end_column=6)
+        ws.cell(row=4, column=1, value=f"Revisão: {versao['versao'] if versao else '-'}    |    Nº Cliente: {lista['numero_cliente'] or '-'}    |    Nº Fornecedor: {lista['numero_fornecedor'] or '-'}").alignment = centro
+        linha = tabela_com_cabecalho(ws, 6, 6, ["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade"])
+        for idx, item in enumerate(itens, start=1):
+            valores = [idx, item["codigo"], item["descricao"], item["fabricante"] or "", item["bitola"] or "",
+                       float(item["quantidade"])]
+            for col, valor in enumerate(valores, start=1):
+                cel = ws.cell(row=linha, column=col, value=valor)
+                cel.border = borda
+                cel.alignment = esquerda if col == 3 else centro
+            linha += 1
+        if not itens:
+            ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=6)
+            ws.cell(row=linha, column=1, value="Nenhum material nesta versão.").alignment = centro
+        for i, w in enumerate([6, 14, 34, 20, 12, 12], start=1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name=f"relatorio_projeto_{projeto['codigo']}.xlsx",
+                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@relatorios_bp.get("/api/projetos/<int:projeto_id>/relatorio/pdf")
+@login_required
+def relatorio_projeto_pdf(projeto_id):
+    ctx = _carregar_contexto_projeto(projeto_id)
+    if not ctx:
+        return jsonify({"erro": "Projeto não encontrado"}), 404
+    projeto, desenhos, consolidado = ctx["projeto"], ctx["desenhos"], ctx["consolidado"]
+    empresa = ctx["config"].get("nome_empresa", "")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.2 * cm, bottomMargin=1.2 * cm,
+                             leftMargin=1.2 * cm, rightMargin=1.2 * cm)
+
+    titulo_estilo = ParagraphStyle("titulo", fontSize=15, leading=18, alignment=1, spaceAfter=8, fontName="Helvetica-Bold")
+    subtitulo_estilo = ParagraphStyle("subtitulo", fontSize=11, leading=14, alignment=1, spaceAfter=4, fontName="Helvetica-Bold")
+    ref_estilo = ParagraphStyle("ref", fontSize=9, leading=12, alignment=1, spaceAfter=10)
+    secao_estilo = ParagraphStyle("secao", fontSize=12, fontName="Helvetica-Bold", spaceBefore=14, spaceAfter=4,
+                                   textColor=colors.HexColor("#1f3a5f"))
+    sub_estilo = ParagraphStyle("sub", fontSize=9, spaceAfter=6)
+
+    elementos = [
+        Paragraph(f"{projeto['codigo']} — {projeto['nome']}", titulo_estilo),
+        Paragraph("RELATÓRIO FINAL DO PROJETO — CONSOLIDADO DE MATERIAIS", subtitulo_estilo),
+        Paragraph(f"Cliente: {projeto['cliente_nome'] or '-'} &nbsp;&nbsp;|&nbsp;&nbsp; Empresa: {empresa} &nbsp;&nbsp;|&nbsp;&nbsp; {len(desenhos)} lista(s) por desenho", ref_estilo),
+    ]
+
+    elementos.append(Paragraph("RESUMO CONSOLIDADO (última versão de cada desenho)", secao_estilo))
+    dados_consolidado = [["Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade", "Desenhos"]]
+    for item in consolidado:
+        dados_consolidado.append([item["codigo"], item["descricao"], item["fabricante"] or "", item["bitola"] or "",
+                                   f"{item['quantidade']:g}", item["unidade"], ", ".join(sorted(item["desenhos"]))])
+    if not consolidado:
+        dados_consolidado.append(["-", "Nenhum material cadastrado em nenhuma lista deste projeto.", "", "", "", "", ""])
+    tabela_consolidado = Table(dados_consolidado, repeatRows=1,
+                                colWidths=[2.5 * cm, 5 * cm, 3.5 * cm, 2.5 * cm, 2.5 * cm, 2 * cm, None])
+    tabela_consolidado.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f3a5f")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f4f7")]),
+        ("ALIGN", (4, 0), (5, -1), "CENTER"),
+    ]))
+    elementos.append(tabela_consolidado)
+    elementos.append(PageBreak())
+
+    for i, d in enumerate(desenhos):
+        lista, versao, itens = d["lista"], d["versao"], d["itens"]
+        elementos.append(Paragraph(f"Desenho {lista['numero_desenho']} — {lista['titulo'] or ''}", secao_estilo))
+        elementos.append(Paragraph(
+            f"Revisão: {versao['versao'] if versao else '-'} &nbsp;&nbsp;|&nbsp;&nbsp; "
+            f"Nº Cliente: {lista['numero_cliente'] or '-'} &nbsp;&nbsp;|&nbsp;&nbsp; "
+            f"Nº Fornecedor: {lista['numero_fornecedor'] or '-'}",
+            sub_estilo,
+        ))
+        dados = [["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]]
+        for idx, item in enumerate(itens, start=1):
+            dados.append([idx, item["codigo"], item["descricao"], item["fabricante"] or "",
+                          item["bitola"] or "", str(item["quantidade"]), item["unidade"]])
+        if not itens:
+            dados.append(["-", "-", "Nenhum material nesta versão.", "", "", "", ""])
+        tabela = Table(dados, repeatRows=1, colWidths=[1.5 * cm, 3 * cm, None, 4 * cm, 2.5 * cm, 2.5 * cm, 2.5 * cm])
+        tabela.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e5ea")),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("ALIGN", (0, 0), (1, -1), "CENTER"),
+            ("ALIGN", (4, 0), (-1, -1), "CENTER"),
+        ]))
+        elementos.append(tabela)
+        if i < len(desenhos) - 1:
+            elementos.append(PageBreak())
+
+    if not desenhos:
+        elementos.append(Paragraph("Nenhuma lista por desenho cadastrada neste projeto.", sub_estilo))
+
+    doc.build(elementos)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name=f"relatorio_projeto_{projeto['codigo']}.pdf", mimetype="application/pdf")
