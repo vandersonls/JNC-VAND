@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS configuracoes (
 ) ENGINE=InnoDB;
 
 INSERT IGNORE INTO configuracoes (chave, valor, descricao) VALUES
-    ('nome_empresa', 'BTM Engenharia Elétrica', 'Nome exibido no sistema'),
+    ('nome_empresa', 'NJC Engenharia Elétrica', 'Nome exibido no sistema'),
     ('logo_url', '', 'URL/caminho do logotipo'),
     ('formato_data', 'DD/MM/YYYY', 'Formato de exibição de datas');
 

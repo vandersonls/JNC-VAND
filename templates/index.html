@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BMT — Gestão de Materiais para Projetos Elétricos</title>
+<title>NJC — Gestão de Materiais para Projetos Elétricos</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
 
-<!-- Definição única do logotipo (engrenagem + raio), reutilizada via <use> -->
+<!-- Definição única do logotipo (medalhão NJC), reutilizada via <use> -->
 <svg width="0" height="0" style="position:absolute">
   <defs>
     <linearGradient id="grad-dourado" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -17,9 +17,11 @@
       <stop offset="100%" stop-color="#a9660a"/>
     </linearGradient>
     <symbol id="logo-marca" viewBox="0 0 100 100">
-      <circle cx="50" cy="50" r="37" fill="none" stroke="#212836" stroke-width="13" stroke-dasharray="8.5 6.3"/>
-      <circle cx="50" cy="50" r="29" fill="#161c27"/>
-      <path d="M59 13 L36 56 L49 56 L41 89 L72 44 L56 44 Z" fill="url(#grad-dourado)" stroke="#7a4c05" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="50" cy="50" r="46" fill="#12192a" stroke="url(#grad-dourado)" stroke-width="3"/>
+      <circle cx="50" cy="50" r="39" fill="none" stroke="url(#grad-dourado)" stroke-width="1" opacity=".55"/>
+      <text x="50" y="61" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700"
+            font-size="34" letter-spacing="-1" fill="url(#grad-dourado)">NJC</text>
+      <path d="M27 71 h46" stroke="url(#grad-dourado)" stroke-width="2" stroke-linecap="round" opacity=".8"/>
     </symbol>
   </defs>
 </svg>
@@ -28,7 +30,7 @@
 <div id="tela-login" class="tela-login">
   <svg class="logo-login" width="88" height="88"><use href="#logo-marca"/></svg>
   <form id="form-login" class="card-login">
-    <h1>BMT</h1>
+    <h1>NJC</h1>
     <p class="subtitulo">Gestão de Materiais — Projetos de Engenharia Elétrica</p>
     <label>Email</label>
     <input type="email" id="login-email" required autocomplete="username">
@@ -42,7 +44,7 @@
 <!-- APP -->
 <div id="app" class="app oculto">
   <aside class="sidebar">
-    <div class="logo"><svg width="26" height="26"><use href="#logo-marca"/></svg> BMT</div>
+    <div class="logo"><svg width="26" height="26"><use href="#logo-marca"/></svg> NJC</div>
     <nav>
       <button class="nav-item ativo" data-tab="dashboard">📊 Dashboard</button>
       <button class="nav-item" data-tab="materiais">🧰 Materiais</button>
