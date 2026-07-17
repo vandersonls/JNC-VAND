@@ -128,13 +128,88 @@ function ativarTabInterna(nome) {
 }
 
 // ---------- DASHBOARD ----------
+const CORES_STATUS = {
+  planejamento: "var(--viz-serie-1)",
+  em_andamento: "var(--viz-serie-3)",
+  concluido: "var(--viz-serie-2)",
+  cancelado: "var(--viz-serie-6)",
+};
+const ROTULOS_STATUS = {
+  planejamento: "Planejamento", em_andamento: "Em andamento", concluido: "Concluído", cancelado: "Cancelado",
+};
+const ORDEM_STATUS = ["planejamento", "em_andamento", "concluido", "cancelado"];
+
 async function carregarDashboard() {
-  const [materiais, clientes, projetos] = await Promise.all([
-    api("/api/materiais"), api("/api/clientes"), api("/api/projetos"),
+  const [materiais, clientes, projetos, resumo] = await Promise.all([
+    api("/api/materiais"), api("/api/clientes"), api("/api/projetos"), api("/api/dashboard/resumo"),
   ]);
   document.getElementById("qtd-materiais").textContent = materiais.length;
   document.getElementById("qtd-clientes").textContent = clientes.length;
   document.getElementById("qtd-projetos").textContent = projetos.length;
+
+  renderGraficoStatus(resumo.projetos_por_status);
+  renderGraficoFabricantes(resumo.top_fabricantes);
+  renderGraficoAtividade(resumo.atividade_por_dia);
+}
+
+function renderGraficoStatus(dados) {
+  const cont = document.getElementById("grafico-status");
+  const total = dados.reduce((s, d) => s + d.total, 0);
+  if (!total) {
+    cont.innerHTML = `<div class="grafico-vazio">Nenhum projeto cadastrado ainda.</div>`;
+    return;
+  }
+  const ordenado = [...dados].sort((a, b) => ORDEM_STATUS.indexOf(a.status) - ORDEM_STATUS.indexOf(b.status));
+
+  let acumulado = 0;
+  const fatias = ordenado.map((d) => {
+    const inicio = (acumulado / total) * 360;
+    acumulado += d.total;
+    const fim = (acumulado / total) * 360;
+    return `${CORES_STATUS[d.status] || "var(--viz-ink-muted)"} ${inicio}deg ${fim}deg`;
+  }).join(", ");
+
+  const legenda = ordenado.map((d) => `
+    <div class="grafico-legenda-item">
+      <span class="grafico-legenda-dot" style="background:${CORES_STATUS[d.status] || "var(--viz-ink-muted)"}"></span>
+      <span class="grafico-legenda-label">${ROTULOS_STATUS[d.status] || d.status}</span>
+      <span class="grafico-legenda-valor">${d.total}</span>
+    </div>`).join("");
+
+  cont.innerHTML = `
+    <div class="grafico-donut" style="background: conic-gradient(${fatias})" title="Total: ${total} projeto(s)">
+      <div class="grafico-donut-total">${total}<small>total</small></div>
+    </div>
+    <div class="grafico-legenda">${legenda}</div>`;
+}
+
+function renderGraficoFabricantes(dados) {
+  const cont = document.getElementById("grafico-fabricantes");
+  if (!dados.length) {
+    cont.innerHTML = `<div class="grafico-vazio">Nenhum material cadastrado ainda.</div>`;
+    return;
+  }
+  const max = Math.max(...dados.map((d) => d.total));
+  cont.innerHTML = dados.map((d) => `
+    <div class="grafico-barra-linha" title="${d.fabricante}: ${d.total} material(is)">
+      <span class="grafico-barra-label">${d.fabricante}</span>
+      <span class="grafico-barra-trilho"><span class="grafico-barra-preenchimento" style="width:${(d.total / max) * 100}%"></span></span>
+      <span class="grafico-barra-valor">${d.total}</span>
+    </div>`).join("");
+}
+
+function renderGraficoAtividade(dados) {
+  const cont = document.getElementById("grafico-atividade");
+  const max = Math.max(1, ...dados.map((d) => d.total));
+  cont.innerHTML = dados.map((d) => {
+    const dt = new Date(d.data + "T00:00:00");
+    const rotulo = dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    return `
+      <div class="grafico-coluna-item" title="${rotulo}: ${d.total} evento(s)">
+        <div class="grafico-coluna-barra" style="height:${(d.total / max) * 100}%"></div>
+        <span class="grafico-coluna-rotulo">${rotulo}</span>
+      </div>`;
+  }).join("");
 }
 
 // ---------- MATERIAIS ----------
