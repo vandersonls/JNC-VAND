@@ -371,21 +371,77 @@ async function abrirProjeto(id) {
   await carregarListas(id);
 }
 
+const arvoreState = { listas: [], versoesPorLista: {}, expandidas: new Set() };
+
 async function carregarListas(projetoId) {
-  const listas = await api(`/api/projetos/${projetoId}/listas`);
-  const tbody = document.getElementById("tbody-listas");
-  tbody.innerHTML = listas.map((l) => `
-    <tr>
-      <td>${l.numero_desenho}</td><td>${l.titulo || ""}</td>
-      <td>${l.versao_atual ? "v" + l.versao_atual : "-"}</td>
-      <td>${l.versao_criado_em ? new Date(l.versao_criado_em).toLocaleString("pt-BR") : "-"}</td>
-      <td class="acoes-linha">
-        <button class="link-acao" onclick="abrirEditorLista(${l.id})">Abrir</button>
-        <button class="link-acao" onclick="verHistoricoLista(${l.id})">Histórico</button>
-        <button class="link-acao somente-admin" onclick="excluirLista(${l.id})">Excluir</button>
-      </td>
-    </tr>`).join("") || `<tr><td colspan="5">Nenhuma lista cadastrada para este projeto.</td></tr>`;
+  arvoreState.listas = await api(`/api/projetos/${projetoId}/listas`);
+  arvoreState.versoesPorLista = {};
+  arvoreState.expandidas.clear();
+  renderArvoreListas();
+}
+
+function renderArvoreListas() {
+  const cont = document.getElementById("arvore-listas");
+  if (!arvoreState.listas.length) {
+    cont.innerHTML = `<div class="arvore-vazio">Nenhuma lista cadastrada para este projeto.</div>`;
+    return;
+  }
+  cont.innerHTML = arvoreState.listas.map(renderNoLista).join("");
   aplicarPermissoes();
+}
+
+function renderNoLista(l) {
+  const aberta = arvoreState.expandidas.has(l.id);
+  const versoes = arvoreState.versoesPorLista[l.id];
+  return `
+    <div class="arvore-no" data-lista-id="${l.id}">
+      <div class="arvore-linha">
+        <button class="arvore-toggle" onclick="toggleListaArvore(${l.id})">${aberta ? "−" : "+"}</button>
+        <span class="arvore-icone">📁</span>
+        <span class="arvore-label" onclick="toggleListaArvore(${l.id})">
+          ${l.numero_desenho}${l.titulo ? " — " + l.titulo : ""}
+          <span class="arvore-sub">${l.versao_atual ? "v" + l.versao_atual : "sem versão"}</span>
+        </span>
+        <span class="arvore-acoes">
+          <button class="link-acao" onclick="abrirEditorLista(${l.id})">Abrir</button>
+          <button class="link-acao somente-admin" onclick="excluirLista(${l.id})">Excluir</button>
+        </span>
+      </div>
+      <div class="arvore-filhos ${aberta ? "" : "oculto"}" id="filhos-lista-${l.id}">
+        ${aberta ? renderFilhosVersoes(l.id, versoes) : ""}
+      </div>
+    </div>`;
+}
+
+function renderFilhosVersoes(listaId, versoes) {
+  if (!versoes) return `<div class="arvore-carregando">Carregando versões...</div>`;
+  if (!versoes.length) return `<div class="arvore-carregando">Nenhuma versão salva.</div>`;
+  return versoes.map((v) => `
+    <div class="arvore-linha">
+      <button class="arvore-toggle invisivel">•</button>
+      <span class="arvore-icone">📄</span>
+      <span class="arvore-label" onclick="verVersao(${v.id})">
+        v${v.versao} — ${new Date(v.criado_em).toLocaleString("pt-BR")}
+        <span class="arvore-sub">${v.criado_por_nome || "-"}</span>
+      </span>
+      <span class="arvore-acoes">
+        <button class="link-acao" onclick="verVersao(${v.id})">Ver</button>
+      </span>
+    </div>`).join("");
+}
+
+async function toggleListaArvore(listaId) {
+  if (arvoreState.expandidas.has(listaId)) {
+    arvoreState.expandidas.delete(listaId);
+    renderArvoreListas();
+    return;
+  }
+  arvoreState.expandidas.add(listaId);
+  if (!arvoreState.versoesPorLista[listaId]) {
+    renderArvoreListas();
+    arvoreState.versoesPorLista[listaId] = await api(`/api/listas/${listaId}/versoes`);
+  }
+  renderArvoreListas();
 }
 
 async function excluirLista(id) {
@@ -519,25 +575,6 @@ async function salvarEditorLista(listaId) {
     toast("Nova versão salva com sucesso");
     carregarListas(state.projetoAtual.id);
   } catch (err) { toast(err.message, "erro"); }
-}
-
-async function verHistoricoLista(listaId) {
-  const versoes = await api(`/api/listas/${listaId}/versoes`);
-  abrirModal(`
-    <h3>Histórico de Versões</h3>
-    <table class="tabela">
-      <thead><tr><th>Versão</th><th>Criado por</th><th>Data</th><th></th></tr></thead>
-      <tbody>
-        ${versoes.map((v) => `
-          <tr>
-            <td>v${v.versao}</td><td>${v.criado_por_nome || "-"}</td>
-            <td>${new Date(v.criado_em).toLocaleString("pt-BR")}</td>
-            <td><button class="link-acao" onclick="verVersao(${v.id})">Ver</button></td>
-          </tr>`).join("")}
-      </tbody>
-    </table>
-    <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
-  `);
 }
 
 async function verVersao(versaoId) {
