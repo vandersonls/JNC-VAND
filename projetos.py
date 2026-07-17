@@ -173,9 +173,9 @@ def criar_lista(projeto_id):
         return jsonify({"erro": "Número do desenho é obrigatório"}), 400
 
     lista_id = db.execute(
-        """INSERT INTO listas_desenho (projeto_id, numero_desenho, titulo)
-           VALUES (%s, %s, %s)""",
-        (projeto_id, numero_desenho, data.get("titulo", "")),
+        """INSERT INTO listas_desenho (projeto_id, numero_desenho, titulo, numero_cliente, numero_fornecedor)
+           VALUES (%s, %s, %s, %s, %s)""",
+        (projeto_id, numero_desenho, data.get("titulo", ""), data.get("numero_cliente", ""), data.get("numero_fornecedor", "")),
     )
     versao_id = db.execute(
         """INSERT INTO lista_desenho_versoes (lista_desenho_id, versao, status, observacoes, criado_por)
@@ -201,10 +201,14 @@ def editar_lista(lista_id):
     if not lista:
         return jsonify({"erro": "Lista não encontrada"}), 404
 
-    if data.get("titulo") is not None or data.get("numero_desenho"):
+    if any(campo in data for campo in ("titulo", "numero_desenho", "numero_cliente", "numero_fornecedor")):
         db.execute(
-            "UPDATE listas_desenho SET titulo=%s, numero_desenho=%s WHERE id=%s",
-            (data.get("titulo", lista["titulo"]), data.get("numero_desenho", lista["numero_desenho"]), lista_id),
+            "UPDATE listas_desenho SET titulo=%s, numero_desenho=%s, numero_cliente=%s, numero_fornecedor=%s WHERE id=%s",
+            (
+                data.get("titulo", lista["titulo"]), data.get("numero_desenho", lista["numero_desenho"]),
+                data.get("numero_cliente", lista["numero_cliente"]), data.get("numero_fornecedor", lista["numero_fornecedor"]),
+                lista_id,
+            ),
         )
 
     ultima = db.query_one(

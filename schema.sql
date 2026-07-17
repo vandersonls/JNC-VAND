@@ -75,11 +75,24 @@ CREATE TABLE IF NOT EXISTS listas_desenho (
     projeto_id INT NOT NULL,
     numero_desenho VARCHAR(100) NOT NULL,
     titulo VARCHAR(200),
+    numero_cliente VARCHAR(100),
+    numero_fornecedor VARCHAR(100),
     versao_atual_id INT NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_lista_projeto FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
     UNIQUE KEY uq_projeto_desenho (projeto_id, numero_desenho)
 ) ENGINE=InnoDB;
+
+-- Migração idempotente para bancos já existentes (schema.sql acima cobre instalações novas)
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'numero_cliente');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN numero_cliente VARCHAR(100) AFTER titulo', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'numero_fornecedor');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN numero_fornecedor VARCHAR(100) AFTER numero_cliente', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- =========================================================
 -- VERSÕES DA LISTA POR DESENHO (histórico imutável)

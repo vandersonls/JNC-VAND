@@ -536,6 +536,8 @@ function modalNovaLista() {
     <div class="form-grid">
       <label>Nº do Desenho</label><input id="lista-numero">
       <label>Título</label><input id="lista-titulo">
+      <label>Nº do Cliente</label><input id="lista-numero-cliente">
+      <label>Nº do Fornecedor</label><input id="lista-numero-fornecedor">
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
@@ -547,10 +549,12 @@ function modalNovaLista() {
 async function criarLista() {
   const numero_desenho = document.getElementById("lista-numero").value.trim();
   const titulo = document.getElementById("lista-titulo").value.trim();
+  const numero_cliente = document.getElementById("lista-numero-cliente").value.trim();
+  const numero_fornecedor = document.getElementById("lista-numero-fornecedor").value.trim();
   if (!numero_desenho) { toast("Informe o número do desenho", "erro"); return; }
   try {
     const resultado = await api(`/api/projetos/${state.projetoAtual.id}/listas`, {
-      method: "POST", body: JSON.stringify({ numero_desenho, titulo, itens: [] }),
+      method: "POST", body: JSON.stringify({ numero_desenho, titulo, numero_cliente, numero_fornecedor, itens: [] }),
     });
     fecharModal();
     await carregarListas(state.projetoAtual.id);
@@ -586,6 +590,8 @@ function renderEditorLista(listaId, lista, itens) {
     <h3>Lista por Desenho — ${lista.numero_desenho}</h3>
     <div class="form-grid">
       <label>Título</label><input id="editor-titulo" value="${lista.titulo || ""}">
+      <label>Nº do Cliente</label><input id="editor-numero-cliente" value="${lista.numero_cliente || ""}">
+      <label>Nº do Fornecedor</label><input id="editor-numero-fornecedor" value="${lista.numero_fornecedor || ""}">
     </div>
     <datalist id="materiais-datalist">${opcoesDatalist}</datalist>
     <div class="itens-editor" id="itens-editor"></div>
@@ -649,6 +655,8 @@ async function salvarEditorLista(listaId) {
   const itens = (window._itensEditor || []).filter((i) => i.material_id);
   const payload = {
     titulo: document.getElementById("editor-titulo").value.trim(),
+    numero_cliente: document.getElementById("editor-numero-cliente").value.trim(),
+    numero_fornecedor: document.getElementById("editor-numero-fornecedor").value.trim(),
     itens: itens.map((i) => ({ material_id: Number(i.material_id), quantidade: Number(i.quantidade) || 0, observacao: i.observacao || "" })),
   };
   try {

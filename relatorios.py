@@ -102,6 +102,10 @@ def relatorio_excel(lista_id):
         f"Doc. Referência: {_doc_referencia(lista)}    |    Revisão: {versao['versao'] if versao else '-'}",
         tamanho=9,
     )
+    escrever_mesclado(
+        f"Nº do Cliente: {lista['numero_cliente'] or '-'}    |    Nº do Fornecedor: {lista['numero_fornecedor'] or '-'}",
+        tamanho=9,
+    )
     linha += 1
 
     cabecalho = ["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]
@@ -198,6 +202,10 @@ def relatorio_pdf(lista_id):
         Paragraph("LISTA DE MATERIAIS ELÉTRICOS POR DESENHO", subtitulo_estilo),
         Paragraph(lista["titulo"] or lista["numero_desenho"], ref_estilo),
         Paragraph(f"Doc. Referência: {_doc_referencia(lista)} &nbsp;&nbsp;|&nbsp;&nbsp; Revisão: {versao['versao'] if versao else '-'}", ref_estilo),
+        Paragraph(
+            f"Nº do Cliente: {lista['numero_cliente'] or '-'} &nbsp;&nbsp;|&nbsp;&nbsp; Nº do Fornecedor: {lista['numero_fornecedor'] or '-'}",
+            ref_estilo,
+        ),
     ]
 
     dados_materiais = [["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]]
