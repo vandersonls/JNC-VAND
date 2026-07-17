@@ -43,6 +43,7 @@ def create_app():
     CORS(app, supports_credentials=True)
 
     db.init_pool(DB_CONFIG)
+    print(f"[BMT] Banco configurado: host={DB_CONFIG['DB_HOST']} port={DB_CONFIG['DB_PORT']} db={DB_CONFIG['DB_NAME']}")
 
     login_manager.init_app(app)
     login_manager.login_view = None
@@ -57,6 +58,10 @@ def create_app():
     @app.route("/")
     def index():
         return render_template("index.html")
+
+    @app.route("/health")
+    def health():
+        return {"status": "ok"}
 
     return app
 
