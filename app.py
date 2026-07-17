@@ -1,69 +1,67 @@
-from flask import Flask, render_template, jsonify
+import os
+from urllib.parse import urlparse
+
+from flask import Flask, render_template
 from flask_cors import CORS
-import mysql.connector
 
-app = Flask(__name__)
-CORS(app)
-
-
-def conectar():
-    return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        passwd="root",
-        database="bmt",
-        charset="utf8mb4"
-    )
+import db
+from auth import auth_bp, login_manager
+from materiais import materiais_bp
+from clientes import clientes_bp
+from projetos import projetos_bp
+from usuarios import usuarios_bp
+from configuracoes import config_bp
 
 
-@app.route("/")
-def index():
-    return render_template('index.html')
+def _montar_db_config():
+    """Usa MYSQL_URL (plugin MySQL do Railway) se existir; senão cai nas variáveis DB_* / defaults locais."""
+    url = os.environ.get("MYSQL_URL") or os.environ.get("DATABASE_URL")
+    if url:
+        p = urlparse(url)
+        return {
+            "DB_HOST": p.hostname,
+            "DB_PORT": p.port or 3306,
+            "DB_USER": p.username,
+            "DB_PASSWORD": p.password,
+            "DB_NAME": p.path.lstrip("/"),
+        }
+    return {
+        "DB_HOST": os.environ.get("DB_HOST") or os.environ.get("MYSQLHOST", "localhost"),
+        "DB_PORT": os.environ.get("DB_PORT") or os.environ.get("MYSQLPORT", 3306),
+        "DB_USER": os.environ.get("DB_USER") or os.environ.get("MYSQLUSER", "root"),
+        "DB_PASSWORD": os.environ.get("DB_PASSWORD") or os.environ.get("MYSQLPASSWORD", "root"),
+        "DB_NAME": os.environ.get("DB_NAME") or os.environ.get("MYSQLDATABASE", "bmt"),
+    }
 
 
-@app.route("/listamatrix")
-def consultar_materiais():
-    try:
-        print("🔄 Conectando ao MySQL...")
-        conn = conectar()
-        cursor = conn.cursor(dictionary=True)
+DB_CONFIG = _montar_db_config()
 
-        cursor.execute("SELECT * FROM listamatrix")
-        materiais = cursor.fetchall()
 
-        cursor.close()
-        conn.close()
+def create_app():
+    app = Flask(__name__)
+    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "troque-esta-chave-em-producao")
+    CORS(app, supports_credentials=True)
 
-        # 🔥 CORREÇÃO: Remove o BOM dos nomes das colunas
-        if materiais:
-            # Pega o primeiro item e corrige as chaves
-            primeiro = materiais[0]
-            chaves_corrigidas = {}
-            for chave in primeiro.keys():
-                # Remove o BOM e espaços extras
-                chave_limpa = chave.replace('\ufeff', '').strip()
-                chaves_corrigidas[chave] = chave_limpa
+    db.init_pool(DB_CONFIG)
 
-            # Recria a lista com as chaves corrigidas
-            materiais_corrigidos = []
-            for item in materiais:
-                novo_item = {}
-                for chave_original, chave_limpa in chaves_corrigidas.items():
-                    novo_item[chave_limpa] = item[chave_original]
-                materiais_corrigidos.append(novo_item)
+    login_manager.init_app(app)
+    login_manager.login_view = None
 
-            print(f"✅ Colunas corrigidas: {list(materiais_corrigidos[0].keys())}")
-            return jsonify(materiais_corrigidos)
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(materiais_bp)
+    app.register_blueprint(clientes_bp)
+    app.register_blueprint(projetos_bp)
+    app.register_blueprint(usuarios_bp)
+    app.register_blueprint(config_bp)
 
-        return jsonify(materiais)
+    @app.route("/")
+    def index():
+        return render_template("index.html")
 
-    except mysql.connector.Error as e:
-        print(f"❌ Erro MySQL: {e}")
-        return jsonify({"erro": f"MySQL: {str(e)}"}), 500
-    except Exception as e:
-        print(f"❌ Erro Geral: {e}")
-        return jsonify({"erro": f"Geral: {str(e)}"}), 500
+    return app
 
+
+app = create_app()
 
 if __name__ == "__main__":
     app.run(port=5000, debug=True)

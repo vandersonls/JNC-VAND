@@ -1,0 +1,616 @@
+const state = {
+  usuario: null,
+  materiais: [],
+  clientes: [],
+  projetos: [],
+  projetoAtual: null,
+};
+
+// ---------- HELPERS ----------
+async function api(url, options = {}) {
+  const opts = { credentials: "include", headers: {}, ...options };
+  if (opts.body && !(opts.body instanceof FormData)) {
+    opts.headers["Content-Type"] = "application/json";
+  }
+  const resp = await fetch(url, opts);
+  let data = null;
+  try { data = await resp.json(); } catch (_) { /* respostas binárias (excel/pdf) não chegam aqui */ }
+  if (!resp.ok) {
+    throw new Error((data && data.erro) || `Erro ${resp.status}`);
+  }
+  return data;
+}
+
+function toast(msg, tipo = "sucesso") {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = `toast ${tipo}`;
+  el.classList.remove("oculto");
+  setTimeout(() => el.classList.add("oculto"), 3000);
+}
+
+function ehAdmin() {
+  return state.usuario && (state.usuario.perfil === "master" || state.usuario.perfil === "administrador");
+}
+
+function aplicarPermissoes() {
+  document.querySelectorAll(".somente-admin").forEach((el) => {
+    el.style.display = ehAdmin() ? "" : "none";
+  });
+}
+
+function abrirModal(html) {
+  document.getElementById("modal-conteudo").innerHTML = html;
+  document.getElementById("modal-overlay").classList.remove("oculto");
+}
+function fecharModal() {
+  document.getElementById("modal-overlay").classList.add("oculto");
+}
+document.getElementById("modal-overlay").addEventListener("click", (e) => {
+  if (e.target.id === "modal-overlay") fecharModal();
+});
+
+// ---------- LOGIN ----------
+async function verificarSessao() {
+  const data = await api("/api/me");
+  if (data.usuario) {
+    state.usuario = data.usuario;
+    mostrarApp();
+  } else {
+    document.getElementById("tela-login").classList.remove("oculto");
+    document.getElementById("app").classList.add("oculto");
+  }
+}
+
+document.getElementById("form-login").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = document.getElementById("login-email").value.trim();
+  const senha = document.getElementById("login-senha").value;
+  const erroEl = document.getElementById("login-erro");
+  erroEl.textContent = "";
+  try {
+    const data = await api("/api/login", { method: "POST", body: JSON.stringify({ email, senha }) });
+    state.usuario = data.usuario;
+    mostrarApp();
+  } catch (err) {
+    erroEl.textContent = err.message;
+  }
+});
+
+document.getElementById("btn-logout").addEventListener("click", async () => {
+  await api("/api/logout", { method: "POST" });
+  location.reload();
+});
+
+function mostrarApp() {
+  document.getElementById("tela-login").classList.add("oculto");
+  document.getElementById("app").classList.remove("oculto");
+  document.getElementById("usuario-nome").textContent = state.usuario.nome;
+  document.getElementById("usuario-perfil").textContent = state.usuario.perfil;
+  aplicarPermissoes();
+  ativarTab("dashboard");
+  carregarDashboard();
+}
+
+// ---------- NAVEGAÇÃO ----------
+document.querySelectorAll(".nav-item").forEach((btn) => {
+  btn.addEventListener("click", () => ativarTab(btn.dataset.tab));
+});
+
+function ativarTab(nome) {
+  document.querySelectorAll(".nav-item").forEach((b) => b.classList.toggle("ativo", b.dataset.tab === nome));
+  document.querySelectorAll(".tab").forEach((t) => t.classList.remove("ativo"));
+  document.getElementById(`tab-${nome}`).classList.add("ativo");
+  if (nome === "materiais") carregarMateriais();
+  if (nome === "clientes") carregarClientes();
+  if (nome === "projetos") carregarProjetos();
+  if (nome === "usuarios") carregarUsuarios();
+  if (nome === "configuracoes") carregarConfiguracoes();
+}
+
+function ativarTabInterna(nome) {
+  document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("ativo"));
+  document.querySelectorAll(".tab").forEach((t) => t.classList.remove("ativo"));
+  document.getElementById(`tab-${nome}`).classList.add("ativo");
+}
+
+// ---------- DASHBOARD ----------
+async function carregarDashboard() {
+  const [materiais, clientes, projetos] = await Promise.all([
+    api("/api/materiais"), api("/api/clientes"), api("/api/projetos"),
+  ]);
+  document.getElementById("qtd-materiais").textContent = materiais.length;
+  document.getElementById("qtd-clientes").textContent = clientes.length;
+  document.getElementById("qtd-projetos").textContent = projetos.length;
+}
+
+// ---------- MATERIAIS ----------
+async function carregarMateriais(busca = "") {
+  const url = busca ? `/api/materiais?q=${encodeURIComponent(busca)}` : "/api/materiais";
+  state.materiais = await api(url);
+  const tbody = document.getElementById("tbody-materiais");
+  tbody.innerHTML = state.materiais.map((m) => `
+    <tr>
+      <td>${m.codigo}</td><td>${m.descricao}</td><td>${m.fabricante || ""}</td>
+      <td>${m.bitola || ""}</td><td>${m.unidade}</td>
+      <td class="somente-admin">
+        <button class="link-acao" onclick="editarMaterial(${m.id})">Editar</button>
+        <button class="link-acao" onclick="excluirMaterial(${m.id})">Excluir</button>
+      </td>
+    </tr>`).join("") || `<tr><td colspan="6">Nenhum material cadastrado.</td></tr>`;
+  aplicarPermissoes();
+}
+
+let buscaMateriaisTimer;
+document.getElementById("materiais-busca").addEventListener("input", (e) => {
+  clearTimeout(buscaMateriaisTimer);
+  buscaMateriaisTimer = setTimeout(() => carregarMateriais(e.target.value), 300);
+});
+
+function modalMaterial(material = null) {
+  const m = material || { codigo: "", descricao: "", fabricante: "", bitola: "", unidade: "" };
+  abrirModal(`
+    <h3>${material ? "Editar" : "Novo"} Material</h3>
+    <div class="form-grid">
+      <label>Código</label><input id="mat-codigo" value="${m.codigo}">
+      <label>Descrição</label><input id="mat-descricao" value="${m.descricao}">
+      <label>Fabricante</label><input id="mat-fabricante" value="${m.fabricante || ""}">
+      <label>Bitola</label><input id="mat-bitola" value="${m.bitola || ""}">
+      <label>Unidade</label><input id="mat-unidade" value="${m.unidade}">
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" onclick="salvarMaterial(${material ? material.id : "null"})">Salvar</button>
+    </div>
+  `);
+}
+
+async function salvarMaterial(id) {
+  const payload = {
+    codigo: document.getElementById("mat-codigo").value.trim(),
+    descricao: document.getElementById("mat-descricao").value.trim(),
+    fabricante: document.getElementById("mat-fabricante").value.trim(),
+    bitola: document.getElementById("mat-bitola").value.trim(),
+    unidade: document.getElementById("mat-unidade").value.trim(),
+  };
+  try {
+    if (id) await api(`/api/materiais/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+    else await api("/api/materiais", { method: "POST", body: JSON.stringify(payload) });
+    fecharModal();
+    toast("Material salvo com sucesso");
+    carregarMateriais();
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+function editarMaterial(id) {
+  const m = state.materiais.find((x) => x.id === id);
+  modalMaterial(m);
+}
+
+async function excluirMaterial(id) {
+  if (!confirm("Excluir este material?")) return;
+  await api(`/api/materiais/${id}`, { method: "DELETE" });
+  toast("Material excluído");
+  carregarMateriais();
+}
+
+document.getElementById("btn-novo-material").addEventListener("click", () => modalMaterial());
+
+document.getElementById("btn-importar-excel").addEventListener("click", () => {
+  document.getElementById("input-importar").click();
+});
+document.getElementById("input-importar").addEventListener("change", async (e) => {
+  const arquivo = e.target.files[0];
+  if (!arquivo) return;
+  const formData = new FormData();
+  formData.append("arquivo", arquivo);
+  try {
+    const resultado = await api("/api/materiais/importar/excel", { method: "POST", body: formData });
+    toast(`Importado: ${resultado.inseridos} novos, ${resultado.atualizados} atualizados`);
+    carregarMateriais();
+  } catch (err) { toast(err.message, "erro"); }
+  e.target.value = "";
+});
+
+// ---------- CLIENTES ----------
+async function carregarClientes(busca = "") {
+  const url = busca ? `/api/clientes?q=${encodeURIComponent(busca)}` : "/api/clientes";
+  state.clientes = await api(url);
+  const tbody = document.getElementById("tbody-clientes");
+  tbody.innerHTML = state.clientes.map((c) => `
+    <tr>
+      <td>${c.razao_social}</td><td>${c.nome_fantasia || ""}</td><td>${c.cnpj_cpf || ""}</td>
+      <td>${c.contato || ""}</td><td>${c.telefone || ""}</td>
+      <td class="somente-admin">
+        <button class="link-acao" onclick="editarCliente(${c.id})">Editar</button>
+        <button class="link-acao" onclick="excluirCliente(${c.id})">Excluir</button>
+      </td>
+    </tr>`).join("") || `<tr><td colspan="6">Nenhum cliente cadastrado.</td></tr>`;
+  aplicarPermissoes();
+}
+
+let buscaClientesTimer;
+document.getElementById("clientes-busca").addEventListener("input", (e) => {
+  clearTimeout(buscaClientesTimer);
+  buscaClientesTimer = setTimeout(() => carregarClientes(e.target.value), 300);
+});
+
+function modalCliente(cliente = null) {
+  const c = cliente || { razao_social: "", nome_fantasia: "", cnpj_cpf: "", contato: "", telefone: "", email: "", endereco: "" };
+  abrirModal(`
+    <h3>${cliente ? "Editar" : "Novo"} Cliente</h3>
+    <div class="form-grid">
+      <label>Razão Social</label><input id="cli-razao" value="${c.razao_social}">
+      <label>Nome Fantasia</label><input id="cli-fantasia" value="${c.nome_fantasia || ""}">
+      <label>CNPJ/CPF</label><input id="cli-doc" value="${c.cnpj_cpf || ""}">
+      <label>Contato</label><input id="cli-contato" value="${c.contato || ""}">
+      <label>Telefone</label><input id="cli-telefone" value="${c.telefone || ""}">
+      <label>Email</label><input id="cli-email" value="${c.email || ""}">
+      <label>Endereço</label><input id="cli-endereco" value="${c.endereco || ""}">
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" onclick="salvarCliente(${cliente ? cliente.id : "null"})">Salvar</button>
+    </div>
+  `);
+}
+
+async function salvarCliente(id) {
+  const payload = {
+    razao_social: document.getElementById("cli-razao").value.trim(),
+    nome_fantasia: document.getElementById("cli-fantasia").value.trim(),
+    cnpj_cpf: document.getElementById("cli-doc").value.trim(),
+    contato: document.getElementById("cli-contato").value.trim(),
+    telefone: document.getElementById("cli-telefone").value.trim(),
+    email: document.getElementById("cli-email").value.trim(),
+    endereco: document.getElementById("cli-endereco").value.trim(),
+  };
+  try {
+    if (id) await api(`/api/clientes/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+    else await api("/api/clientes", { method: "POST", body: JSON.stringify(payload) });
+    fecharModal();
+    toast("Cliente salvo com sucesso");
+    carregarClientes();
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+function editarCliente(id) {
+  modalCliente(state.clientes.find((x) => x.id === id));
+}
+
+async function excluirCliente(id) {
+  if (!confirm("Excluir este cliente?")) return;
+  await api(`/api/clientes/${id}`, { method: "DELETE" });
+  toast("Cliente excluído");
+  carregarClientes();
+}
+
+document.getElementById("btn-novo-cliente").addEventListener("click", () => modalCliente());
+
+// ---------- PROJETOS ----------
+async function carregarProjetos() {
+  state.projetos = await api("/api/projetos");
+  const tbody = document.getElementById("tbody-projetos");
+  tbody.innerHTML = state.projetos.map((p) => `
+    <tr>
+      <td>${p.codigo}</td><td>${p.nome}</td><td>${p.cliente_nome || "-"}</td><td>${p.status}</td>
+      <td class="acoes-linha">
+        <button class="link-acao" onclick="abrirProjeto(${p.id})">Abrir</button>
+        <button class="link-acao somente-admin" onclick="editarProjeto(${p.id})">Editar</button>
+      </td>
+    </tr>`).join("") || `<tr><td colspan="5">Nenhum projeto cadastrado.</td></tr>`;
+  aplicarPermissoes();
+}
+
+async function modalProjeto(projeto = null) {
+  if (!state.clientes.length) state.clientes = await api("/api/clientes");
+  const p = projeto || { codigo: "", nome: "", cliente_id: "", descricao: "", status: "planejamento" };
+  const opcoesClientes = state.clientes.map((c) => `<option value="${c.id}" ${p.cliente_id == c.id ? "selected" : ""}>${c.razao_social}</option>`).join("");
+  abrirModal(`
+    <h3>${projeto ? "Editar" : "Novo"} Projeto</h3>
+    <div class="form-grid">
+      <label>Código</label><input id="proj-codigo" value="${p.codigo}">
+      <label>Nome</label><input id="proj-nome" value="${p.nome}">
+      <label>Cliente</label>
+      <select id="proj-cliente"><option value="">-- Selecione --</option>${opcoesClientes}</select>
+      <label>Status</label>
+      <select id="proj-status">
+        ${["planejamento", "em_andamento", "concluido", "cancelado"].map((s) => `<option value="${s}" ${p.status === s ? "selected" : ""}>${s}</option>`).join("")}
+      </select>
+      <label>Descrição</label><textarea id="proj-descricao" rows="3">${p.descricao || ""}</textarea>
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" onclick="salvarProjeto(${projeto ? projeto.id : "null"})">Salvar</button>
+    </div>
+  `);
+}
+
+async function salvarProjeto(id) {
+  const payload = {
+    codigo: document.getElementById("proj-codigo").value.trim(),
+    nome: document.getElementById("proj-nome").value.trim(),
+    cliente_id: document.getElementById("proj-cliente").value || null,
+    status: document.getElementById("proj-status").value,
+    descricao: document.getElementById("proj-descricao").value.trim(),
+  };
+  try {
+    if (id) await api(`/api/projetos/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+    else await api("/api/projetos", { method: "POST", body: JSON.stringify(payload) });
+    fecharModal();
+    toast("Projeto salvo com sucesso");
+    carregarProjetos();
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+function editarProjeto(id) {
+  modalProjeto(state.projetos.find((x) => x.id === id));
+}
+
+document.getElementById("btn-novo-projeto").addEventListener("click", () => modalProjeto());
+document.getElementById("btn-voltar-projetos").addEventListener("click", () => ativarTabInterna("projetos"));
+
+// ---------- LISTAS POR DESENHO ----------
+async function abrirProjeto(id) {
+  state.projetoAtual = state.projetos.find((p) => p.id === id);
+  document.getElementById("projeto-detalhe-titulo").textContent = `${state.projetoAtual.codigo} — ${state.projetoAtual.nome}`;
+  ativarTabInterna("projeto-detalhe");
+  await carregarListas(id);
+}
+
+async function carregarListas(projetoId) {
+  const listas = await api(`/api/projetos/${projetoId}/listas`);
+  const tbody = document.getElementById("tbody-listas");
+  tbody.innerHTML = listas.map((l) => `
+    <tr>
+      <td>${l.numero_desenho}</td><td>${l.titulo || ""}</td>
+      <td>${l.versao_atual ? "v" + l.versao_atual : "-"}</td>
+      <td>${l.versao_criado_em ? new Date(l.versao_criado_em).toLocaleString("pt-BR") : "-"}</td>
+      <td class="acoes-linha">
+        <button class="link-acao" onclick="abrirEditorLista(${l.id})">Abrir</button>
+        <button class="link-acao" onclick="verHistoricoLista(${l.id})">Histórico</button>
+        <button class="link-acao somente-admin" onclick="excluirLista(${l.id})">Excluir</button>
+      </td>
+    </tr>`).join("") || `<tr><td colspan="5">Nenhuma lista cadastrada para este projeto.</td></tr>`;
+  aplicarPermissoes();
+}
+
+async function excluirLista(id) {
+  if (!confirm("Excluir esta lista por desenho e todo seu histórico?")) return;
+  await api(`/api/listas/${id}`, { method: "DELETE" });
+  toast("Lista excluída");
+  carregarListas(state.projetoAtual.id);
+}
+
+function modalNovaLista() {
+  abrirModal(`
+    <h3>Nova Lista por Desenho</h3>
+    <div class="form-grid">
+      <label>Nº do Desenho</label><input id="lista-numero">
+      <label>Título</label><input id="lista-titulo">
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" onclick="criarLista()">Criar e Abrir</button>
+    </div>
+  `);
+}
+
+async function criarLista() {
+  const numero_desenho = document.getElementById("lista-numero").value.trim();
+  const titulo = document.getElementById("lista-titulo").value.trim();
+  if (!numero_desenho) { toast("Informe o número do desenho", "erro"); return; }
+  try {
+    const resultado = await api(`/api/projetos/${state.projetoAtual.id}/listas`, {
+      method: "POST", body: JSON.stringify({ numero_desenho, titulo, itens: [] }),
+    });
+    fecharModal();
+    await carregarListas(state.projetoAtual.id);
+    abrirEditorLista(resultado.id);
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+document.getElementById("btn-nova-lista").addEventListener("click", modalNovaLista);
+
+// ---------- EDITOR DA LISTA (com versionamento) ----------
+async function abrirEditorLista(listaId) {
+  if (!state.materiais.length) state.materiais = await api("/api/materiais");
+  const dados = await api(`/api/listas/${listaId}`);
+  const itensIniciais = dados.itens.map((i) => ({ material_id: i.material_id, codigo: i.codigo, descricao: i.descricao, quantidade: i.quantidade, observacao: i.observacao || "" }));
+
+  renderEditorLista(listaId, dados.lista, itensIniciais);
+}
+
+function renderEditorLista(listaId, lista, itens) {
+  const opcoesMateriais = state.materiais.map((m) => `<option value="${m.id}">${m.codigo} — ${m.descricao}</option>`).join("");
+
+  const linhaHtml = (item, idx) => `
+    <div class="item-linha" data-idx="${idx}">
+      <select class="item-material">${`<option value="">-- Material --</option>` + opcoesMateriais}</select>
+      <input class="item-qtd" type="number" step="0.001" min="0" value="${item.quantidade}" placeholder="Qtd">
+      <input class="item-obs" type="text" value="${item.observacao || ""}" placeholder="Observação">
+      <button class="btn-perigo" onclick="removerItemLinha(${idx})">Remover</button>
+    </div>`;
+
+  abrirModal(`
+    <h3>Lista por Desenho — ${lista.numero_desenho}</h3>
+    <div class="form-grid">
+      <label>Título</label><input id="editor-titulo" value="${lista.titulo || ""}">
+    </div>
+    <div class="itens-editor" id="itens-editor"></div>
+    <button class="btn-secundario somente-admin" onclick="adicionarItemLinha()">+ Adicionar Material</button>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario somente-admin" onclick="salvarEditorLista(${listaId})">Salvar (nova versão)</button>
+    </div>
+  `);
+  aplicarPermissoes();
+
+  window._itensEditor = itens.length ? [...itens] : [];
+  redesenharItensEditor();
+
+  window.adicionarItemLinha = () => {
+    window._itensEditor.push({ material_id: "", quantidade: 1, observacao: "" });
+    redesenharItensEditor();
+  };
+  window.removerItemLinha = (idx) => {
+    window._itensEditor.splice(idx, 1);
+    redesenharItensEditor();
+  };
+
+  function redesenharItensEditor() {
+    const cont = document.getElementById("itens-editor");
+    cont.innerHTML = window._itensEditor.map(linhaHtml).join("") || "<p>Nenhum material adicionado.</p>";
+    cont.querySelectorAll(".item-linha").forEach((linha) => {
+      const idx = Number(linha.dataset.idx);
+      const item = window._itensEditor[idx];
+      const sel = linha.querySelector(".item-material");
+      sel.value = item.material_id || "";
+      sel.addEventListener("change", () => { item.material_id = sel.value; });
+      linha.querySelector(".item-qtd").addEventListener("input", (e) => { item.quantidade = e.target.value; });
+      linha.querySelector(".item-obs").addEventListener("input", (e) => { item.observacao = e.target.value; });
+    });
+  }
+}
+
+async function salvarEditorLista(listaId) {
+  const itens = (window._itensEditor || []).filter((i) => i.material_id);
+  const payload = {
+    titulo: document.getElementById("editor-titulo").value.trim(),
+    itens: itens.map((i) => ({ material_id: Number(i.material_id), quantidade: Number(i.quantidade) || 0, observacao: i.observacao || "" })),
+  };
+  try {
+    await api(`/api/listas/${listaId}`, { method: "PUT", body: JSON.stringify(payload) });
+    fecharModal();
+    toast("Nova versão salva com sucesso");
+    carregarListas(state.projetoAtual.id);
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+async function verHistoricoLista(listaId) {
+  const versoes = await api(`/api/listas/${listaId}/versoes`);
+  abrirModal(`
+    <h3>Histórico de Versões</h3>
+    <table class="tabela">
+      <thead><tr><th>Versão</th><th>Criado por</th><th>Data</th><th></th></tr></thead>
+      <tbody>
+        ${versoes.map((v) => `
+          <tr>
+            <td>v${v.versao}</td><td>${v.criado_por_nome || "-"}</td>
+            <td>${new Date(v.criado_em).toLocaleString("pt-BR")}</td>
+            <td><button class="link-acao" onclick="verVersao(${v.id})">Ver</button></td>
+          </tr>`).join("")}
+      </tbody>
+    </table>
+    <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
+  `);
+}
+
+async function verVersao(versaoId) {
+  const dados = await api(`/api/versoes/${versaoId}`);
+  abrirModal(`
+    <h3>Versão ${dados.versao.versao}</h3>
+    <table class="tabela">
+      <thead><tr><th>Código</th><th>Descrição</th><th>Qtd</th><th>Unidade</th></tr></thead>
+      <tbody>
+        ${dados.itens.map((i) => `<tr><td>${i.codigo}</td><td>${i.descricao}</td><td>${i.quantidade}</td><td>${i.unidade}</td></tr>`).join("") || "<tr><td colspan='4'>Sem itens</td></tr>"}
+      </tbody>
+    </table>
+    <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
+  `);
+}
+
+// ---------- USUÁRIOS ----------
+async function carregarUsuarios() {
+  const usuarios = await api("/api/usuarios");
+  const tbody = document.getElementById("tbody-usuarios");
+  tbody.innerHTML = usuarios.map((u) => `
+    <tr>
+      <td>${u.nome}</td><td>${u.email}</td><td>${u.perfil}</td><td>${u.ativo ? "Sim" : "Não"}</td>
+      <td class="acoes-linha">
+        <button class="link-acao" onclick='editarUsuario(${JSON.stringify(u)})'>Editar</button>
+        <button class="link-acao" onclick="excluirUsuario(${u.id})">Desativar</button>
+      </td>
+    </tr>`).join("");
+}
+
+function modalUsuario(usuario = null) {
+  const u = usuario || { nome: "", email: "", perfil: "visualizador", ativo: 1 };
+  abrirModal(`
+    <h3>${usuario ? "Editar" : "Novo"} Usuário</h3>
+    <div class="form-grid">
+      <label>Nome</label><input id="usr-nome" value="${u.nome}">
+      <label>Email</label><input id="usr-email" value="${u.email}" ${usuario ? "disabled" : ""}>
+      <label>Perfil</label>
+      <select id="usr-perfil">
+        ${["master", "administrador", "visualizador"].map((p) => `<option value="${p}" ${u.perfil === p ? "selected" : ""}>${p}</option>`).join("")}
+      </select>
+      <label>Senha ${usuario ? "(deixe em branco para não alterar)" : ""}</label>
+      <input id="usr-senha" type="password">
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" onclick="salvarUsuario(${usuario ? usuario.id : "null"})">Salvar</button>
+    </div>
+  `);
+}
+
+async function salvarUsuario(id) {
+  const senha = document.getElementById("usr-senha").value;
+  try {
+    if (id) {
+      const payload = { nome: document.getElementById("usr-nome").value.trim(), perfil: document.getElementById("usr-perfil").value, ativo: 1 };
+      if (senha) payload.senha = senha;
+      await api(`/api/usuarios/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+    } else {
+      const payload = {
+        nome: document.getElementById("usr-nome").value.trim(),
+        email: document.getElementById("usr-email").value.trim(),
+        perfil: document.getElementById("usr-perfil").value,
+        senha,
+      };
+      await api("/api/usuarios", { method: "POST", body: JSON.stringify(payload) });
+    }
+    fecharModal();
+    toast("Usuário salvo com sucesso");
+    carregarUsuarios();
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+function editarUsuario(u) { modalUsuario(u); }
+
+async function excluirUsuario(id) {
+  if (!confirm("Desativar este usuário?")) return;
+  try {
+    await api(`/api/usuarios/${id}`, { method: "DELETE" });
+    toast("Usuário desativado");
+    carregarUsuarios();
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+document.getElementById("btn-novo-usuario").addEventListener("click", () => modalUsuario());
+
+// ---------- CONFIGURAÇÕES ----------
+async function carregarConfiguracoes() {
+  const configs = await api("/api/configuracoes");
+  configs.forEach((c) => {
+    const el = document.getElementById(`cfg-${c.chave}`);
+    if (el) el.value = c.valor || "";
+  });
+}
+
+document.getElementById("form-configuracoes").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const payload = {
+    nome_empresa: document.getElementById("cfg-nome_empresa").value,
+    logo_url: document.getElementById("cfg-logo_url").value,
+    formato_data: document.getElementById("cfg-formato_data").value,
+  };
+  try {
+    await api("/api/configuracoes", { method: "PUT", body: JSON.stringify(payload) });
+    toast("Configurações salvas");
+  } catch (err) { toast(err.message, "erro"); }
+});
+
+// ---------- INIT ----------
+verificarSessao();

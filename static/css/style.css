@@ -1,0 +1,172 @@
+:root {
+  --azul: #1f3a5f;
+  --azul-claro: #2f5a94;
+  --fundo: #f4f6f9;
+  --branco: #ffffff;
+  --cinza: #6b7280;
+  --borda: #e2e5ea;
+  --erro: #d32f2f;
+  --sucesso: #2e7d32;
+  --raio: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+  background: var(--fundo);
+  color: #1c1f26;
+}
+
+.oculto { display: none !important; }
+
+/* ---------- LOGIN ---------- */
+.tela-login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--azul) 0%, var(--azul-claro) 100%);
+}
+.card-login {
+  background: var(--branco);
+  padding: 40px 36px;
+  border-radius: var(--raio);
+  width: 340px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+}
+.card-login h1 { margin: 0 0 4px; color: var(--azul); }
+.subtitulo { color: var(--cinza); font-size: 13px; margin-bottom: 24px; }
+.card-login label { display: block; font-size: 13px; margin: 12px 0 4px; color: var(--cinza); }
+.card-login input {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 8px; font-size: 14px;
+}
+.card-login button {
+  margin-top: 20px; width: 100%; padding: 11px; border: none; border-radius: 8px;
+  background: var(--azul); color: white; font-size: 15px; cursor: pointer; transition: background .15s;
+}
+.card-login button:hover { background: var(--azul-claro); }
+.erro { color: var(--erro); font-size: 13px; min-height: 16px; margin-top: 8px; }
+
+/* ---------- LAYOUT ---------- */
+.app { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: 230px;
+  background: var(--azul);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+}
+.sidebar .logo { font-size: 22px; font-weight: 700; padding: 0 24px 20px; letter-spacing: 1px; }
+.sidebar nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.nav-item {
+  background: none; border: none; color: #cfd9e8; text-align: left; padding: 12px 24px;
+  font-size: 14px; cursor: pointer; transition: background .15s, color .15s;
+}
+.nav-item:hover { background: rgba(255,255,255,0.08); color: white; }
+.nav-item.ativo { background: var(--azul-claro); color: white; font-weight: 600; }
+
+.usuario-atual { padding: 16px 24px; border-top: 1px solid rgba(255,255,255,0.15); }
+#usuario-nome { font-size: 14px; font-weight: 600; }
+.badge-perfil {
+  display: inline-block; margin: 4px 0 10px; font-size: 11px; text-transform: uppercase;
+  background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 20px;
+}
+.usuario-atual button {
+  width: 100%; padding: 8px; border: 1px solid rgba(255,255,255,0.3); background: transparent;
+  color: white; border-radius: 6px; cursor: pointer;
+}
+.usuario-atual button:hover { background: rgba(255,255,255,0.1); }
+
+.conteudo { flex: 1; padding: 32px 40px; overflow-y: auto; }
+
+.tab { display: none; }
+.tab.ativo { display: block; }
+
+h2 { margin-top: 0; color: var(--azul); }
+
+.tab-header {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;
+}
+.tab-header h2 { flex: 1; }
+.acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+input[type="search"], input[type="text"], input[type="email"], input[type="password"],
+input[type="number"], select, textarea {
+  padding: 8px 10px; border: 1px solid var(--borda); border-radius: 6px; font-size: 13px;
+}
+
+/* ---------- BOTÕES ---------- */
+.btn-primario, .btn-secundario {
+  border: none; border-radius: 6px; padding: 9px 16px; font-size: 13px; cursor: pointer;
+  text-decoration: none; display: inline-block; transition: opacity .15s;
+}
+.btn-primario { background: var(--azul); color: white; }
+.btn-secundario { background: var(--branco); color: var(--azul); border: 1px solid var(--azul); }
+.btn-primario:hover, .btn-secundario:hover { opacity: .85; }
+.btn-perigo { background: var(--erro); color: white; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+
+/* ---------- CARDS DASHBOARD ---------- */
+.cards-resumo { display: flex; gap: 20px; flex-wrap: wrap; }
+.card-resumo {
+  background: var(--branco); border-radius: var(--raio); padding: 24px 32px; min-width: 160px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; flex-direction: column;
+}
+.card-resumo span { font-size: 32px; font-weight: 700; color: var(--azul); }
+.card-resumo label { color: var(--cinza); font-size: 13px; margin-top: 4px; }
+
+/* ---------- TABELAS ---------- */
+.tabela {
+  width: 100%; border-collapse: collapse; background: var(--branco); border-radius: var(--raio);
+  overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.tabela th {
+  background: #eef1f6; text-align: left; padding: 10px 14px; font-size: 12px; text-transform: uppercase;
+  color: var(--cinza); letter-spacing: .3px;
+}
+.tabela td { padding: 10px 14px; border-top: 1px solid var(--borda); font-size: 13px; }
+.tabela tr:hover td { background: #f8fafc; }
+.tabela td.acoes-linha { display: flex; gap: 6px; }
+.link-acao { color: var(--azul-claro); cursor: pointer; font-size: 12px; margin-right: 10px; background: none; border: none; padding: 0; }
+.link-acao:hover { text-decoration: underline; }
+
+/* ---------- MODAL ---------- */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); display: flex;
+  align-items: center; justify-content: center; z-index: 100;
+}
+.modal {
+  background: var(--branco); border-radius: var(--raio); padding: 28px; width: 480px; max-width: 92vw;
+  max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+}
+.modal h3 { margin-top: 0; color: var(--azul); }
+.form-grid { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
+.form-grid label { font-size: 12px; color: var(--cinza); margin-bottom: -6px; }
+.form-grid input, .form-grid select, .form-grid textarea { width: 100%; }
+.modal-acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+.form-config { display: flex; flex-direction: column; gap: 6px; max-width: 420px; }
+.form-config label { font-size: 12px; color: var(--cinza); margin-top: 10px; }
+.form-config button { margin-top: 20px; width: fit-content; }
+
+/* ---------- ITENS DA LISTA (editor de desenho) ---------- */
+.itens-editor { margin: 16px 0; }
+.item-linha { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 8px; align-items: center; margin-bottom: 6px; }
+.item-linha select, .item-linha input { width: 100%; }
+
+/* ---------- TOAST ---------- */
+.toast {
+  position: fixed; bottom: 24px; right: 24px; background: var(--azul); color: white; padding: 12px 20px;
+  border-radius: 8px; font-size: 13px; box-shadow: 0 8px 20px rgba(0,0,0,0.25); z-index: 200;
+}
+.toast.erro { background: var(--erro); }
+.toast.sucesso { background: var(--sucesso); }
+
+@media (max-width: 800px) {
+  .sidebar { width: 70px; }
+  .sidebar .logo, .nav-item, #usuario-nome, .badge-perfil { display: none; }
+  .conteudo { padding: 20px; }
+}
