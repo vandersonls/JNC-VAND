@@ -17,9 +17,10 @@ CAMPOS_PROJETO = ["codigo", "nome", "cliente_id", "descricao", "status"]
 @login_required
 def listar_projetos():
     rows = db.query_all(
-        """SELECT p.*, c.razao_social AS cliente_nome
+        """SELECT p.*, c.razao_social AS cliente_nome, a.nome AS area_nome
            FROM projetos p
            LEFT JOIN clientes c ON c.id = p.cliente_id
+           LEFT JOIN areas a ON a.id = p.area_id
            ORDER BY p.criado_em DESC"""
     )
     return jsonify(rows)
@@ -29,8 +30,10 @@ def listar_projetos():
 @login_required
 def obter_projeto(projeto_id):
     row = db.query_one(
-        """SELECT p.*, c.razao_social AS cliente_nome
-           FROM projetos p LEFT JOIN clientes c ON c.id = p.cliente_id
+        """SELECT p.*, c.razao_social AS cliente_nome, c.logo_url AS cliente_logo_url, a.nome AS area_nome
+           FROM projetos p
+           LEFT JOIN clientes c ON c.id = p.cliente_id
+           LEFT JOIN areas a ON a.id = p.area_id
            WHERE p.id = %s""",
         (projeto_id,),
     )
@@ -43,14 +46,14 @@ def obter_projeto(projeto_id):
 @perfis_permitidos("master", "administrador")
 def criar_projeto():
     data = request.get_json(force=True) or {}
-    if not data.get("codigo") or not data.get("nome"):
-        return jsonify({"erro": "Código e nome são obrigatórios"}), 400
+    if not data.get("codigo") or not data.get("nome") or not data.get("cliente_id") or not data.get("area_id"):
+        return jsonify({"erro": "Cliente, nome, código e área são obrigatórios"}), 400
     novo_id = db.execute(
-        """INSERT INTO projetos (codigo, nome, cliente_id, descricao, status, criado_por)
-           VALUES (%s, %s, %s, %s, %s, %s)""",
+        """INSERT INTO projetos (codigo, nome, cliente_id, status, numero_cliente, numero_fornecedor, area_id, criado_por)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
         (
-            data["codigo"], data["nome"], data.get("cliente_id"),
-            data.get("descricao", ""), data.get("status", "planejamento"),
+            data["codigo"], data["nome"], data["cliente_id"], data.get("status", "planejamento"),
+            data.get("numero_cliente", ""), data.get("numero_fornecedor", ""), data["area_id"],
             current_user.id,
         ),
     )
@@ -62,17 +65,19 @@ def criar_projeto():
 @perfis_permitidos("master", "administrador")
 def editar_projeto(projeto_id):
     data = request.get_json(force=True) or {}
-    if not data.get("codigo") or not data.get("nome"):
-        return jsonify({"erro": "Código e nome são obrigatórios"}), 400
+    if not data.get("codigo") or not data.get("nome") or not data.get("cliente_id") or not data.get("area_id"):
+        return jsonify({"erro": "Cliente, nome, código e área são obrigatórios"}), 400
     antes = db.query_one(
-        "SELECT codigo, nome, cliente_id, descricao, status FROM projetos WHERE id = %s", (projeto_id,)
+        "SELECT codigo, nome, cliente_id, status, numero_cliente, numero_fornecedor, area_id FROM projetos WHERE id = %s",
+        (projeto_id,),
     )
     db.execute(
-        """UPDATE projetos SET codigo=%s, nome=%s, cliente_id=%s, descricao=%s, status=%s
+        """UPDATE projetos SET codigo=%s, nome=%s, cliente_id=%s, status=%s,
+           numero_cliente=%s, numero_fornecedor=%s, area_id=%s
            WHERE id=%s""",
         (
-            data["codigo"], data["nome"], data.get("cliente_id"),
-            data.get("descricao", ""), data.get("status", "planejamento"),
+            data["codigo"], data["nome"], data["cliente_id"], data.get("status", "planejamento"),
+            data.get("numero_cliente", ""), data.get("numero_fornecedor", ""), data["area_id"],
             projeto_id,
         ),
     )

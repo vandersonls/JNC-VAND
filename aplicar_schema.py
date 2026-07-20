@@ -43,6 +43,8 @@ def main():
             continue
         try:
             cursor.execute(cmd)
+            if cursor.with_rows:
+                cursor.fetchall()  # consome o resultset (ex.: dos "SELECT 1" usados como no-op) senão o proximo execute quebra
             conn.commit()
             aplicados += 1
         except mysql.connector.Error as e:

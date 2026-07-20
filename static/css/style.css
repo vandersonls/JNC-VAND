@@ -133,6 +133,10 @@ body {
 .subnav-item.ativo { color: var(--azul); border-bottom-color: var(--azul); font-weight: 600; }
 .subtab { display: none; }
 .subtab.ativo { display: block; }
+.subtab-pd { display: none; }
+.subtab-pd.ativo { display: block; }
+.info-versao { color: var(--cinza); font-size: 13px; margin: 4px 0 14px; }
+.info-versao b { color: #1c1f26; }
 
 .paginacao { display: flex; justify-content: center; margin-top: 16px; }
 .badge-acao {

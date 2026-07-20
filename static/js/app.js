@@ -560,7 +560,7 @@ document.getElementById("clientes-busca").addEventListener("input", (e) => {
 });
 
 function modalCliente(cliente = null) {
-  const c = cliente || { razao_social: "", nome_fantasia: "", cnpj_cpf: "", contato: "", telefone: "", email: "", endereco: "" };
+  const c = cliente || { razao_social: "", nome_fantasia: "", cnpj_cpf: "", contato: "", telefone: "", email: "", endereco: "", logo_url: "" };
   abrirModal(`
     <h3>${cliente ? "Editar" : "Novo"} Cliente</h3>
     <div class="form-grid">
@@ -571,6 +571,7 @@ function modalCliente(cliente = null) {
       <label>Telefone</label><input id="cli-telefone" value="${c.telefone || ""}">
       <label>Email</label><input id="cli-email" value="${c.email || ""}">
       <label>Endereço</label><input id="cli-endereco" value="${c.endereco || ""}">
+      <label>URL da Logo</label><input id="cli-logo" value="${c.logo_url || ""}" placeholder="https://...">
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
@@ -588,6 +589,7 @@ async function salvarCliente(id) {
     telefone: document.getElementById("cli-telefone").value.trim(),
     email: document.getElementById("cli-email").value.trim(),
     endereco: document.getElementById("cli-endereco").value.trim(),
+    logo_url: document.getElementById("cli-logo").value.trim(),
   };
   try {
     if (id) await api(`/api/clientes/${id}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -617,31 +619,36 @@ async function carregarProjetos() {
   const tbody = document.getElementById("tbody-projetos");
   tbody.innerHTML = state.projetos.map((p) => `
     <tr>
-      <td>${p.codigo}</td><td>${p.nome}</td><td>${p.cliente_nome || "-"}</td><td>${p.status}</td>
+      <td>${p.codigo}</td><td>${p.nome}</td><td>${p.cliente_nome || "-"}</td><td>${p.status}</td><td>${p.area_nome || "-"}</td>
       <td class="acoes-linha">
         <button class="link-acao" onclick="abrirProjeto(${p.id})">Abrir</button>
         <button class="link-acao somente-admin" onclick="editarProjeto(${p.id})">Editar</button>
       </td>
-    </tr>`).join("") || `<tr><td colspan="5">Nenhum projeto cadastrado.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="6">Nenhum projeto cadastrado.</td></tr>`;
   aplicarPermissoes();
 }
 
 async function modalProjeto(projeto = null) {
   if (!state.clientes.length) state.clientes = await api("/api/clientes");
-  const p = projeto || { codigo: "", nome: "", cliente_id: "", descricao: "", status: "planejamento" };
+  await garantirAreasCarregadas();
+  const p = projeto || { codigo: "", nome: "", cliente_id: "", status: "planejamento", numero_cliente: "", numero_fornecedor: "", area_id: "" };
   const opcoesClientes = state.clientes.map((c) => `<option value="${c.id}" ${p.cliente_id == c.id ? "selected" : ""}>${c.razao_social}</option>`).join("");
+  const opcoesAreas = state.areas.map((a) => `<option value="${a.id}" ${p.area_id == a.id ? "selected" : ""}>${a.nome}</option>`).join("");
   abrirModal(`
     <h3>${projeto ? "Editar" : "Novo"} Projeto</h3>
     <div class="form-grid">
-      <label>Código</label><input id="proj-codigo" value="${p.codigo}">
-      <label>Nome</label><input id="proj-nome" value="${p.nome}">
       <label>Cliente</label>
       <select id="proj-cliente"><option value="">-- Selecione --</option>${opcoesClientes}</select>
+      <label>Nome do Projeto</label><input id="proj-nome" value="${p.nome}">
       <label>Status</label>
       <select id="proj-status">
         ${["planejamento", "em_andamento", "concluido", "cancelado"].map((s) => `<option value="${s}" ${p.status === s ? "selected" : ""}>${s}</option>`).join("")}
       </select>
-      <label>Descrição</label><textarea id="proj-descricao" rows="3">${p.descricao || ""}</textarea>
+      <label>Código</label><input id="proj-codigo" value="${p.codigo}">
+      <label>Nº do Cliente</label><input id="proj-numero-cliente" value="${p.numero_cliente || ""}">
+      <label>Nº do Fornecedor</label><input id="proj-numero-fornecedor" value="${p.numero_fornecedor || ""}">
+      <label>Área</label>
+      <select id="proj-area"><option value="">-- Selecione --</option>${opcoesAreas}</select>
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
@@ -652,12 +659,16 @@ async function modalProjeto(projeto = null) {
 
 async function salvarProjeto(id) {
   const payload = {
-    codigo: document.getElementById("proj-codigo").value.trim(),
-    nome: document.getElementById("proj-nome").value.trim(),
     cliente_id: document.getElementById("proj-cliente").value || null,
+    nome: document.getElementById("proj-nome").value.trim(),
     status: document.getElementById("proj-status").value,
-    descricao: document.getElementById("proj-descricao").value.trim(),
+    codigo: document.getElementById("proj-codigo").value.trim(),
+    numero_cliente: document.getElementById("proj-numero-cliente").value.trim(),
+    numero_fornecedor: document.getElementById("proj-numero-fornecedor").value.trim(),
+    area_id: Number(document.getElementById("proj-area").value) || null,
   };
+  if (!payload.cliente_id) { toast("Selecione o cliente", "erro"); return; }
+  if (!payload.area_id) { toast("Selecione a área", "erro"); return; }
   try {
     if (id) await api(`/api/projetos/${id}`, { method: "PUT", body: JSON.stringify(payload) });
     else await api("/api/projetos", { method: "POST", body: JSON.stringify(payload) });
@@ -680,8 +691,25 @@ async function abrirProjeto(id) {
   document.getElementById("projeto-detalhe-titulo").textContent = `${state.projetoAtual.codigo} — ${state.projetoAtual.nome}`;
   document.getElementById("link-relatorio-projeto-excel").href = `/api/projetos/${id}/relatorio/excel`;
   document.getElementById("link-relatorio-projeto-pdf").href = `/api/projetos/${id}/relatorio/pdf`;
+  document.getElementById("link-relatorio-pq-excel").href = `/api/projetos/${id}/lista-pq/relatorio/excel`;
+  document.getElementById("link-relatorio-pq-pdf").href = `/api/projetos/${id}/lista-pq/relatorio/pdf`;
+  document.getElementById("link-relatorio-compras-excel").href = `/api/projetos/${id}/lista-compras/relatorio/excel`;
+  document.getElementById("link-relatorio-compras-pdf").href = `/api/projetos/${id}/lista-compras/relatorio/pdf`;
   ativarTabInterna("projeto-detalhe");
+  ativarSubtabPD("pd-desenho");
   await carregarListas(id);
+}
+
+document.querySelectorAll(".subnav-item[data-subtab-pd]").forEach((btn) => {
+  btn.addEventListener("click", () => ativarSubtabPD(btn.dataset.subtabPd));
+});
+
+function ativarSubtabPD(nome) {
+  document.querySelectorAll(".subnav-item[data-subtab-pd]").forEach((b) => b.classList.toggle("ativo", b.dataset.subtabPd === nome));
+  document.querySelectorAll(".subtab-pd").forEach((t) => t.classList.remove("ativo"));
+  document.getElementById(`subtab-${nome}`).classList.add("ativo");
+  if (nome === "pd-pq") carregarListaPQ();
+  if (nome === "pd-compras") carregarListaCompras();
 }
 
 const arvoreState = { listas: [], versoesPorLista: {}, expandidas: new Set() };
@@ -923,6 +951,241 @@ async function verVersao(listaId, versaoId) {
     </div>
   `);
 }
+
+// ---------- HELPERS DE HISTÓRICO (reaproveitados por PQ e Compras) ----------
+function mostrarHistoricoGenerico(titulo, versoes, aoClicarVer) {
+  abrirModal(`
+    <h3>Histórico de Versões — ${titulo}</h3>
+    <table class="tabela">
+      <thead><tr><th>Versão</th><th>Criado por</th><th>Data</th><th></th></tr></thead>
+      <tbody>
+        ${versoes.map((v) => `
+          <tr>
+            <td>v${v.versao}</td><td>${v.criado_por_nome || "-"}</td>
+            <td>${new Date(v.criado_em).toLocaleString("pt-BR")}</td>
+            <td><button class="link-acao" data-versao-id="${v.id}">Ver</button></td>
+          </tr>`).join("") || `<tr><td colspan="4">Nenhuma versão salva ainda.</td></tr>`}
+      </tbody>
+    </table>
+    <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
+  `);
+  document.querySelectorAll("[data-versao-id]").forEach((btn) => {
+    btn.addEventListener("click", () => aoClicarVer(Number(btn.dataset.versaoId)));
+  });
+}
+
+function mostrarItensVersaoGenerico(titulo, itens, campos, rotulos) {
+  abrirModal(`
+    <h3>${titulo}</h3>
+    <table class="tabela">
+      <thead><tr>${rotulos.map((r) => `<th>${r}</th>`).join("")}</tr></thead>
+      <tbody>
+        ${itens.map((i) => `<tr>${campos.map((c) => `<td>${i[c]}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${rotulos.length}">Sem itens</td></tr>`}
+      </tbody>
+    </table>
+    <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
+  `);
+}
+
+// ---------- LISTA PQ ----------
+async function carregarListaPQ() {
+  const dados = await api(`/api/projetos/${state.projetoAtual.id}/lista-pq`);
+  renderTabelaPQ(dados.versao, dados.itens);
+}
+
+function renderTabelaPQ(versao, itens) {
+  document.getElementById("pq-info").innerHTML = versao
+    ? `Revisão <b>${versao.versao}</b> — salva em ${new Date(versao.criado_em).toLocaleString("pt-BR")} por <b>${versao.criado_por_nome || "-"}</b>`
+    : `Nenhuma versão salva ainda. Clique em "Revisar lista" para montar a primeira versão a partir da Lista de Material por Desenho.`;
+  const tbody = document.getElementById("tbody-pq");
+  tbody.innerHTML = itens.map((i) => `
+    <tr>
+      <td>${i.codigo}</td><td>${i.descricao}</td><td>${i.fabricante || ""}</td><td>${i.bitola || ""}</td>
+      <td>${Number(i.quantidade_base).toLocaleString("pt-BR")}</td>
+      <td>${Number(i.percentual).toLocaleString("pt-BR")}%</td>
+      <td>${Number(i.quantidade_atualizada).toLocaleString("pt-BR")}</td>
+      <td>${i.unidade}</td>
+    </tr>`).join("") || `<tr><td colspan="8">Nenhum item nesta versão.</td></tr>`;
+}
+
+function calcularQtdAtualizada(item) {
+  return item.quantidade_base * (1 + item.percentual / 100);
+}
+
+document.getElementById("btn-revisar-pq").addEventListener("click", async () => {
+  const projetoId = state.projetoAtual.id;
+  const [base, atual] = await Promise.all([
+    api(`/api/projetos/${projetoId}/lista-pq/base`),
+    api(`/api/projetos/${projetoId}/lista-pq`),
+  ]);
+  if (!base.length) { toast("Nenhum material encontrado nas Listas por Desenho deste projeto ainda", "erro"); return; }
+  const percentuaisAtuais = {};
+  (atual.itens || []).forEach((i) => { percentuaisAtuais[i.material_id] = Number(i.percentual); });
+
+  window._pqDraft = base.map((b) => ({
+    material_id: b.material_id, codigo: b.codigo, descricao: b.descricao, fabricante: b.fabricante,
+    bitola: b.bitola, unidade: b.unidade, quantidade_base: Number(b.quantidade_base),
+    percentual: percentuaisAtuais[b.material_id] || 0, observacao: "",
+  }));
+  renderModalRevisaoPQ();
+});
+
+function renderModalRevisaoPQ() {
+  const linhas = window._pqDraft.map((item, idx) => `
+    <tr>
+      <td>${item.codigo}</td>
+      <td>${item.descricao}</td>
+      <td style="text-align:right">${item.quantidade_base.toLocaleString("pt-BR")}</td>
+      <td><input type="number" step="0.01" class="pq-percentual" data-idx="${idx}" value="${item.percentual}" style="width:80px"></td>
+      <td class="pq-qtd-atualizada" data-idx="${idx}" style="text-align:right">${calcularQtdAtualizada(item).toLocaleString("pt-BR")}</td>
+      <td>${item.unidade}</td>
+    </tr>`).join("");
+
+  abrirModal(`
+    <h3>Revisar Lista PQ</h3>
+    <div class="form-grid" style="flex-direction:row; align-items:flex-end; gap:10px;">
+      <div style="flex:1">
+        <label>Aplicar percentual a todos os itens</label>
+        <input type="number" step="0.01" id="pq-percentual-massa" placeholder="Ex: 10">
+      </div>
+      <button type="button" class="btn-secundario" id="btn-aplicar-percentual-massa">Aplicar a todos</button>
+    </div>
+    <div style="max-height:360px; overflow-y:auto; margin:12px 0;">
+      <table class="tabela">
+        <thead><tr><th>Código</th><th>Descrição</th><th>Qtd. Base</th><th>%</th><th>Qtd. Atualizada</th><th>Unidade</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" id="btn-salvar-versao-pq">Salvar nova versão</button>
+    </div>
+  `, "modal-grande");
+
+  document.querySelectorAll(".pq-percentual").forEach((input) => {
+    input.addEventListener("input", () => {
+      const idx = Number(input.dataset.idx);
+      window._pqDraft[idx].percentual = Number(input.value) || 0;
+      document.querySelector(`.pq-qtd-atualizada[data-idx="${idx}"]`).textContent =
+        calcularQtdAtualizada(window._pqDraft[idx]).toLocaleString("pt-BR");
+    });
+  });
+  document.getElementById("btn-aplicar-percentual-massa").addEventListener("click", () => {
+    const valor = Number(document.getElementById("pq-percentual-massa").value) || 0;
+    window._pqDraft.forEach((item) => { item.percentual = valor; });
+    renderModalRevisaoPQ();
+  });
+  document.getElementById("btn-salvar-versao-pq").addEventListener("click", salvarVersaoPQ);
+}
+
+async function salvarVersaoPQ() {
+  const itens = window._pqDraft.map((item) => ({
+    material_id: item.material_id, quantidade_base: item.quantidade_base, percentual: item.percentual,
+    quantidade_atualizada: calcularQtdAtualizada(item), observacao: item.observacao || "",
+  }));
+  try {
+    await api(`/api/projetos/${state.projetoAtual.id}/lista-pq`, { method: "POST", body: JSON.stringify({ itens }) });
+    fecharModal();
+    toast("Nova versão da Lista PQ salva com sucesso");
+    carregarListaPQ();
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+document.getElementById("btn-historico-pq").addEventListener("click", async () => {
+  const versoes = await api(`/api/projetos/${state.projetoAtual.id}/lista-pq/versoes`);
+  mostrarHistoricoGenerico("Lista PQ", versoes, async (versaoId) => {
+    const dados = await api(`/api/lista-pq/versoes/${versaoId}`);
+    mostrarItensVersaoGenerico(
+      `Lista PQ — versão ${dados.versao.versao}`, dados.itens,
+      ["codigo", "descricao", "fabricante", "bitola", "quantidade_base", "percentual", "quantidade_atualizada", "unidade"],
+      ["Código", "Descrição", "Fabricante", "Bitola", "Qtd. Base", "%", "Qtd. Atualizada", "Unidade"],
+    );
+  });
+});
+
+// ---------- LISTA DE COMPRAS ----------
+async function carregarListaCompras() {
+  const dados = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras`);
+  renderTabelaCompras(dados.versao, dados.itens);
+}
+
+function renderTabelaCompras(versao, itens) {
+  document.getElementById("compras-info").innerHTML = versao
+    ? `Revisão <b>${versao.versao}</b> — salva em ${new Date(versao.criado_em).toLocaleString("pt-BR")} por <b>${versao.criado_por_nome || "-"}</b>`
+    : `Nenhuma versão salva ainda. Clique em "Revisar lista" para montar a primeira versão a partir da Lista PQ.`;
+  const tbody = document.getElementById("tbody-compras");
+  tbody.innerHTML = itens.map((i) => `
+    <tr>
+      <td>${i.codigo}</td><td>${i.descricao}</td><td>${i.fabricante || ""}</td><td>${i.bitola || ""}</td>
+      <td>${Number(i.quantidade).toLocaleString("pt-BR")}</td><td>${i.unidade}</td>
+    </tr>`).join("") || `<tr><td colspan="6">Nenhum item nesta versão.</td></tr>`;
+}
+
+document.getElementById("btn-revisar-compras").addEventListener("click", async () => {
+  const base = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras/base`);
+  if (!base.length) { toast("A Lista PQ deste projeto ainda não tem nenhuma versão salva", "erro"); return; }
+  window._comprasDraft = base.map((b) => ({
+    material_id: b.material_id, codigo: b.codigo, descricao: b.descricao, fabricante: b.fabricante,
+    bitola: b.bitola, unidade: b.unidade, quantidade: Number(b.quantidade), observacao: "",
+  }));
+  renderModalRevisaoCompras();
+});
+
+function renderModalRevisaoCompras() {
+  const linhas = window._comprasDraft.map((item, idx) => `
+    <tr>
+      <td>${item.codigo}</td>
+      <td>${item.descricao}</td>
+      <td><input type="number" step="0.001" class="compras-qtd" data-idx="${idx}" value="${item.quantidade}" style="width:100px"></td>
+      <td>${item.unidade}</td>
+    </tr>`).join("");
+
+  abrirModal(`
+    <h3>Revisar Lista de Compras</h3>
+    <p style="color:var(--cinza); font-size:13px;">Itens vindos da última versão salva da Lista PQ. Ajuste as quantidades se necessário.</p>
+    <div style="max-height:360px; overflow-y:auto; margin:12px 0;">
+      <table class="tabela">
+        <thead><tr><th>Código</th><th>Descrição</th><th>Quantidade</th><th>Unidade</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" id="btn-salvar-versao-compras">Salvar nova versão</button>
+    </div>
+  `, "modal-grande");
+
+  document.querySelectorAll(".compras-qtd").forEach((input) => {
+    input.addEventListener("input", () => {
+      window._comprasDraft[Number(input.dataset.idx)].quantidade = Number(input.value) || 0;
+    });
+  });
+  document.getElementById("btn-salvar-versao-compras").addEventListener("click", salvarVersaoCompras);
+}
+
+async function salvarVersaoCompras() {
+  const itens = window._comprasDraft.map((item) => ({
+    material_id: item.material_id, quantidade: item.quantidade, observacao: item.observacao || "",
+  }));
+  try {
+    await api(`/api/projetos/${state.projetoAtual.id}/lista-compras`, { method: "POST", body: JSON.stringify({ itens }) });
+    fecharModal();
+    toast("Nova versão da Lista de Compras salva com sucesso");
+    carregarListaCompras();
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+document.getElementById("btn-historico-compras").addEventListener("click", async () => {
+  const versoes = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras/versoes`);
+  mostrarHistoricoGenerico("Lista de Compras", versoes, async (versaoId) => {
+    const dados = await api(`/api/lista-compras/versoes/${versaoId}`);
+    mostrarItensVersaoGenerico(
+      `Lista de Compras — versão ${dados.versao.versao}`, dados.itens,
+      ["codigo", "descricao", "fabricante", "bitola", "quantidade", "unidade"],
+      ["Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"],
+    );
+  });
+});
 
 // ---------- USUÁRIOS ----------
 async function carregarUsuarios() {

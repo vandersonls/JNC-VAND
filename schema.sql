@@ -30,10 +30,16 @@ CREATE TABLE IF NOT EXISTS clientes (
     telefone VARCHAR(30),
     email VARCHAR(150),
     endereco VARCHAR(255),
+    logo_url VARCHAR(500),
     ativo TINYINT(1) NOT NULL DEFAULT 1,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clientes' AND COLUMN_NAME = 'logo_url');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE clientes ADD COLUMN logo_url VARCHAR(500) AFTER endereco', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- =========================================================
 -- ÁREAS (disciplinas: Engenharia Elétrica, Mecânica, Civil, etc.)
@@ -102,12 +108,49 @@ CREATE TABLE IF NOT EXISTS projetos (
     cliente_id INT,
     descricao TEXT,
     status ENUM('planejamento', 'em_andamento', 'concluido', 'cancelado') NOT NULL DEFAULT 'planejamento',
+    numero_cliente VARCHAR(100),
+    numero_fornecedor VARCHAR(100),
+    area_id INT NULL,
+    pq_versao_atual_id INT NULL,
+    compras_versao_atual_id INT NULL,
     criado_por INT,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_projetos_cliente FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL,
-    CONSTRAINT fk_projetos_usuario FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL
+    CONSTRAINT fk_projetos_usuario FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
+    CONSTRAINT fk_projetos_area FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
+
+-- Migrações idempotentes para bancos já existentes
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND COLUMN_NAME = 'numero_cliente');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE projetos ADD COLUMN numero_cliente VARCHAR(100) AFTER status', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND COLUMN_NAME = 'numero_fornecedor');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE projetos ADD COLUMN numero_fornecedor VARCHAR(100) AFTER numero_cliente', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND COLUMN_NAME = 'area_id');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE projetos ADD COLUMN area_id INT NULL AFTER numero_fornecedor', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND CONSTRAINT_NAME = 'fk_projetos_area');
+SET @sql = IF(@fk_exists = 0, 'ALTER TABLE projetos ADD CONSTRAINT fk_projetos_area FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE SET NULL', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND COLUMN_NAME = 'pq_versao_atual_id');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE projetos ADD COLUMN pq_versao_atual_id INT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND COLUMN_NAME = 'compras_versao_atual_id');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE projetos ADD COLUMN compras_versao_atual_id INT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- =========================================================
 -- LISTAS POR DESENHO (cabeçalho lógico - agrupa versões)
@@ -167,6 +210,75 @@ CREATE TABLE IF NOT EXISTS lista_desenho_itens (
     CONSTRAINT fk_item_versao FOREIGN KEY (versao_id) REFERENCES lista_desenho_versoes(id) ON DELETE CASCADE,
     CONSTRAINT fk_item_material FOREIGN KEY (material_id) REFERENCES materiais(id)
 ) ENGINE=InnoDB;
+
+-- =========================================================
+-- LISTA PQ (percentual sobre a última versão consolidada da Lista por
+-- Desenho do projeto) - uma por projeto, com histórico de versões
+-- =========================================================
+CREATE TABLE IF NOT EXISTS lista_pq_versoes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    projeto_id INT NOT NULL,
+    versao INT NOT NULL,
+    status ENUM('rascunho', 'salvo') NOT NULL DEFAULT 'salvo',
+    observacoes TEXT,
+    criado_por INT,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_pq_versao_projeto FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pq_versao_usuario FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
+    UNIQUE KEY uq_pq_projeto_versao (projeto_id, versao)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS lista_pq_itens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    versao_id INT NOT NULL,
+    material_id INT NOT NULL,
+    quantidade_base DECIMAL(12,3) NOT NULL DEFAULT 0,
+    percentual DECIMAL(7,3) NOT NULL DEFAULT 0,
+    quantidade_atualizada DECIMAL(12,3) NOT NULL DEFAULT 0,
+    observacao VARCHAR(255),
+    CONSTRAINT fk_pq_item_versao FOREIGN KEY (versao_id) REFERENCES lista_pq_versoes(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pq_item_material FOREIGN KEY (material_id) REFERENCES materiais(id)
+) ENGINE=InnoDB;
+
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND CONSTRAINT_NAME = 'fk_projetos_pq_versao');
+SET @sql = IF(@fk_exists = 0,
+    'ALTER TABLE projetos ADD CONSTRAINT fk_projetos_pq_versao FOREIGN KEY (pq_versao_atual_id) REFERENCES lista_pq_versoes(id) ON DELETE SET NULL',
+    'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- =========================================================
+-- LISTA DE COMPRAS (derivada da última versão da Lista PQ do projeto)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS lista_compras_versoes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    projeto_id INT NOT NULL,
+    versao INT NOT NULL,
+    status ENUM('rascunho', 'salvo') NOT NULL DEFAULT 'salvo',
+    observacoes TEXT,
+    criado_por INT,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_compras_versao_projeto FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
+    CONSTRAINT fk_compras_versao_usuario FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
+    UNIQUE KEY uq_compras_projeto_versao (projeto_id, versao)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS lista_compras_itens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    versao_id INT NOT NULL,
+    material_id INT NOT NULL,
+    quantidade DECIMAL(12,3) NOT NULL DEFAULT 0,
+    observacao VARCHAR(255),
+    CONSTRAINT fk_compras_item_versao FOREIGN KEY (versao_id) REFERENCES lista_compras_versoes(id) ON DELETE CASCADE,
+    CONSTRAINT fk_compras_item_material FOREIGN KEY (material_id) REFERENCES materiais(id)
+) ENGINE=InnoDB;
+
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND CONSTRAINT_NAME = 'fk_projetos_compras_versao');
+SET @sql = IF(@fk_exists = 0,
+    'ALTER TABLE projetos ADD CONSTRAINT fk_projetos_compras_versao FOREIGN KEY (compras_versao_atual_id) REFERENCES lista_compras_versoes(id) ON DELETE SET NULL',
+    'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- =========================================================
 -- CONFIGURAÇÕES DO SISTEMA (chave/valor)

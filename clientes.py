@@ -7,7 +7,7 @@ from auditoria import registrar
 
 clientes_bp = Blueprint("clientes", __name__)
 
-CAMPOS = ["razao_social", "nome_fantasia", "cnpj_cpf", "contato", "telefone", "email", "endereco"]
+CAMPOS = ["razao_social", "nome_fantasia", "cnpj_cpf", "contato", "telefone", "email", "endereco", "logo_url"]
 
 
 @clientes_bp.get("/api/clientes")

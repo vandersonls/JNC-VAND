@@ -15,6 +15,8 @@ from auditoria import auditoria_bp
 from dashboard import dashboard_bp
 from relatorios import relatorios_bp
 from areas import areas_bp
+from lista_pq import lista_pq_bp
+from lista_compras import lista_compras_bp
 
 
 def _montar_db_config():
@@ -62,6 +64,8 @@ def create_app():
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(relatorios_bp)
     app.register_blueprint(areas_bp)
+    app.register_blueprint(lista_pq_bp)
+    app.register_blueprint(lista_compras_bp)
 
     @app.route("/")
     def index():

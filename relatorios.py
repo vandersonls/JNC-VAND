@@ -1,6 +1,8 @@
 import io
+import urllib.request
 
 import openpyxl
+from openpyxl.drawing.image import Image as ExcelImage
 from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.utils import get_column_letter
 from flask import Blueprint, request, jsonify, send_file
@@ -9,11 +11,113 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image as PdfImage
 
 import db
 
 relatorios_bp = Blueprint("relatorios", __name__)
+
+
+def _baixar_imagem(url):
+    """Baixa uma imagem de logo por URL. Nunca lança exceção - um link de
+    logo quebrado ou lento não pode impedir a geração do relatório."""
+    if not url:
+        return None
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.read()
+    except Exception:
+        return None
+
+
+def _cabecalho_pdf_com_logos(empresa_nome, empresa_logo_url, cliente_nome, cliente_logo_url,
+                              projeto_nome, nome_aba, revisao, data_texto):
+    """Monta o bloco de cabeçalho padrão (empresa+logo | cliente+logo, depois
+    projeto/aba/revisão) usado nos relatórios de Lista por Desenho, Lista PQ
+    e Lista de Compras."""
+    estilo_nome = ParagraphStyle("cab_nome", fontSize=10, fontName="Helvetica-Bold", alignment=1)
+    estilo_rotulo = ParagraphStyle("cab_rotulo", fontSize=7.5, textColor=colors.grey, alignment=1)
+
+    def _celula_logo(nome, url, rotulo):
+        img_bytes = _baixar_imagem(url)
+        partes = [Paragraph(rotulo, estilo_rotulo)]
+        if img_bytes:
+            try:
+                img = PdfImage(io.BytesIO(img_bytes), width=2.6 * cm, height=2.6 * cm, kind="proportional")
+                img.hAlign = "CENTER"
+                partes.append(img)
+            except Exception:
+                pass
+        partes.append(Paragraph(nome or "-", estilo_nome))
+        return partes
+
+    tabela_logos = Table(
+        [[_celula_logo(empresa_nome, empresa_logo_url, "EMPRESA"), _celula_logo(cliente_nome, cliente_logo_url, "CLIENTE")]],
+        colWidths=[13.5 * cm, 13.5 * cm],
+    )
+    tabela_logos.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+
+    titulo_estilo = ParagraphStyle("titulo", fontSize=15, leading=18, alignment=1, spaceAfter=4,
+                                    spaceBefore=10, fontName="Helvetica-Bold")
+    subtitulo_estilo = ParagraphStyle("subtitulo", fontSize=11, leading=14, alignment=1, spaceAfter=4, fontName="Helvetica-Bold")
+    ref_estilo = ParagraphStyle("ref", fontSize=9, leading=12, alignment=1, spaceAfter=10)
+
+    return [
+        tabela_logos,
+        Paragraph(projeto_nome, titulo_estilo),
+        Paragraph(nome_aba, subtitulo_estilo),
+        Paragraph(f"Revisão: {revisao} &nbsp;&nbsp;|&nbsp;&nbsp; Data: {data_texto}", ref_estilo),
+    ]
+
+
+def _cabecalho_excel_com_logos(ws, largura_total, empresa_nome, empresa_logo_url, cliente_nome, cliente_logo_url,
+                                projeto_nome, nome_aba, revisao, data_texto, linha_inicial=1):
+    """Escreve o cabeçalho padrão (com logos, se disponíveis) numa planilha
+    e devolve a próxima linha livre."""
+    centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    linha = linha_inicial
+
+    ws.row_dimensions[linha].height = 48
+    for offset, (nome, url, rotulo) in enumerate([
+        (empresa_nome, empresa_logo_url, "EMPRESA"), (cliente_nome, cliente_logo_url, "CLIENTE"),
+    ]):
+        col_ini = 1 + offset * (largura_total // 2)
+        col_fim = col_ini + (largura_total // 2) - 1
+        ws.merge_cells(start_row=linha, start_column=col_ini, end_row=linha, end_column=col_fim)
+        cel = ws.cell(row=linha, column=col_ini, value=f"{rotulo}: {nome or '-'}")
+        cel.font, cel.alignment = Font(bold=True, size=10), centro
+        img_bytes = _baixar_imagem(url)
+        if img_bytes:
+            try:
+                img = ExcelImage(io.BytesIO(img_bytes))
+                img.width, img.height = 60, 60
+                ws.add_image(img, f"{get_column_letter(col_ini)}{linha}")
+            except Exception:
+                pass
+    linha += 1
+
+    ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura_total)
+    cel = ws.cell(row=linha, column=1, value=projeto_nome)
+    cel.font, cel.alignment = Font(bold=True, size=13), centro
+    linha += 1
+
+    ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura_total)
+    cel = ws.cell(row=linha, column=1, value=nome_aba)
+    cel.font, cel.alignment = Font(bold=True, size=10), centro
+    linha += 1
+
+    ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura_total)
+    cel = ws.cell(row=linha, column=1, value=f"Revisão: {revisao}    |    Data: {data_texto}")
+    cel.font, cel.alignment = Font(size=9), centro
+    linha += 2
+    return linha
 
 # 'rascunho' e 'salvo' são os únicos status internos hoje; mapeados para os
 # códigos de status de documento usados no selo (padrão de projetos de engenharia).
@@ -53,7 +157,8 @@ def _tabela_quebravel(dados, col_widths, alinhar_direita=None):
 
 def _carregar_contexto(lista_id, versao_id=None):
     lista = db.query_one(
-        """SELECT ld.*, p.codigo AS projeto_codigo, p.nome AS projeto_nome, c.razao_social AS cliente_nome
+        """SELECT ld.*, p.codigo AS projeto_codigo, p.nome AS projeto_nome,
+                  c.razao_social AS cliente_nome, c.logo_url AS cliente_logo_url
            FROM listas_desenho ld
            JOIN projetos p ON p.id = ld.projeto_id
            LEFT JOIN clientes c ON c.id = p.cliente_id
@@ -162,26 +267,23 @@ def relatorio_excel(lista_id):
     centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
     esquerda = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
-    linha = 1
-
-    def escrever_mesclado(texto, negrito=False, tamanho=11, italico=False, alinhamento=centro):
-        nonlocal linha
-        ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura_total)
-        cel = ws.cell(row=linha, column=1, value=texto)
+    def escrever_mesclado(texto, negrito=False, tamanho=11, italico=False, alinhamento=centro, linha_atual=1):
+        ws.merge_cells(start_row=linha_atual, start_column=1, end_row=linha_atual, end_column=largura_total)
+        cel = ws.cell(row=linha_atual, column=1, value=texto)
         cel.font = Font(bold=negrito, size=tamanho, italic=italico)
         cel.alignment = alinhamento
-        linha += 1
+        return linha_atual + 1
 
-    escrever_mesclado(lista["projeto_nome"], negrito=True, tamanho=14)
-    escrever_mesclado("LISTA DE MATERIAIS ELÉTRICOS POR DESENHO", negrito=True, tamanho=11)
-    escrever_mesclado(lista["titulo"] or lista["numero_desenho"], tamanho=10, italico=True)
-    escrever_mesclado(
-        f"Doc. Referência: {_doc_referencia(lista)}    |    Revisão: {versao['versao'] if versao else '-'}",
-        tamanho=9,
+    data_versao = versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
+    linha = _cabecalho_excel_com_logos(
+        ws, largura_total, empresa, ctx["config"].get("logo_url", ""),
+        lista["cliente_nome"], lista.get("cliente_logo_url"),
+        lista["projeto_nome"], f"LISTA DE MATERIAIS ELÉTRICOS POR DESENHO — {lista['titulo'] or lista['numero_desenho']}",
+        versao["versao"] if versao else "-", data_versao,
     )
-    escrever_mesclado(
-        f"Nº do Cliente: {lista['numero_cliente'] or '-'}    |    Nº do Fornecedor: {lista['numero_fornecedor'] or '-'}",
-        tamanho=9,
+    linha = escrever_mesclado(
+        f"Doc. Referência: {_doc_referencia(lista)}    |    Nº do Cliente: {lista['numero_cliente'] or '-'}    |    Nº do Fornecedor: {lista['numero_fornecedor'] or '-'}",
+        tamanho=9, linha_atual=linha,
     )
     linha += 1
 
@@ -208,7 +310,7 @@ def relatorio_excel(lista_id):
         linha += 1
 
     linha += 1
-    escrever_mesclado("HISTÓRICO DE REVISÕES", negrito=True, tamanho=10, alinhamento=centro)
+    linha = escrever_mesclado("HISTÓRICO DE REVISÕES", negrito=True, tamanho=10, alinhamento=centro, linha_atual=linha)
     for col, titulo in enumerate(["Rev.", "Data", "Responsável", "Descrição"], start=1):
         cel = ws.cell(row=linha, column=col, value=titulo)
         cel.font = Font(bold=True, size=9)
@@ -233,7 +335,7 @@ def relatorio_excel(lista_id):
     legenda_txt = "   ".join(
         f"[{'X' if cod == codigo_atual else ' '}] {cod} - {nome}" for cod, nome in LEGENDA_STATUS
     )
-    escrever_mesclado(f"STATUS DO DOCUMENTO:   {legenda_txt}", tamanho=9, alinhamento=esquerda)
+    linha = escrever_mesclado(f"STATUS DO DOCUMENTO:   {legenda_txt}", tamanho=9, alinhamento=esquerda, linha_atual=linha)
 
     linha += 1
     ws.cell(row=linha, column=1, value=f"Cliente: {lista['cliente_nome'] or '-'}").font = Font(size=9)
@@ -269,21 +371,20 @@ def relatorio_pdf(lista_id):
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.2 * cm, bottomMargin=1.2 * cm,
                              leftMargin=1.2 * cm, rightMargin=1.2 * cm)
 
-    titulo_estilo = ParagraphStyle("titulo", fontSize=15, leading=18, alignment=1, spaceAfter=8, fontName="Helvetica-Bold")
-    subtitulo_estilo = ParagraphStyle("subtitulo", fontSize=11, leading=14, alignment=1, spaceAfter=4, fontName="Helvetica-Bold")
     ref_estilo = ParagraphStyle("ref", fontSize=9, leading=12, alignment=1, spaceAfter=10)
     secao_estilo = ParagraphStyle("secao", fontSize=10, fontName="Helvetica-Bold", spaceBefore=10, spaceAfter=4)
 
-    elementos = [
-        Paragraph(lista["projeto_nome"], titulo_estilo),
-        Paragraph("LISTA DE MATERIAIS ELÉTRICOS POR DESENHO", subtitulo_estilo),
-        Paragraph(lista["titulo"] or lista["numero_desenho"], ref_estilo),
-        Paragraph(f"Doc. Referência: {_doc_referencia(lista)} &nbsp;&nbsp;|&nbsp;&nbsp; Revisão: {versao['versao'] if versao else '-'}", ref_estilo),
-        Paragraph(
-            f"Nº do Cliente: {lista['numero_cliente'] or '-'} &nbsp;&nbsp;|&nbsp;&nbsp; Nº do Fornecedor: {lista['numero_fornecedor'] or '-'}",
-            ref_estilo,
-        ),
-    ]
+    data_versao = versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
+    elementos = _cabecalho_pdf_com_logos(
+        empresa, ctx["config"].get("logo_url", ""), lista["cliente_nome"], lista.get("cliente_logo_url"),
+        lista["projeto_nome"], f"LISTA DE MATERIAIS ELÉTRICOS POR DESENHO — {lista['titulo'] or lista['numero_desenho']}",
+        versao["versao"] if versao else "-", data_versao,
+    )
+    elementos.append(Paragraph(
+        f"Doc. Referência: {_doc_referencia(lista)} &nbsp;&nbsp;|&nbsp;&nbsp; "
+        f"Nº do Cliente: {lista['numero_cliente'] or '-'} &nbsp;&nbsp;|&nbsp;&nbsp; Nº do Fornecedor: {lista['numero_fornecedor'] or '-'}",
+        ref_estilo,
+    ))
 
     dados_materiais = [["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]]
     for idx, item in enumerate(itens, start=1):
@@ -499,3 +600,232 @@ def relatorio_projeto_pdf(projeto_id):
     doc.build(elementos)
     buf.seek(0)
     return send_file(buf, as_attachment=True, download_name=f"relatorio_projeto_{projeto['codigo']}.pdf", mimetype="application/pdf")
+
+
+def _carregar_projeto_para_relatorio(projeto_id):
+    projeto = db.query_one(
+        """SELECT p.*, c.razao_social AS cliente_nome, c.logo_url AS cliente_logo_url
+           FROM projetos p LEFT JOIN clientes c ON c.id = p.cliente_id
+           WHERE p.id = %s""",
+        (projeto_id,),
+    )
+    if not projeto:
+        return None
+    config = {c["chave"]: c["valor"] for c in db.query_all("SELECT chave, valor FROM configuracoes")}
+    return {"projeto": projeto, "config": config}
+
+
+# =========================================================
+# RELATÓRIO — LISTA PQ
+# =========================================================
+@relatorios_bp.get("/api/projetos/<int:projeto_id>/lista-pq/relatorio/excel")
+@login_required
+def relatorio_lista_pq_excel(projeto_id):
+    ctx = _carregar_projeto_para_relatorio(projeto_id)
+    if not ctx:
+        return jsonify({"erro": "Projeto não encontrado"}), 404
+    projeto, config = ctx["projeto"], ctx["config"]
+    versao_id = request.args.get("versao_id", type=int) or projeto["pq_versao_atual_id"]
+    versao = db.query_one("SELECT v.*, u.nome AS criado_por_nome FROM lista_pq_versoes v LEFT JOIN usuarios u ON u.id = v.criado_por WHERE v.id = %s", (versao_id,)) if versao_id else None
+    itens = db.query_all(
+        """SELECT i.*, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
+           FROM lista_pq_itens i JOIN materiais m ON m.id = i.material_id
+           WHERE i.versao_id = %s ORDER BY m.codigo""", (versao_id,),
+    ) if versao_id else []
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Lista PQ"
+    largura_total = 8
+    fino = Side(style="thin", color="000000")
+    borda = Border(left=fino, right=fino, top=fino, bottom=fino)
+    centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    esquerda = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    data_versao = versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
+    linha = _cabecalho_excel_com_logos(
+        ws, largura_total, config.get("nome_empresa", ""), config.get("logo_url", ""),
+        projeto["cliente_nome"], projeto.get("cliente_logo_url"),
+        f"{projeto['codigo']} — {projeto['nome']}", "LISTA PQ",
+        versao["versao"] if versao else "-", data_versao,
+    )
+
+    cabecalho = ["Item", "Código", "Descrição", "Fabricante", "Bitola", "Qtd. Base", "% Aplicado", "Qtd. Atualizada", "Unidade"]
+    largura_total = len(cabecalho)
+    for col, titulo in enumerate(cabecalho, start=1):
+        cel = ws.cell(row=linha, column=col, value=titulo)
+        cel.font = Font(bold=True, size=10, color="FFFFFF")
+        cel.fill = openpyxl.styles.PatternFill("solid", fgColor="1f3a5f")
+        cel.alignment, cel.border = centro, borda
+    linha += 1
+    for idx, item in enumerate(itens, start=1):
+        valores = [idx, item["codigo"], item["descricao"], item["fabricante"] or "", item["bitola"] or "",
+                   float(item["quantidade_base"]), f"{float(item['percentual']):g}%",
+                   float(item["quantidade_atualizada"]), item["unidade"]]
+        for col, valor in enumerate(valores, start=1):
+            cel = ws.cell(row=linha, column=col, value=valor)
+            cel.border = borda
+            cel.alignment = esquerda if col == 3 else centro
+        linha += 1
+    if not itens:
+        ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura_total)
+        ws.cell(row=linha, column=1, value="Nenhuma versão salva da Lista PQ ainda.").alignment = centro
+
+    for i, w in enumerate([6, 14, 32, 20, 12, 12, 12, 14, 10], start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name=f"lista_pq_{projeto['codigo']}.xlsx",
+                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@relatorios_bp.get("/api/projetos/<int:projeto_id>/lista-pq/relatorio/pdf")
+@login_required
+def relatorio_lista_pq_pdf(projeto_id):
+    ctx = _carregar_projeto_para_relatorio(projeto_id)
+    if not ctx:
+        return jsonify({"erro": "Projeto não encontrado"}), 404
+    projeto, config = ctx["projeto"], ctx["config"]
+    versao_id = request.args.get("versao_id", type=int) or projeto["pq_versao_atual_id"]
+    versao = db.query_one("SELECT v.*, u.nome AS criado_por_nome FROM lista_pq_versoes v LEFT JOIN usuarios u ON u.id = v.criado_por WHERE v.id = %s", (versao_id,)) if versao_id else None
+    itens = db.query_all(
+        """SELECT i.*, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
+           FROM lista_pq_itens i JOIN materiais m ON m.id = i.material_id
+           WHERE i.versao_id = %s ORDER BY m.codigo""", (versao_id,),
+    ) if versao_id else []
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.2 * cm, bottomMargin=1.2 * cm,
+                             leftMargin=1.2 * cm, rightMargin=1.2 * cm)
+    data_versao = versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
+    elementos = _cabecalho_pdf_com_logos(
+        config.get("nome_empresa", ""), config.get("logo_url", ""),
+        projeto["cliente_nome"], projeto.get("cliente_logo_url"),
+        f"{projeto['codigo']} — {projeto['nome']}", "LISTA PQ",
+        versao["versao"] if versao else "-", data_versao,
+    )
+
+    dados = [["Item", "Código", "Descrição", "Fabricante", "Bitola", "Qtd. Base", "%", "Qtd. Atualizada", "Unidade"]]
+    for idx, item in enumerate(itens, start=1):
+        dados.append([idx, item["codigo"], item["descricao"], item["fabricante"] or "-", item["bitola"] or "-",
+                      item["quantidade_base"], f"{float(item['percentual']):g}%", item["quantidade_atualizada"], item["unidade"]])
+    if not itens:
+        dados.append(["-", "-", "Nenhuma versão salva da Lista PQ ainda.", "-", "-", "-", "-", "-", "-"])
+
+    tabela = _tabela_quebravel(
+        dados, col_widths=[1.2 * cm, 2.5 * cm, 6.5 * cm, 3.5 * cm, 2.2 * cm, 2.2 * cm, 1.8 * cm, 2.8 * cm, 2 * cm],
+        alinhar_direita={0, 5, 6, 7, 8},
+    )
+    elementos.append(tabela)
+    doc.build(elementos)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name=f"lista_pq_{projeto['codigo']}.pdf", mimetype="application/pdf")
+
+
+# =========================================================
+# RELATÓRIO — LISTA DE COMPRAS
+# =========================================================
+@relatorios_bp.get("/api/projetos/<int:projeto_id>/lista-compras/relatorio/excel")
+@login_required
+def relatorio_lista_compras_excel(projeto_id):
+    ctx = _carregar_projeto_para_relatorio(projeto_id)
+    if not ctx:
+        return jsonify({"erro": "Projeto não encontrado"}), 404
+    projeto, config = ctx["projeto"], ctx["config"]
+    versao_id = request.args.get("versao_id", type=int) or projeto["compras_versao_atual_id"]
+    versao = db.query_one("SELECT v.*, u.nome AS criado_por_nome FROM lista_compras_versoes v LEFT JOIN usuarios u ON u.id = v.criado_por WHERE v.id = %s", (versao_id,)) if versao_id else None
+    itens = db.query_all(
+        """SELECT i.*, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
+           FROM lista_compras_itens i JOIN materiais m ON m.id = i.material_id
+           WHERE i.versao_id = %s ORDER BY m.codigo""", (versao_id,),
+    ) if versao_id else []
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Lista de Compras"
+    fino = Side(style="thin", color="000000")
+    borda = Border(left=fino, right=fino, top=fino, bottom=fino)
+    centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    esquerda = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    data_versao = versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
+    linha = _cabecalho_excel_com_logos(
+        ws, 6, config.get("nome_empresa", ""), config.get("logo_url", ""),
+        projeto["cliente_nome"], projeto.get("cliente_logo_url"),
+        f"{projeto['codigo']} — {projeto['nome']}", "LISTA DE COMPRAS",
+        versao["versao"] if versao else "-", data_versao,
+    )
+
+    cabecalho = ["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]
+    largura_total = len(cabecalho)
+    for col, titulo in enumerate(cabecalho, start=1):
+        cel = ws.cell(row=linha, column=col, value=titulo)
+        cel.font = Font(bold=True, size=10, color="FFFFFF")
+        cel.fill = openpyxl.styles.PatternFill("solid", fgColor="1f3a5f")
+        cel.alignment, cel.border = centro, borda
+    linha += 1
+    for idx, item in enumerate(itens, start=1):
+        valores = [idx, item["codigo"], item["descricao"], item["fabricante"] or "", item["bitola"] or "",
+                   float(item["quantidade"]), item["unidade"]]
+        for col, valor in enumerate(valores, start=1):
+            cel = ws.cell(row=linha, column=col, value=valor)
+            cel.border = borda
+            cel.alignment = esquerda if col == 3 else centro
+        linha += 1
+    if not itens:
+        ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura_total)
+        ws.cell(row=linha, column=1, value="Nenhuma versão salva da Lista de Compras ainda.").alignment = centro
+
+    for i, w in enumerate([6, 14, 34, 20, 12, 12, 10], start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name=f"lista_compras_{projeto['codigo']}.xlsx",
+                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@relatorios_bp.get("/api/projetos/<int:projeto_id>/lista-compras/relatorio/pdf")
+@login_required
+def relatorio_lista_compras_pdf(projeto_id):
+    ctx = _carregar_projeto_para_relatorio(projeto_id)
+    if not ctx:
+        return jsonify({"erro": "Projeto não encontrado"}), 404
+    projeto, config = ctx["projeto"], ctx["config"]
+    versao_id = request.args.get("versao_id", type=int) or projeto["compras_versao_atual_id"]
+    versao = db.query_one("SELECT v.*, u.nome AS criado_por_nome FROM lista_compras_versoes v LEFT JOIN usuarios u ON u.id = v.criado_por WHERE v.id = %s", (versao_id,)) if versao_id else None
+    itens = db.query_all(
+        """SELECT i.*, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
+           FROM lista_compras_itens i JOIN materiais m ON m.id = i.material_id
+           WHERE i.versao_id = %s ORDER BY m.codigo""", (versao_id,),
+    ) if versao_id else []
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.2 * cm, bottomMargin=1.2 * cm,
+                             leftMargin=1.2 * cm, rightMargin=1.2 * cm)
+    data_versao = versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
+    elementos = _cabecalho_pdf_com_logos(
+        config.get("nome_empresa", ""), config.get("logo_url", ""),
+        projeto["cliente_nome"], projeto.get("cliente_logo_url"),
+        f"{projeto['codigo']} — {projeto['nome']}", "LISTA DE COMPRAS",
+        versao["versao"] if versao else "-", data_versao,
+    )
+
+    dados = [["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]]
+    for idx, item in enumerate(itens, start=1):
+        dados.append([idx, item["codigo"], item["descricao"], item["fabricante"] or "-", item["bitola"] or "-",
+                      item["quantidade"], item["unidade"]])
+    if not itens:
+        dados.append(["-", "-", "Nenhuma versão salva da Lista de Compras ainda.", "-", "-", "-", "-"])
+
+    tabela = _tabela_quebravel(
+        dados, col_widths=[1.3 * cm, 2.8 * cm, 8 * cm, 4.5 * cm, 2.8 * cm, 2.8 * cm, 2.3 * cm],
+        alinhar_direita={0, 5, 6},
+    )
+    elementos.append(tabela)
+    doc.build(elementos)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name=f"lista_compras_{projeto['codigo']}.pdf", mimetype="application/pdf")
