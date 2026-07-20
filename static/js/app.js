@@ -55,7 +55,8 @@ function aplicarPermissoes() {
 function abrirModal(html, extraClass = "") {
   const modal = document.getElementById("modal-conteudo");
   modal.className = `modal ${extraClass}`.trim();
-  modal.innerHTML = html;
+  modal.classList.remove("modal-maximizado");
+  document.getElementById("modal-corpo").innerHTML = html;
   document.getElementById("modal-overlay").classList.remove("oculto");
 }
 function fecharModal() {
@@ -63,6 +64,9 @@ function fecharModal() {
 }
 document.getElementById("modal-overlay").addEventListener("click", (e) => {
   if (e.target.id === "modal-overlay") fecharModal();
+});
+document.getElementById("btn-modal-maximizar").addEventListener("click", () => {
+  document.getElementById("modal-conteudo").classList.toggle("modal-maximizado");
 });
 
 // ---------- LOGIN ----------
@@ -841,25 +845,23 @@ function modalNovaLista() {
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
-      <button class="btn-primario" onclick="criarLista()">Criar e Abrir</button>
+      <button class="btn-primario" onclick="continuarNovaLista()">Continuar</button>
     </div>
   `);
 }
 
-async function criarLista() {
+// A lista só é criada no banco quando a primeira versão (com os itens
+// escolhidos) é salva - assim não sobra uma "v1" vazia no histórico.
+async function continuarNovaLista() {
   const numero_desenho = document.getElementById("lista-numero").value.trim();
   const titulo = document.getElementById("lista-titulo").value.trim();
   const numero_cliente = document.getElementById("lista-numero-cliente").value.trim();
   const numero_fornecedor = document.getElementById("lista-numero-fornecedor").value.trim();
   if (!numero_desenho) { toast("Informe o número do desenho", "erro"); return; }
-  try {
-    const resultado = await api(`/api/projetos/${state.projetoAtual.id}/listas`, {
-      method: "POST", body: JSON.stringify({ numero_desenho, titulo, numero_cliente, numero_fornecedor, itens: [] }),
-    });
-    fecharModal();
-    await carregarListas(state.projetoAtual.id);
-    abrirEditorLista(resultado.id);
-  } catch (err) { toast(err.message, "erro"); }
+  if (!state.materiais.length) state.materiais = await api("/api/materiais");
+  window._itensEditor = [];
+  window._editorBusca = "";
+  renderEditorLista(null, { numero_desenho, titulo, numero_cliente, numero_fornecedor });
 }
 
 document.getElementById("btn-nova-lista").addEventListener("click", modalNovaLista);
@@ -904,8 +906,10 @@ function renderEditorLista(listaId, lista) {
       </div>
     </div>
     <div class="modal-acoes">
-      <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/excel" target="_blank">Relatório Excel</a>
-      <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/pdf" target="_blank">Relatório PDF</a>
+      ${listaId ? `
+        <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/excel" target="_blank">Relatório Excel</a>
+        <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/pdf" target="_blank">Relatório PDF</a>
+      ` : ""}
       <span style="flex:1"></span>
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
       <button class="btn-primario somente-admin" id="btn-revisar-desenho">Revisar lista</button>
@@ -921,6 +925,7 @@ function renderEditorLista(listaId, lista) {
   document.getElementById("btn-revisar-desenho").addEventListener("click", () => {
     if (!window._itensEditor.length) { toast("Adicione ao menos um material", "erro"); return; }
     window._editorCabecalho = {
+      numero_desenho: lista.numero_desenho,
       titulo: document.getElementById("editor-titulo").value.trim(),
       numero_cliente: document.getElementById("editor-numero-cliente").value.trim(),
       numero_fornecedor: document.getElementById("editor-numero-fornecedor").value.trim(),
@@ -1032,9 +1037,15 @@ async function salvarEditorLista(listaId) {
     itens: itens.map((i) => ({ material_id: Number(i.material_id), quantidade: Number(i.quantidade) || 0, observacao: i.observacao || "" })),
   };
   try {
-    await api(`/api/listas/${listaId}`, { method: "PUT", body: JSON.stringify(payload) });
+    if (listaId) {
+      await api(`/api/listas/${listaId}`, { method: "PUT", body: JSON.stringify(payload) });
+      toast("Nova versão salva com sucesso");
+    } else {
+      payload.numero_desenho = cabecalho.numero_desenho;
+      await api(`/api/projetos/${state.projetoAtual.id}/listas`, { method: "POST", body: JSON.stringify(payload) });
+      toast("Lista criada com sucesso");
+    }
     fecharModal();
-    toast("Nova versão salva com sucesso");
     carregarListas(state.projetoAtual.id);
   } catch (err) { toast(err.message, "erro"); }
 }
