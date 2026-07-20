@@ -990,14 +990,19 @@ function renderEditorLista(listaId, lista) {
 }
 
 function renderReviewLista(listaId, lista) {
+  const linhas = window._itensEditor.map((item, idx) => `
+    <tr>
+      <td>${item.codigo}</td><td>${item.descricao}</td><td>${item.fabricante || ""}</td><td>${item.bitola || ""}</td>
+      <td><input type="number" step="0.001" min="0" class="revisao-item-qtd" data-idx="${idx}" value="${item.quantidade}" style="width:90px"></td>
+      <td>${item.unidade || ""}</td>
+    </tr>`).join("");
+
   abrirModal(`
     <h3>Revisar Lista por Desenho — ${lista.numero_desenho}</h3>
     <div style="max-height:420px; overflow-y:auto; margin:12px 0;">
       <table class="tabela">
         <thead><tr><th>Código</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Qtd</th><th>Unidade</th></tr></thead>
-        <tbody>
-          ${window._itensEditor.map((i) => `<tr><td>${i.codigo}</td><td>${i.descricao}</td><td>${i.fabricante || ""}</td><td>${i.bitola || ""}</td><td>${formatarQuantidade(i.quantidade, i.unidade)}</td><td>${i.unidade || ""}</td></tr>`).join("")}
-        </tbody>
+        <tbody>${linhas}</tbody>
       </table>
     </div>
     <div class="modal-acoes">
@@ -1007,6 +1012,12 @@ function renderReviewLista(listaId, lista) {
     </div>
   `, "modal-grande");
   aplicarPermissoes();
+
+  document.querySelectorAll(".revisao-item-qtd").forEach((input) => {
+    input.addEventListener("input", (e) => {
+      window._itensEditor[Number(input.dataset.idx)].quantidade = e.target.value;
+    });
+  });
   document.getElementById("btn-voltar-editor-desenho").addEventListener("click", () => renderEditorLista(listaId, lista));
   document.getElementById("btn-salvar-editor-desenho").addEventListener("click", () => salvarEditorLista(listaId));
 }
