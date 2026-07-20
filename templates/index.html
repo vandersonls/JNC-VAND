@@ -61,7 +61,6 @@
       <button class="nav-item" data-tab="materiais">🧰 Materiais</button>
       <button class="nav-item" data-tab="clientes">🏢 Clientes</button>
       <button class="nav-item" data-tab="projetos">📁 Projetos</button>
-      <button class="nav-item somente-admin" data-tab="usuarios">👤 Usuários</button>
       <button class="nav-item somente-admin" data-tab="configuracoes">⚙️ Configurações</button>
     </nav>
     <div class="usuario-atual">
@@ -229,37 +228,27 @@
       </div>
     </section>
 
-    <!-- USUÁRIOS -->
-    <section id="tab-usuarios" class="tab">
-      <div class="tab-header">
-        <h2>Usuários</h2>
-        <div class="acoes">
-          <button class="btn-primario" id="btn-novo-usuario">+ Novo Usuário</button>
-        </div>
-      </div>
-      <table class="tabela">
-        <thead><tr><th>Nome</th><th>Email</th><th>Perfil</th><th>Ativo</th><th>Ações</th></tr></thead>
-        <tbody id="tbody-usuarios"></tbody>
-      </table>
-    </section>
-
     <!-- CONFIGURAÇÕES -->
     <section id="tab-configuracoes" class="tab">
       <div class="tab-header">
         <h2>Configurações do Sistema</h2>
       </div>
       <div class="subnav">
-        <button class="subnav-item ativo" data-subtab="config-geral">Geral</button>
+        <button class="subnav-item ativo" data-subtab="config-empresa">Cadastro da Empresa</button>
+        <button class="subnav-item" data-subtab="config-usuarios">Usuário</button>
         <button class="subnav-item" data-subtab="config-areas">Áreas</button>
         <button class="subnav-item" data-subtab="config-auditoria">Auditoria</button>
+        <button class="subnav-item" data-subtab="config-backup">Backup</button>
+        <button class="subnav-item" data-subtab="config-risco">Zona de Risco</button>
       </div>
 
-      <div id="subtab-config-geral" class="subtab ativo">
+      <div id="subtab-config-empresa" class="subtab ativo">
         <form id="form-configuracoes" class="form-config">
           <label>Nome da Empresa</label>
           <input type="text" id="cfg-nome_empresa">
-          <label>URL do Logotipo</label>
+          <label>Logotipo da Empresa (URL da imagem)</label>
           <input type="text" id="cfg-logo_url">
+          <img id="cfg-logo-preview" class="logo-preview oculto" alt="Pré-visualização do logotipo">
           <label>Formato de Data</label>
           <select id="cfg-formato_data">
             <option value="DD/MM/YYYY">DD/MM/AAAA</option>
@@ -267,6 +256,18 @@
           </select>
           <button type="submit" class="btn-primario">Salvar Configurações</button>
         </form>
+      </div>
+
+      <div id="subtab-config-usuarios" class="subtab">
+        <div class="tab-header">
+          <div class="acoes">
+            <button class="btn-primario" id="btn-novo-usuario">+ Novo Usuário</button>
+          </div>
+        </div>
+        <table class="tabela">
+          <thead><tr><th>Nome</th><th>Email</th><th>Perfil</th><th>Ativo</th><th>Ações</th></tr></thead>
+          <tbody id="tbody-usuarios"></tbody>
+        </table>
       </div>
 
       <div id="subtab-config-areas" class="subtab">
@@ -298,6 +299,32 @@
         </table>
         <div class="paginacao">
           <button class="btn-secundario" id="btn-auditoria-mais">Carregar mais</button>
+        </div>
+      </div>
+
+      <div id="subtab-config-backup" class="subtab">
+        <div class="card-backup">
+          <h3>Backup Completo dos Dados</h3>
+          <p>Gera um arquivo Excel com todos os materiais, clientes, projetos, áreas, usuários e listas por desenho cadastrados no sistema — uma cópia de segurança para guardar fora do sistema.</p>
+          <a class="btn-primario somente-master" href="/api/backup/excel" target="_blank">⬇ Baixar Backup Completo (Excel)</a>
+        </div>
+      </div>
+
+      <div id="subtab-config-risco" class="subtab">
+        <div class="card-risco">
+          <h3>Excluir todos os materiais</h3>
+          <p>Remove todos os materiais cadastrados no catálogo. Essa ação não pode ser desfeita.</p>
+          <button class="btn-perigo somente-master" id="btn-risco-materiais">Excluir todos os materiais</button>
+        </div>
+        <div class="card-risco">
+          <h3>Excluir todos os projetos</h3>
+          <p>Remove todos os projetos e, junto com eles, todas as listas por desenho, Listas PQ e Listas de Compras associadas. Essa ação não pode ser desfeita.</p>
+          <button class="btn-perigo somente-master" id="btn-risco-projetos">Excluir todos os projetos</button>
+        </div>
+        <div class="card-risco">
+          <h3>Zerar log de auditoria</h3>
+          <p>Apaga todo o histórico de ações registradas (quem fez o quê e quando) e reinicia a contagem. Essa ação não pode ser desfeita.</p>
+          <button class="btn-perigo somente-master" id="btn-risco-auditoria">Zerar log de auditoria</button>
         </div>
       </div>
     </section>

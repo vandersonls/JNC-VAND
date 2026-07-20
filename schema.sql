@@ -18,6 +18,11 @@ CREATE TABLE IF NOT EXISTS usuarios (
     atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'usuarios' AND COLUMN_NAME = 'sessao_ultima_atividade');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE usuarios ADD COLUMN sessao_ultima_atividade DATETIME NULL', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 -- =========================================================
 -- CLIENTES
 -- =========================================================
@@ -342,6 +347,9 @@ CREATE TABLE IF NOT EXISTS auditoria (
     INDEX idx_auditoria_entidade (entidade),
     INDEX idx_auditoria_criado_em (criado_em)
 ) ENGINE=InnoDB;
+
+-- Redefinir o ENUM é seguro de reexecutar (mesma definição não gera erro).
+ALTER TABLE auditoria MODIFY COLUMN acao ENUM('criar', 'editar', 'excluir', 'importar', 'login', 'logout', 'exportar') NOT NULL;
 
 -- Usuário master inicial (senha: admin123 - troque após o primeiro login)
 -- Hash gerado com werkzeug.security.generate_password_hash em tempo de execução (ver seed.py)

@@ -310,6 +310,17 @@ input[type="number"], select, textarea {
 .form-config { display: flex; flex-direction: column; gap: 6px; max-width: 420px; }
 .form-config label { font-size: 12px; color: var(--cinza); margin-top: 10px; }
 .form-config button { margin-top: 20px; width: fit-content; }
+.logo-preview { max-width: 220px; max-height: 90px; margin-top: 6px; object-fit: contain; }
+
+/* ---------- BACKUP / ZONA DE RISCO ---------- */
+.card-backup, .card-risco {
+  background: var(--branco); border-radius: 14px; padding: 20px 24px; max-width: 640px;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.05);
+}
+.card-backup h3, .card-risco h3 { margin-top: 0; color: var(--azul); }
+.card-backup p, .card-risco p { color: var(--cinza); font-size: 13.5px; }
+.card-risco { border: 1px solid #fde2e2; margin-bottom: 16px; }
+#risco-confirmacao-texto { width: 100%; margin: 8px 0 4px; }
 
 /* ---------- ÁRVORE DE LISTAS POR DESENHO ---------- */
 .arvore {

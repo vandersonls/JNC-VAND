@@ -137,7 +137,7 @@ function mostrarApp() {
   document.getElementById("usuario-perfil").textContent = state.usuario.perfil;
   aplicarPermissoes();
 
-  const tabsAdmin = new Set(["usuarios", "configuracoes"]);
+  const tabsAdmin = new Set(["configuracoes"]);
   let tabInicial = localStorage.getItem(CHAVE_ULTIMA_TAB) || "dashboard";
   const tabExiste = !!document.querySelector(`.nav-item[data-tab="${tabInicial}"]`);
   if (!tabExiste || (tabsAdmin.has(tabInicial) && !ehAdmin())) tabInicial = "dashboard";
@@ -159,7 +159,6 @@ function ativarTab(nome) {
   if (nome === "materiais") carregarMateriais();
   if (nome === "clientes") carregarClientes();
   if (nome === "projetos") carregarProjetos();
-  if (nome === "usuarios") carregarUsuarios();
   if (nome === "configuracoes") carregarConfiguracoes();
 }
 
@@ -173,6 +172,7 @@ function ativarSubtab(nome) {
   document.getElementById(`subtab-${nome}`).classList.add("ativo");
   if (nome === "config-auditoria") carregarAuditoria(true);
   if (nome === "config-areas") carregarAreas();
+  if (nome === "config-usuarios") carregarUsuarios();
 }
 
 function ativarTabInterna(nome) {
@@ -1490,7 +1490,21 @@ async function carregarConfiguracoes() {
     const el = document.getElementById(`cfg-${c.chave}`);
     if (el) el.value = c.valor || "";
   });
+  atualizarPreviewLogoEmpresa();
 }
+
+function atualizarPreviewLogoEmpresa() {
+  const url = document.getElementById("cfg-logo_url").value.trim();
+  const img = document.getElementById("cfg-logo-preview");
+  if (url) {
+    img.src = url;
+    img.classList.remove("oculto");
+  } else {
+    img.classList.add("oculto");
+  }
+}
+
+document.getElementById("cfg-logo_url").addEventListener("input", atualizarPreviewLogoEmpresa);
 
 document.getElementById("form-configuracoes").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1503,6 +1517,59 @@ document.getElementById("form-configuracoes").addEventListener("submit", async (
     await api("/api/configuracoes", { method: "PUT", body: JSON.stringify(payload) });
     toast("Configurações salvas");
   } catch (err) { toast(err.message, "erro"); }
+});
+
+// ---------- ZONA DE RISCO ----------
+function confirmarAcaoRisco(titulo, mensagem, palavra, aoConfirmar) {
+  abrirModal(`
+    <h3>${titulo}</h3>
+    <p style="color:var(--cinza);">${mensagem}</p>
+    <p>Para confirmar, digite <b>${palavra}</b> no campo abaixo:</p>
+    <input type="text" id="risco-confirmacao-texto" autocomplete="off">
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-perigo" id="btn-confirmar-risco" disabled>${titulo}</button>
+    </div>
+  `);
+  const input = document.getElementById("risco-confirmacao-texto");
+  const botao = document.getElementById("btn-confirmar-risco");
+  input.addEventListener("input", () => {
+    botao.disabled = input.value.trim().toUpperCase() !== palavra;
+  });
+  botao.addEventListener("click", async () => {
+    try {
+      const resultado = await aoConfirmar();
+      fecharModal();
+      toast(`${resultado.excluidos} registro(s) removido(s) com sucesso`);
+    } catch (err) { toast(err.message, "erro"); }
+  });
+}
+
+document.getElementById("btn-risco-materiais").addEventListener("click", () => {
+  confirmarAcaoRisco(
+    "Excluir todos os materiais",
+    "Todos os materiais cadastrados no catálogo serão removidos. Essa ação não pode ser desfeita.",
+    "EXCLUIR",
+    () => api("/api/risco/materiais", { method: "DELETE" }),
+  );
+});
+
+document.getElementById("btn-risco-projetos").addEventListener("click", () => {
+  confirmarAcaoRisco(
+    "Excluir todos os projetos",
+    "Todos os projetos, listas por desenho, Listas PQ e Listas de Compras serão removidos. Essa ação não pode ser desfeita.",
+    "EXCLUIR",
+    () => api("/api/risco/projetos", { method: "DELETE" }),
+  );
+});
+
+document.getElementById("btn-risco-auditoria").addEventListener("click", () => {
+  confirmarAcaoRisco(
+    "Zerar log de auditoria",
+    "Todo o histórico de ações do sistema será apagado permanentemente.",
+    "ZERAR",
+    () => api("/api/risco/auditoria", { method: "DELETE" }),
+  );
 });
 
 // ---------- ÁREAS ----------

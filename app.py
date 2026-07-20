@@ -5,7 +5,7 @@ from flask import Flask, render_template
 from flask_cors import CORS
 
 import db
-from auth import auth_bp, login_manager
+from auth import auth_bp, login_manager, atualizar_atividade_sessao
 from materiais import materiais_bp
 from clientes import clientes_bp
 from projetos import projetos_bp
@@ -66,6 +66,11 @@ def create_app():
     app.register_blueprint(areas_bp)
     app.register_blueprint(lista_pq_bp)
     app.register_blueprint(lista_compras_bp)
+
+    @app.after_request
+    def marcar_atividade(response):
+        atualizar_atividade_sessao()
+        return response
 
     @app.route("/")
     def index():

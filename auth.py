@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import Blueprint, request, jsonify
@@ -11,6 +12,10 @@ import db
 
 auth_bp = Blueprint("auth", __name__)
 login_manager = LoginManager()
+
+# Tempo de inatividade após o qual uma sessão é considerada encerrada e o
+# login em outro local volta a ser permitido.
+SESSAO_TIMEOUT_MINUTOS = 10
 
 
 class Usuario(UserMixin):
@@ -63,7 +68,15 @@ def login():
     if not row or not check_password_hash(row["senha_hash"], senha):
         return jsonify({"erro": "Email ou senha inválidos"}), 401
 
+    ultima_atividade = row.get("sessao_ultima_atividade")
+    if ultima_atividade and datetime.now() - ultima_atividade < timedelta(minutes=SESSAO_TIMEOUT_MINUTOS):
+        return jsonify({
+            "erro": "Este usuário já possui uma sessão ativa em outro local. "
+                    "Aguarde alguns minutos de inatividade da outra sessão ou saia dela e tente novamente."
+        }), 409
+
     login_user(Usuario(row), remember=True)
+    db.execute("UPDATE usuarios SET sessao_ultima_atividade = NOW() WHERE id = %s", (row["id"],))
     from auditoria import registrar  # import local evita ciclo (auditoria importa perfis_permitidos daqui)
     registrar("login", "usuario", row["id"], f"{row['nome']} entrou no sistema")
     return jsonify({"usuario": Usuario(row).to_dict()})
@@ -74,10 +87,18 @@ def login():
 def logout():
     from auditoria import registrar
     registrar("logout", "usuario", current_user.id, f"{current_user.nome} saiu do sistema")
+    db.execute("UPDATE usuarios SET sessao_ultima_atividade = NULL WHERE id = %s", (current_user.id,))
     # logout_user() marca o cookie "lembrar-me" para expirar na resposta;
     # session.clear() depois disso apagaria essa marcação e o cookie nunca seria removido.
     logout_user()
     return jsonify({"ok": True})
+
+
+def atualizar_atividade_sessao():
+    """Chamado a cada requisição autenticada para manter a sessão 'viva' e
+    liberar o login em outro local após SESSAO_TIMEOUT_MINUTOS de inatividade."""
+    if current_user.is_authenticated:
+        db.execute("UPDATE usuarios SET sessao_ultima_atividade = NOW() WHERE id = %s", (current_user.id,))
 
 
 @auth_bp.get("/api/me")
