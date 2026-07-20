@@ -748,6 +748,8 @@ function renderNoLista(l) {
         </span>
         <span class="arvore-acoes">
           <button class="link-acao" onclick="abrirEditorLista(${l.id})">Abrir</button>
+          <button class="link-acao" onclick="ativarSubtabPD('pd-pq')">Lista PQ</button>
+          <button class="link-acao" onclick="ativarSubtabPD('pd-compras')">Lista de Compras</button>
           <button class="link-acao somente-admin" onclick="excluirLista(${l.id})">Excluir</button>
         </span>
       </div>
