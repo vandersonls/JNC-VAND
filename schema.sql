@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS clientes (
 CREATE TABLE IF NOT EXISTS materiais (
     id INT AUTO_INCREMENT PRIMARY KEY,
     codigo VARCHAR(50) NOT NULL UNIQUE,
-    descricao VARCHAR(255) NOT NULL,
+    descricao VARCHAR(500) NOT NULL,
     fabricante VARCHAR(150),
     bitola VARCHAR(50),
     unidade VARCHAR(20) NOT NULL,
@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS materiais (
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
+-- Migração idempotente para bancos já existentes
+ALTER TABLE materiais MODIFY COLUMN descricao VARCHAR(500) NOT NULL;
 
 -- =========================================================
 -- PROJETOS

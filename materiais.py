@@ -205,6 +205,14 @@ def importar_excel():
     total_linhas = len(linhas) - 1
     ignoradas, erros = 0, []
 
+    def _texto(valor, limite):
+        """Converte qualquer valor de célula (Excel às vezes entrega número ou
+        data mesmo quando o conteúdo deveria ser texto) para string segura,
+        cortada no limite da coluna do banco para nunca quebrar o INSERT."""
+        if valor is None:
+            return ""
+        return str(valor).strip()[:limite]
+
     linhas_validas = []
     for linha in linhas[1:]:
         codigo = linha[idx["codigo"]]
@@ -212,11 +220,11 @@ def importar_excel():
             ignoradas += 1
             continue
         linhas_validas.append((
-            str(codigo).strip(),
-            linha[idx["descricao"]] or "",
-            linha[idx["fabricante"]] or "",
-            linha[idx["bitola"]] or "",
-            linha[idx["unidade"]] or "",
+            _texto(codigo, 50),
+            _texto(linha[idx["descricao"]], 500),
+            _texto(linha[idx["fabricante"]], 150),
+            _texto(linha[idx["bitola"]], 50),
+            _texto(linha[idx["unidade"]], 20),
         ))
 
     # Descobre de uma vez quais códigos já existem, em vez de 1 SELECT por linha
