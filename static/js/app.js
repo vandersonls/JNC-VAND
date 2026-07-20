@@ -920,6 +920,11 @@ function renderEditorLista(listaId, lista) {
   });
   document.getElementById("btn-revisar-desenho").addEventListener("click", () => {
     if (!window._itensEditor.length) { toast("Adicione ao menos um material", "erro"); return; }
+    window._editorCabecalho = {
+      titulo: document.getElementById("editor-titulo").value.trim(),
+      numero_cliente: document.getElementById("editor-numero-cliente").value.trim(),
+      numero_fornecedor: document.getElementById("editor-numero-fornecedor").value.trim(),
+    };
     renderReviewLista(listaId, lista);
   });
 
@@ -1008,10 +1013,11 @@ function renderReviewLista(listaId, lista) {
 
 async function salvarEditorLista(listaId) {
   const itens = (window._itensEditor || []).filter((i) => i.material_id);
+  const cabecalho = window._editorCabecalho || { titulo: "", numero_cliente: "", numero_fornecedor: "" };
   const payload = {
-    titulo: document.getElementById("editor-titulo").value.trim(),
-    numero_cliente: document.getElementById("editor-numero-cliente").value.trim(),
-    numero_fornecedor: document.getElementById("editor-numero-fornecedor").value.trim(),
+    titulo: cabecalho.titulo,
+    numero_cliente: cabecalho.numero_cliente,
+    numero_fornecedor: cabecalho.numero_fornecedor,
     itens: itens.map((i) => ({ material_id: Number(i.material_id), quantidade: Number(i.quantidade) || 0, observacao: i.observacao || "" })),
   };
   try {
