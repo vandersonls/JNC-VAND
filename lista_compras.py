@@ -56,6 +56,23 @@ def base_lista_compras(projeto_id):
     return jsonify(linhas)
 
 
+def _carregar_origem_pq(pq_versao_id):
+    if not pq_versao_id:
+        return None
+    versao_pq = db.query_one(
+        "SELECT id, versao, criado_em FROM lista_pq_versoes WHERE id = %s", (pq_versao_id,)
+    )
+    if not versao_pq:
+        return None
+    versao_pq["origens"] = db.query_all(
+        """SELECT lista_desenho_id, numero_desenho, titulo, versao_numero
+           FROM lista_pq_origens WHERE pq_versao_id = %s
+           ORDER BY numero_desenho""",
+        (pq_versao_id,),
+    )
+    return versao_pq
+
+
 @lista_compras_bp.get("/api/projetos/<int:projeto_id>/lista-compras/versoes")
 @login_required
 def listar_versoes_compras(projeto_id):
@@ -65,6 +82,8 @@ def listar_versoes_compras(projeto_id):
            WHERE v.projeto_id = %s ORDER BY v.versao DESC""",
         (projeto_id,),
     )
+    for row in rows:
+        row["origem_pq"] = _carregar_origem_pq(row["pq_versao_id"])
     return jsonify(rows)
 
 
@@ -74,6 +93,7 @@ def obter_versao_compras(versao_id):
     versao = db.query_one("SELECT * FROM lista_compras_versoes WHERE id = %s", (versao_id,))
     if not versao:
         return jsonify({"erro": "Versão não encontrada"}), 404
+    versao["origem_pq"] = _carregar_origem_pq(versao["pq_versao_id"])
     return jsonify({"versao": versao, "itens": _carregar_itens(versao_id)})
 
 
@@ -91,10 +111,13 @@ def salvar_lista_compras(projeto_id):
     )
     proxima_versao = (ultima["max_versao"] or 0) + 1
 
+    projeto = db.query_one("SELECT pq_versao_atual_id FROM projetos WHERE id = %s", (projeto_id,))
+    pq_versao_id = projeto["pq_versao_atual_id"] if projeto else None
+
     versao_id = db.execute(
-        """INSERT INTO lista_compras_versoes (projeto_id, versao, status, observacoes, criado_por)
-           VALUES (%s, %s, 'salvo', %s, %s)""",
-        (projeto_id, proxima_versao, data.get("observacoes", ""), current_user.id),
+        """INSERT INTO lista_compras_versoes (projeto_id, versao, status, observacoes, criado_por, pq_versao_id)
+           VALUES (%s, %s, 'salvo', %s, %s, %s)""",
+        (projeto_id, proxima_versao, data.get("observacoes", ""), current_user.id, pq_versao_id),
     )
     for item in itens:
         db.execute(

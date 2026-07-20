@@ -247,6 +247,21 @@ SET @sql = IF(@fk_exists = 0,
     'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
+-- Rastreabilidade: registra, para cada versão da Lista PQ, quais listas por
+-- desenho (e qual versão de cada uma) foram usadas para montá-la.
+CREATE TABLE IF NOT EXISTS lista_pq_origens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    pq_versao_id INT NOT NULL,
+    lista_desenho_id INT NOT NULL,
+    lista_desenho_versao_id INT NOT NULL,
+    numero_desenho VARCHAR(100) NOT NULL,
+    titulo VARCHAR(255),
+    versao_numero INT NOT NULL,
+    CONSTRAINT fk_pq_origem_versao FOREIGN KEY (pq_versao_id) REFERENCES lista_pq_versoes(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pq_origem_lista FOREIGN KEY (lista_desenho_id) REFERENCES listas_desenho(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pq_origem_lista_versao FOREIGN KEY (lista_desenho_versao_id) REFERENCES lista_desenho_versoes(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 -- =========================================================
 -- LISTA DE COMPRAS (derivada da última versão da Lista PQ do projeto)
 -- =========================================================
@@ -258,10 +273,23 @@ CREATE TABLE IF NOT EXISTS lista_compras_versoes (
     observacoes TEXT,
     criado_por INT,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    pq_versao_id INT NULL,
     CONSTRAINT fk_compras_versao_projeto FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
     CONSTRAINT fk_compras_versao_usuario FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
     UNIQUE KEY uq_compras_projeto_versao (projeto_id, versao)
 ) ENGINE=InnoDB;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lista_compras_versoes' AND COLUMN_NAME = 'pq_versao_id');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE lista_compras_versoes ADD COLUMN pq_versao_id INT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lista_compras_versoes' AND CONSTRAINT_NAME = 'fk_compras_versao_pq');
+SET @sql = IF(@fk_exists = 0,
+    'ALTER TABLE lista_compras_versoes ADD CONSTRAINT fk_compras_versao_pq FOREIGN KEY (pq_versao_id) REFERENCES lista_pq_versoes(id) ON DELETE SET NULL',
+    'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 CREATE TABLE IF NOT EXISTS lista_compras_itens (
     id INT AUTO_INCREMENT PRIMARY KEY,

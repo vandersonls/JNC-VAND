@@ -352,13 +352,28 @@ input[type="number"], select, textarea {
 .arvore-filhos.oculto { display: none; }
 .arvore-carregando { color: var(--cinza); font-size: 12px; padding: 8px 0 8px 38px; }
 
-/* ---------- ITENS DA LISTA (editor de desenho) ---------- */
-.itens-editor { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; }
-.item-linha { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
-.item-linha .item-material-busca { flex: 2 1 320px; min-width: 0; }
-.item-linha .item-qtd { flex: 0 0 90px; }
-.item-linha .item-obs { flex: 1 1 200px; min-width: 0; }
-.item-linha .btn-perigo { flex: 0 0 auto; }
+/* ---------- EDITOR DE LISTA POR DESENHO (seleção dupla) ---------- */
+.editor-duplo { display: flex; gap: 16px; margin: 4px 0 16px; }
+.editor-painel { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.editor-painel-titulo { font-size: 12px; font-weight: 600; color: var(--cinza); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; }
+.editor-pre-lista {
+  background: var(--branco); border-radius: 10px; border: 1px solid var(--borda);
+  max-height: 420px; overflow-y: auto;
+}
+.editor-pre-linha { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #f1f2f5; }
+.editor-pre-linha:last-child { border-bottom: none; }
+.editor-pre-linha:hover { background: #f7f8fa; }
+.editor-pre-info { display: flex; flex-direction: column; min-width: 0; }
+.editor-pre-codigo { font-weight: 600; font-size: 12.5px; color: #1c1f26; }
+.editor-pre-desc { font-size: 11.5px; color: var(--cinza); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.editor-pre-add {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--borda);
+  background: var(--branco); color: var(--azul); font-weight: 700; cursor: pointer;
+}
+.editor-pre-add:hover { background: var(--azul); color: var(--branco); border-color: var(--azul); }
+.editor-selecionados-wrap { max-height: 420px; overflow-y: auto; }
+
+.subtitulo-arvore { margin: 24px 0 10px; font-size: 15px; color: var(--azul); }
 .item-material-busca.invalido { border-color: var(--erro); }
 
 /* ---------- TOAST ---------- */

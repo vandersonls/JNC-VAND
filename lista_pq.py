@@ -57,6 +57,15 @@ def base_lista_pq(projeto_id):
     return jsonify(linhas)
 
 
+def _carregar_origens(versao_id):
+    return db.query_all(
+        """SELECT lista_desenho_id, numero_desenho, titulo, versao_numero
+           FROM lista_pq_origens WHERE pq_versao_id = %s
+           ORDER BY numero_desenho""",
+        (versao_id,),
+    )
+
+
 @lista_pq_bp.get("/api/projetos/<int:projeto_id>/lista-pq/versoes")
 @login_required
 def listar_versoes_pq(projeto_id):
@@ -66,6 +75,8 @@ def listar_versoes_pq(projeto_id):
            WHERE v.projeto_id = %s ORDER BY v.versao DESC""",
         (projeto_id,),
     )
+    for row in rows:
+        row["origens"] = _carregar_origens(row["id"])
     return jsonify(rows)
 
 
@@ -75,6 +86,7 @@ def obter_versao_pq(versao_id):
     versao = db.query_one("SELECT * FROM lista_pq_versoes WHERE id = %s", (versao_id,))
     if not versao:
         return jsonify({"erro": "Versão não encontrada"}), 404
+    versao["origens"] = _carregar_origens(versao_id)
     return jsonify({"versao": versao, "itens": _carregar_itens(versao_id)})
 
 
@@ -109,6 +121,23 @@ def salvar_lista_pq(projeto_id):
             (versao_id, item["material_id"], quantidade_base, percentual, quantidade_atualizada, item.get("observacao", "")),
         )
     db.execute("UPDATE projetos SET pq_versao_atual_id = %s WHERE id = %s", (versao_id, projeto_id))
+
+    origens = db.query_all(
+        """SELECT ld.id AS lista_desenho_id, ld.numero_desenho, ld.titulo,
+                  v.id AS lista_desenho_versao_id, v.versao AS versao_numero
+           FROM listas_desenho ld
+           JOIN lista_desenho_versoes v ON v.id = ld.versao_atual_id
+           WHERE ld.projeto_id = %s""",
+        (projeto_id,),
+    )
+    for origem in origens:
+        db.execute(
+            """INSERT INTO lista_pq_origens
+               (pq_versao_id, lista_desenho_id, lista_desenho_versao_id, numero_desenho, titulo, versao_numero)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (versao_id, origem["lista_desenho_id"], origem["lista_desenho_versao_id"],
+             origem["numero_desenho"], origem["titulo"], origem["versao_numero"]),
+        )
 
     registrar(
         "criar", "lista_pq", projeto_id,

@@ -761,10 +761,13 @@ function renderArvoreListas() {
   aplicarPermissoes();
 }
 
+const ICONE_PASTA = `<svg class="arvore-icone" viewBox="0 0 20 20" fill="none"><path d="M2.5 5.5a1 1 0 0 1 1-1h4l1.5 1.8h7.5a1 1 0 0 1 1 1v8.2a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V5.5Z" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+const ICONE_ARQUIVO = `<svg class="arvore-icone" viewBox="0 0 20 20" fill="none"><path d="M6 2.5h6l3 3v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M12 2.5V6h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+const ICONE_SETA = `<svg viewBox="0 0 12 12" fill="none"><path d="M4 2.5 8 6l-4 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
 function renderNoLista(l) {
   const aberta = arvoreState.expandidas.has(l.id);
   const versoes = arvoreState.versoesPorLista[l.id];
-  const ICONE_PASTA = `<svg class="arvore-icone" viewBox="0 0 20 20" fill="none"><path d="M2.5 5.5a1 1 0 0 1 1-1h4l1.5 1.8h7.5a1 1 0 0 1 1 1v8.2a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V5.5Z" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
   return `
     <div class="arvore-no" data-lista-id="${l.id}">
       <div class="arvore-linha arvore-linha-pasta">
@@ -792,7 +795,6 @@ function renderNoLista(l) {
 function renderFilhosVersoes(listaId, versoes) {
   if (!versoes) return `<div class="arvore-carregando">Carregando versões…</div>`;
   if (!versoes.length) return `<div class="arvore-carregando">Nenhuma versão salva.</div>`;
-  const ICONE_ARQUIVO = `<svg class="arvore-icone" viewBox="0 0 20 20" fill="none"><path d="M6 2.5h6l3 3v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M12 2.5V6h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
   return versoes.map((v) => `
     <div class="arvore-linha arvore-linha-versao">
       <span class="arvore-toggle invisivel"></span>
@@ -866,87 +868,142 @@ document.getElementById("btn-nova-lista").addEventListener("click", modalNovaLis
 async function abrirEditorLista(listaId) {
   if (!state.materiais.length) state.materiais = await api("/api/materiais");
   const dados = await api(`/api/listas/${listaId}`);
-  const itensIniciais = dados.itens.map((i) => ({ material_id: i.material_id, codigo: i.codigo, descricao: i.descricao, quantidade: i.quantidade, observacao: i.observacao || "" }));
+  const itensIniciais = dados.itens.map((i) => ({
+    material_id: i.material_id, codigo: i.codigo, descricao: i.descricao,
+    fabricante: i.fabricante, bitola: i.bitola, unidade: i.unidade,
+    quantidade: i.quantidade, observacao: i.observacao || "",
+  }));
+  window._itensEditor = itensIniciais;
+  window._editorBusca = "";
 
-  renderEditorLista(listaId, dados.lista, itensIniciais);
+  renderEditorLista(listaId, dados.lista);
 }
 
-function renderEditorLista(listaId, lista, itens) {
-  const rotuloMaterial = (m) => `${m.codigo} — ${m.descricao}`;
-  const opcoesDatalist = state.materiais.map((m) => `<option value="${rotuloMaterial(m)}">`).join("");
-
-  const linhaHtml = (item, idx) => `
-    <div class="item-linha" data-idx="${idx}">
-      <input class="item-material-busca" list="materiais-datalist" placeholder="Buscar por código ou descrição..."
-             value="${item.codigo ? rotuloMaterial(item) : ""}">
-      <input class="item-qtd" type="number" step="0.001" min="0" value="${item.quantidade}" placeholder="Qtd">
-      <input class="item-obs" type="text" value="${item.observacao || ""}" placeholder="Observação">
-      <button class="btn-perigo" onclick="removerItemLinha(${idx})">Remover</button>
-    </div>`;
-
+function renderEditorLista(listaId, lista) {
   abrirModal(`
     <h3>Lista por Desenho — ${lista.numero_desenho}</h3>
-    <div class="form-grid">
-      <label>Título</label><input id="editor-titulo" value="${lista.titulo || ""}">
-      <label>Nº do Cliente</label><input id="editor-numero-cliente" value="${lista.numero_cliente || ""}">
-      <label>Nº do Fornecedor</label><input id="editor-numero-fornecedor" value="${lista.numero_fornecedor || ""}">
+    <div class="form-grid" style="flex-direction:row; gap:12px;">
+      <div style="flex:1"><label>Título</label><input id="editor-titulo" value="${lista.titulo || ""}"></div>
+      <div style="flex:1"><label>Nº do Cliente</label><input id="editor-numero-cliente" value="${lista.numero_cliente || ""}"></div>
+      <div style="flex:1"><label>Nº do Fornecedor</label><input id="editor-numero-fornecedor" value="${lista.numero_fornecedor || ""}"></div>
     </div>
-    <datalist id="materiais-datalist">${opcoesDatalist}</datalist>
-    <div class="itens-editor" id="itens-editor"></div>
-    <button class="btn-secundario somente-admin" onclick="adicionarItemLinha()">+ Adicionar Material</button>
+    <input id="editor-busca-material" placeholder="Pesquisar material (código ou descrição)" style="width:100%; margin-bottom:10px;">
+    <div class="editor-duplo">
+      <div class="editor-painel">
+        <div class="editor-painel-titulo">Lista de Pré-seleção</div>
+        <div class="editor-pre-lista" id="editor-pre-lista"></div>
+      </div>
+      <div class="editor-painel">
+        <div class="editor-painel-titulo">Itens Selecionados</div>
+        <div class="editor-selecionados-wrap">
+          <table class="tabela">
+            <thead><tr><th style="width:90px">Qtd</th><th>Código</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Unidade</th><th></th></tr></thead>
+            <tbody id="editor-selecionados"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
     <div class="modal-acoes">
       <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/excel" target="_blank">Relatório Excel</a>
       <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/pdf" target="_blank">Relatório PDF</a>
       <span style="flex:1"></span>
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
-      <button class="btn-primario somente-admin" onclick="salvarEditorLista(${listaId})">Salvar (nova versão)</button>
+      <button class="btn-primario somente-admin" id="btn-revisar-desenho">Revisar lista</button>
     </div>
   `, "modal-grande");
   aplicarPermissoes();
 
-  window._itensEditor = itens.length ? [...itens] : [];
-  redesenharItensEditor();
+  document.getElementById("editor-busca-material").value = window._editorBusca;
+  document.getElementById("editor-busca-material").addEventListener("input", (e) => {
+    window._editorBusca = e.target.value;
+    redesenharPreLista();
+  });
+  document.getElementById("btn-revisar-desenho").addEventListener("click", () => {
+    if (!window._itensEditor.length) { toast("Adicione ao menos um material", "erro"); return; }
+    renderReviewLista(listaId, lista);
+  });
 
-  window.adicionarItemLinha = () => {
-    window._itensEditor.push({ material_id: "", quantidade: 1, observacao: "" });
-    redesenharItensEditor();
-  };
-  window.removerItemLinha = (idx) => {
-    window._itensEditor.splice(idx, 1);
-    redesenharItensEditor();
-  };
+  redesenharPreLista();
+  redesenharSelecionados();
 
-  function resolverMaterial(texto) {
-    const alvo = texto.trim().toLowerCase();
-    if (!alvo) return null;
-    return state.materiais.find((m) => rotuloMaterial(m).toLowerCase() === alvo);
-  }
-
-  function redesenharItensEditor() {
-    const cont = document.getElementById("itens-editor");
-    cont.innerHTML = window._itensEditor.map(linhaHtml).join("") || "<p>Nenhum material adicionado.</p>";
-    cont.querySelectorAll(".item-linha").forEach((linha) => {
-      const idx = Number(linha.dataset.idx);
-      const item = window._itensEditor[idx];
-      const busca = linha.querySelector(".item-material-busca");
-      busca.addEventListener("change", () => {
-        const material = resolverMaterial(busca.value);
-        if (material) {
-          item.material_id = material.id;
-          busca.value = rotuloMaterial(material);
-          busca.classList.remove("invalido");
-        } else if (busca.value.trim() === "") {
-          item.material_id = "";
-          busca.classList.remove("invalido");
-        } else {
-          item.material_id = "";
-          busca.classList.add("invalido");
-        }
+  function redesenharPreLista() {
+    const termo = (window._editorBusca || "").trim().toLowerCase();
+    const materiaisFiltrados = !termo ? state.materiais : state.materiais.filter((m) =>
+      m.codigo.toLowerCase().includes(termo) || (m.descricao || "").toLowerCase().includes(termo));
+    const cont = document.getElementById("editor-pre-lista");
+    cont.innerHTML = materiaisFiltrados.slice(0, 200).map((m) => `
+      <div class="editor-pre-linha" data-material-id="${m.id}">
+        <span class="editor-pre-info">
+          <span class="editor-pre-codigo">${m.codigo}</span>
+          <span class="editor-pre-desc">${m.descricao}${m.fabricante ? " · " + m.fabricante : ""}${m.bitola ? " · " + m.bitola : ""}</span>
+        </span>
+        <button class="editor-pre-add" type="button" title="Adicionar">&gt;</button>
+      </div>`).join("") || `<div class="arvore-vazio">Nenhum material encontrado.</div>`;
+    cont.querySelectorAll(".editor-pre-linha").forEach((linha) => {
+      linha.querySelector(".editor-pre-add").addEventListener("click", () => {
+        adicionarMaterialSelecao(Number(linha.dataset.materialId));
       });
-      linha.querySelector(".item-qtd").addEventListener("input", (e) => { item.quantidade = e.target.value; });
-      linha.querySelector(".item-obs").addEventListener("input", (e) => { item.observacao = e.target.value; });
     });
   }
+
+  function adicionarMaterialSelecao(materialId) {
+    const existente = window._itensEditor.find((i) => i.material_id === materialId);
+    if (existente) {
+      existente.quantidade = Number(existente.quantidade || 0) + 1;
+    } else {
+      const material = state.materiais.find((m) => m.id === materialId);
+      if (!material) return;
+      window._itensEditor.push({
+        material_id: material.id, codigo: material.codigo, descricao: material.descricao,
+        fabricante: material.fabricante, bitola: material.bitola, unidade: material.unidade,
+        quantidade: 1, observacao: "",
+      });
+    }
+    redesenharSelecionados();
+  }
+
+  function redesenharSelecionados() {
+    const tbody = document.getElementById("editor-selecionados");
+    tbody.innerHTML = window._itensEditor.map((item, idx) => `
+      <tr>
+        <td><input type="number" step="0.001" min="0" class="editor-item-qtd" data-idx="${idx}" value="${item.quantidade}" style="width:80px"></td>
+        <td>${item.codigo}</td><td>${item.descricao}</td><td>${item.fabricante || ""}</td><td>${item.bitola || ""}</td><td>${item.unidade || ""}</td>
+        <td><button class="btn-perigo" type="button" data-idx="${idx}" title="Remover">X</button></td>
+      </tr>`).join("") || `<tr><td colspan="7">Nenhum item selecionado.</td></tr>`;
+    tbody.querySelectorAll(".editor-item-qtd").forEach((input) => {
+      input.addEventListener("input", (e) => {
+        window._itensEditor[Number(input.dataset.idx)].quantidade = e.target.value;
+      });
+    });
+    tbody.querySelectorAll(".btn-perigo").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        window._itensEditor.splice(Number(btn.dataset.idx), 1);
+        redesenharSelecionados();
+      });
+    });
+  }
+}
+
+function renderReviewLista(listaId, lista) {
+  abrirModal(`
+    <h3>Revisar Lista por Desenho — ${lista.numero_desenho}</h3>
+    <div style="max-height:420px; overflow-y:auto; margin:12px 0;">
+      <table class="tabela">
+        <thead><tr><th>Código</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Qtd</th><th>Unidade</th></tr></thead>
+        <tbody>
+          ${window._itensEditor.map((i) => `<tr><td>${i.codigo}</td><td>${i.descricao}</td><td>${i.fabricante || ""}</td><td>${i.bitola || ""}</td><td>${formatarQuantidade(i.quantidade, i.unidade)}</td><td>${i.unidade || ""}</td></tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" id="btn-voltar-editor-desenho">Voltar</button>
+      <button class="btn-primario somente-admin" id="btn-salvar-editor-desenho">Salvar nova versão</button>
+    </div>
+  `, "modal-grande");
+  aplicarPermissoes();
+  document.getElementById("btn-voltar-editor-desenho").addEventListener("click", () => renderEditorLista(listaId, lista));
+  document.getElementById("btn-salvar-editor-desenho").addEventListener("click", () => salvarEditorLista(listaId));
 }
 
 async function salvarEditorLista(listaId) {
@@ -984,28 +1041,6 @@ async function verVersao(listaId, versaoId) {
   `, "modal-grande");
 }
 
-// ---------- HELPERS DE HISTÓRICO (reaproveitados por PQ e Compras) ----------
-function mostrarHistoricoGenerico(titulo, versoes, aoClicarVer) {
-  abrirModal(`
-    <h3>Histórico de Versões — ${titulo}</h3>
-    <table class="tabela">
-      <thead><tr><th>Versão</th><th>Criado por</th><th>Data</th><th></th></tr></thead>
-      <tbody>
-        ${versoes.map((v) => `
-          <tr>
-            <td>v${v.versao}</td><td>${v.criado_por_nome || "-"}</td>
-            <td>${new Date(v.criado_em).toLocaleString("pt-BR")}</td>
-            <td><button class="link-acao" data-versao-id="${v.id}">Ver</button></td>
-          </tr>`).join("") || `<tr><td colspan="4">Nenhuma versão salva ainda.</td></tr>`}
-      </tbody>
-    </table>
-    <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
-  `);
-  document.querySelectorAll("[data-versao-id]").forEach((btn) => {
-    btn.addEventListener("click", () => aoClicarVer(Number(btn.dataset.versaoId)));
-  });
-}
-
 const CAMPOS_QUANTIDADE = ["quantidade", "quantidade_base", "quantidade_atualizada"];
 function mostrarItensVersaoGenerico(titulo, itens, campos, rotulos) {
   abrirModal(`
@@ -1033,9 +1068,69 @@ function formatarQuantidade(valor, unidade) {
 }
 
 // ---------- LISTA PQ ----------
+const pqArvoreState = { versoes: [], expandidas: new Set() };
+
 async function carregarListaPQ() {
-  const dados = await api(`/api/projetos/${state.projetoAtual.id}/lista-pq`);
+  const [dados, versoes] = await Promise.all([
+    api(`/api/projetos/${state.projetoAtual.id}/lista-pq`),
+    api(`/api/projetos/${state.projetoAtual.id}/lista-pq/versoes`),
+  ]);
   renderTabelaPQ(dados.versao, dados.itens);
+  renderArvorePQ(versoes);
+}
+
+function renderArvorePQ(versoes) {
+  pqArvoreState.versoes = versoes;
+  const cont = document.getElementById("arvore-pq");
+  cont.innerHTML = versoes.length
+    ? versoes.map(renderNoPQ).join("")
+    : `<div class="arvore-vazio">Nenhuma versão da Lista PQ salva ainda.</div>`;
+}
+
+function renderNoPQ(v) {
+  const aberta = pqArvoreState.expandidas.has(v.id);
+  const origens = v.origens || [];
+  const filhosHtml = origens.length
+    ? origens.map((o) => `
+        <div class="arvore-linha arvore-linha-versao">
+          <span class="arvore-toggle invisivel"></span>
+          ${ICONE_ARQUIVO}
+          <span class="arvore-label">
+            <span class="arvore-titulo">${o.numero_desenho}${o.titulo ? " — " + o.titulo : ""}</span>
+            <span class="arvore-sub">v${o.versao_numero}</span>
+          </span>
+        </div>`).join("")
+    : `<div class="arvore-carregando">Nenhum desenho de origem registrado.</div>`;
+  return `
+    <div class="arvore-no">
+      <div class="arvore-linha arvore-linha-pasta">
+        <button class="arvore-toggle ${aberta ? "aberto" : ""}" onclick="toggleArvorePQ(${v.id})" aria-label="Expandir">${ICONE_SETA}</button>
+        ${ICONE_PASTA}
+        <span class="arvore-label" onclick="toggleArvorePQ(${v.id})">
+          <span class="arvore-titulo">v${v.versao}</span>
+          <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${v.criado_por_nome || "-"}</span>
+        </span>
+        <span class="arvore-acoes">
+          <button class="link-acao" onclick="verVersaoPQ(${v.id})">Ver</button>
+        </span>
+      </div>
+      <div class="arvore-filhos ${aberta ? "" : "oculto"}">${aberta ? filhosHtml : ""}</div>
+    </div>`;
+}
+
+function toggleArvorePQ(versaoId) {
+  if (pqArvoreState.expandidas.has(versaoId)) pqArvoreState.expandidas.delete(versaoId);
+  else pqArvoreState.expandidas.add(versaoId);
+  renderArvorePQ(pqArvoreState.versoes);
+}
+
+async function verVersaoPQ(versaoId) {
+  const dados = await api(`/api/lista-pq/versoes/${versaoId}`);
+  mostrarItensVersaoGenerico(
+    `Lista PQ — versão ${dados.versao.versao}`, dados.itens,
+    ["codigo", "descricao", "fabricante", "bitola", "quantidade_base", "percentual", "quantidade_atualizada", "unidade"],
+    ["Código", "Descrição", "Fabricante", "Bitola", "Qtd. Base", "%", "Qtd. Atualizada", "Unidade"],
+  );
 }
 
 function renderTabelaPQ(versao, itens) {
@@ -1140,22 +1235,79 @@ async function salvarVersaoPQ() {
   } catch (err) { toast(err.message, "erro"); }
 }
 
-document.getElementById("btn-historico-pq").addEventListener("click", async () => {
-  const versoes = await api(`/api/projetos/${state.projetoAtual.id}/lista-pq/versoes`);
-  mostrarHistoricoGenerico("Lista PQ", versoes, async (versaoId) => {
-    const dados = await api(`/api/lista-pq/versoes/${versaoId}`);
-    mostrarItensVersaoGenerico(
-      `Lista PQ — versão ${dados.versao.versao}`, dados.itens,
-      ["codigo", "descricao", "fabricante", "bitola", "quantidade_base", "percentual", "quantidade_atualizada", "unidade"],
-      ["Código", "Descrição", "Fabricante", "Bitola", "Qtd. Base", "%", "Qtd. Atualizada", "Unidade"],
-    );
-  });
-});
-
 // ---------- LISTA DE COMPRAS ----------
+const comprasArvoreState = { versoes: [], expandidas: new Set() };
+
 async function carregarListaCompras() {
-  const dados = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras`);
+  const [dados, versoes] = await Promise.all([
+    api(`/api/projetos/${state.projetoAtual.id}/lista-compras`),
+    api(`/api/projetos/${state.projetoAtual.id}/lista-compras/versoes`),
+  ]);
   renderTabelaCompras(dados.versao, dados.itens);
+  renderArvoreCompras(versoes);
+}
+
+function renderArvoreCompras(versoes) {
+  comprasArvoreState.versoes = versoes;
+  const cont = document.getElementById("arvore-compras");
+  cont.innerHTML = versoes.length
+    ? versoes.map(renderNoCompras).join("")
+    : `<div class="arvore-vazio">Nenhuma versão da Lista de Compras salva ainda.</div>`;
+}
+
+function renderNoCompras(v) {
+  const aberta = comprasArvoreState.expandidas.has(v.id);
+  const pq = v.origem_pq;
+  const filhosHtml = pq
+    ? `
+        <div class="arvore-linha arvore-linha-versao">
+          <span class="arvore-toggle invisivel"></span>
+          ${ICONE_ARQUIVO}
+          <span class="arvore-label">
+            <span class="arvore-titulo">Lista PQ v${pq.versao}</span>
+            <span class="arvore-sub">${new Date(pq.criado_em).toLocaleString("pt-BR")}</span>
+          </span>
+        </div>
+        ${(pq.origens || []).map((o) => `
+          <div class="arvore-linha arvore-linha-versao" style="margin-left:28px">
+            <span class="arvore-toggle invisivel"></span>
+            ${ICONE_ARQUIVO}
+            <span class="arvore-label">
+              <span class="arvore-titulo">${o.numero_desenho}${o.titulo ? " — " + o.titulo : ""}</span>
+              <span class="arvore-sub">v${o.versao_numero}</span>
+            </span>
+          </div>`).join("")}`
+    : `<div class="arvore-carregando">Origem da Lista PQ não registrada.</div>`;
+  return `
+    <div class="arvore-no">
+      <div class="arvore-linha arvore-linha-pasta">
+        <button class="arvore-toggle ${aberta ? "aberto" : ""}" onclick="toggleArvoreCompras(${v.id})" aria-label="Expandir">${ICONE_SETA}</button>
+        ${ICONE_PASTA}
+        <span class="arvore-label" onclick="toggleArvoreCompras(${v.id})">
+          <span class="arvore-titulo">v${v.versao}</span>
+          <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${v.criado_por_nome || "-"}</span>
+        </span>
+        <span class="arvore-acoes">
+          <button class="link-acao" onclick="verVersaoCompras(${v.id})">Ver</button>
+        </span>
+      </div>
+      <div class="arvore-filhos ${aberta ? "" : "oculto"}">${aberta ? filhosHtml : ""}</div>
+    </div>`;
+}
+
+function toggleArvoreCompras(versaoId) {
+  if (comprasArvoreState.expandidas.has(versaoId)) comprasArvoreState.expandidas.delete(versaoId);
+  else comprasArvoreState.expandidas.add(versaoId);
+  renderArvoreCompras(comprasArvoreState.versoes);
+}
+
+async function verVersaoCompras(versaoId) {
+  const dados = await api(`/api/lista-compras/versoes/${versaoId}`);
+  mostrarItensVersaoGenerico(
+    `Lista de Compras — versão ${dados.versao.versao}`, dados.itens,
+    ["codigo", "descricao", "fabricante", "bitola", "quantidade", "unidade"],
+    ["Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"],
+  );
 }
 
 function renderTabelaCompras(versao, itens) {
@@ -1225,18 +1377,6 @@ async function salvarVersaoCompras() {
     carregarListaCompras();
   } catch (err) { toast(err.message, "erro"); }
 }
-
-document.getElementById("btn-historico-compras").addEventListener("click", async () => {
-  const versoes = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras/versoes`);
-  mostrarHistoricoGenerico("Lista de Compras", versoes, async (versaoId) => {
-    const dados = await api(`/api/lista-compras/versoes/${versaoId}`);
-    mostrarItensVersaoGenerico(
-      `Lista de Compras — versão ${dados.versao.versao}`, dados.itens,
-      ["codigo", "descricao", "fabricante", "bitola", "quantidade", "unidade"],
-      ["Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"],
-    );
-  });
-});
 
 // ---------- USUÁRIOS ----------
 async function carregarUsuarios() {
