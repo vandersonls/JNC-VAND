@@ -949,7 +949,7 @@ async function verVersao(listaId, versaoId) {
       <span style="flex:1"></span>
       <button class="btn-secundario" onclick="fecharModal()">Fechar</button>
     </div>
-  `);
+  `, "modal-grande");
 }
 
 // ---------- HELPERS DE HISTÓRICO (reaproveitados por PQ e Compras) ----------
@@ -984,7 +984,7 @@ function mostrarItensVersaoGenerico(titulo, itens, campos, rotulos) {
       </tbody>
     </table>
     <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
-  `);
+  `, "modal-grande");
 }
 
 // ---------- LISTA PQ ----------
