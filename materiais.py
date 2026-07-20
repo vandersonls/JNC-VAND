@@ -88,16 +88,18 @@ def excluir_materiais_lote():
         return jsonify({"erro": "Nenhum material selecionado"}), 400
 
     excluidos = []
-    for material_id in ids:
-        antes = db.query_one("SELECT codigo, descricao FROM materiais WHERE id = %s", (material_id,))
-        if antes:
-            db.execute("UPDATE materiais SET ativo = 0 WHERE id = %s", (material_id,))
-            excluidos.append(antes["codigo"])
+    for i in range(0, len(ids), 1000):
+        lote = ids[i:i + 1000]
+        placeholders = ", ".join(["%s"] * len(lote))
+        antes = db.query_all(f"SELECT codigo FROM materiais WHERE id IN ({placeholders})", tuple(lote))
+        excluidos.extend(r["codigo"] for r in antes)
+        db.execute(f"UPDATE materiais SET ativo = 0 WHERE id IN ({placeholders})", tuple(lote))
 
+    resumo_codigos = ", ".join(excluidos[:20]) + (f" e mais {len(excluidos) - 20}" if len(excluidos) > 20 else "")
     registrar(
         "excluir", "material", None,
-        f"Excluiu {len(excluidos)} material(is) em lote: {', '.join(excluidos)}",
-        antes={"codigos": excluidos},
+        f"Excluiu {len(excluidos)} material(is) em lote: {resumo_codigos}",
+        antes={"codigos": excluidos[:200]},
     )
     return jsonify({"excluidos": len(excluidos)})
 
