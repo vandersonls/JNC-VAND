@@ -36,6 +36,17 @@ CREATE TABLE IF NOT EXISTS clientes (
 ) ENGINE=InnoDB;
 
 -- =========================================================
+-- ÁREAS (disciplinas: Engenharia Elétrica, Mecânica, Civil, etc.)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS areas (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL UNIQUE,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+INSERT IGNORE INTO areas (nome) VALUES ('Engenharia Elétrica');
+
+-- =========================================================
 -- MATERIAIS
 -- =========================================================
 CREATE TABLE IF NOT EXISTS materiais (
@@ -45,13 +56,41 @@ CREATE TABLE IF NOT EXISTS materiais (
     fabricante VARCHAR(150),
     bitola VARCHAR(50),
     unidade VARCHAR(20) NOT NULL,
+    area_id INT NULL,
     ativo TINYINT(1) NOT NULL DEFAULT 1,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
--- Migração idempotente para bancos já existentes
+-- Migrações idempotentes para bancos já existentes
 ALTER TABLE materiais MODIFY COLUMN descricao VARCHAR(500) NOT NULL;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'materiais' AND COLUMN_NAME = 'area_id');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE materiais ADD COLUMN area_id INT NULL AFTER unidade', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- Backfill: todo material sem área cai na área padrão (Engenharia Elétrica)
+UPDATE materiais SET area_id = (SELECT id FROM areas WHERE nome = 'Engenharia Elétrica') WHERE area_id IS NULL;
+ALTER TABLE materiais MODIFY COLUMN area_id INT NOT NULL;
+
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'materiais' AND CONSTRAINT_NAME = 'fk_materiais_area');
+SET @sql = IF(@fk_exists = 0,
+    'ALTER TABLE materiais ADD CONSTRAINT fk_materiais_area FOREIGN KEY (area_id) REFERENCES areas(id)',
+    'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- =========================================================
+-- PERMISSÕES DE ÁREA POR USUÁRIO (usuários master enxergam tudo, sempre)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS usuario_areas (
+    usuario_id INT NOT NULL,
+    area_id INT NOT NULL,
+    PRIMARY KEY (usuario_id, area_id),
+    CONSTRAINT fk_usuario_areas_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+    CONSTRAINT fk_usuario_areas_area FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
 
 -- =========================================================
 -- PROJETOS

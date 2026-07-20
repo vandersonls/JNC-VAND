@@ -8,12 +8,26 @@ from auditoria import registrar
 usuarios_bp = Blueprint("usuarios", __name__)
 
 
+def _definir_areas_usuario(usuario_id, area_ids):
+    db.execute("DELETE FROM usuario_areas WHERE usuario_id = %s", (usuario_id,))
+    for area_id in set(area_ids or []):
+        db.execute("INSERT INTO usuario_areas (usuario_id, area_id) VALUES (%s, %s)", (usuario_id, area_id))
+
+
 @usuarios_bp.get("/api/usuarios")
 @perfis_permitidos("master", "administrador")
 def listar_usuarios():
     rows = db.query_all(
         "SELECT id, nome, email, perfil, ativo, criado_em FROM usuarios ORDER BY nome"
     )
+    areas_por_usuario = {}
+    for r in db.query_all(
+        """SELECT ua.usuario_id, a.id AS area_id, a.nome AS area_nome
+           FROM usuario_areas ua JOIN areas a ON a.id = ua.area_id"""
+    ):
+        areas_por_usuario.setdefault(r["usuario_id"], []).append({"id": r["area_id"], "nome": r["area_nome"]})
+    for row in rows:
+        row["areas"] = areas_por_usuario.get(row["id"], [])
     return jsonify(rows)
 
 
@@ -23,6 +37,7 @@ def criar_usuario():
     data = request.get_json(force=True) or {}
     nome, email, senha = data.get("nome"), (data.get("email") or "").strip().lower(), data.get("senha")
     perfil = data.get("perfil", "visualizador")
+    areas = data.get("areas") or []
     if not nome or not email or not senha:
         return jsonify({"erro": "Nome, email e senha são obrigatórios"}), 400
     if perfil not in ("master", "administrador", "visualizador"):
@@ -34,8 +49,10 @@ def criar_usuario():
         "INSERT INTO usuarios (nome, email, senha_hash, perfil) VALUES (%s, %s, %s, %s)",
         (nome, email, hash_senha(senha), perfil),
     )
+    if perfil != "master":
+        _definir_areas_usuario(novo_id, areas)
     registrar("criar", "usuario", novo_id, f"Criou o usuário {email} (perfil {perfil})",
-              depois={"nome": nome, "email": email, "perfil": perfil})
+              depois={"nome": nome, "email": email, "perfil": perfil, "areas": areas})
     return jsonify({"id": novo_id}), 201
 
 
@@ -44,6 +61,7 @@ def criar_usuario():
 def editar_usuario(usuario_id):
     data = request.get_json(force=True) or {}
     nome, perfil, ativo = data.get("nome"), data.get("perfil"), data.get("ativo", 1)
+    areas = data.get("areas") or []
     if not nome or perfil not in ("master", "administrador", "visualizador"):
         return jsonify({"erro": "Nome e perfil válidos são obrigatórios"}), 400
 
@@ -61,12 +79,17 @@ def editar_usuario(usuario_id):
             (nome, perfil, ativo, usuario_id),
         )
 
+    if perfil == "master":
+        _definir_areas_usuario(usuario_id, [])
+    else:
+        _definir_areas_usuario(usuario_id, areas)
+
     descricao = f"Editou o usuário {antes['email'] if antes else usuario_id}"
     if senha_alterada:
         descricao += " (senha redefinida)"
     registrar(
         "editar", "usuario", usuario_id, descricao,
-        antes=antes, depois={"nome": nome, "perfil": perfil, "ativo": ativo, "senha_alterada": senha_alterada},
+        antes=antes, depois={"nome": nome, "perfil": perfil, "ativo": ativo, "senha_alterada": senha_alterada, "areas": areas},
     )
     return jsonify({"ok": True})
 

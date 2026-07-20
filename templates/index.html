@@ -119,7 +119,7 @@
         <thead>
           <tr>
             <th class="somente-admin"><input type="checkbox" id="check-todos-materiais"></th>
-            <th>Código</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Unidade</th><th class="somente-admin">Ações</th>
+            <th>Código</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Unidade</th><th>Área</th><th class="somente-admin">Ações</th>
           </tr>
           <tr class="linha-filtros-coluna">
             <th class="somente-admin"></th>
@@ -128,6 +128,7 @@
             <th><select class="filtro-coluna" data-coluna="fabricante"><option value="">-- Selecione --</option></select></th>
             <th><select class="filtro-coluna" data-coluna="bitola"><option value="">-- Selecione --</option></select></th>
             <th><select class="filtro-coluna" data-coluna="unidade"><option value="">-- Selecione --</option></select></th>
+            <th><select class="filtro-coluna" data-coluna="area_nome"><option value="">-- Selecione --</option></select></th>
             <th class="somente-admin"></th>
           </tr>
         </thead>
@@ -203,6 +204,7 @@
       </div>
       <div class="subnav">
         <button class="subnav-item ativo" data-subtab="config-geral">Geral</button>
+        <button class="subnav-item" data-subtab="config-areas">Áreas</button>
         <button class="subnav-item" data-subtab="config-auditoria">Auditoria</button>
       </div>
 
@@ -221,18 +223,30 @@
         </form>
       </div>
 
+      <div id="subtab-config-areas" class="subtab">
+        <div class="tab-header">
+          <div class="acoes">
+            <button class="btn-primario" id="btn-nova-area">+ Nova Área</button>
+          </div>
+        </div>
+        <table class="tabela">
+          <thead><tr><th>Nome</th><th>Materiais cadastrados</th><th>Ações</th></tr></thead>
+          <tbody id="tbody-areas"></tbody>
+        </table>
+      </div>
+
       <div id="subtab-config-auditoria" class="subtab">
         <div class="tab-header">
           <div class="acoes">
             <input type="search" id="auditoria-busca" placeholder="Buscar por usuário ou descrição...">
             <select id="auditoria-entidade">
-              <option value="">Todas as áreas</option>
+              <option value="">Todos os tipos</option>
             </select>
           </div>
         </div>
         <table class="tabela">
           <thead>
-            <tr><th>Data/Hora</th><th>Usuário</th><th>Ação</th><th>Área</th><th>Descrição</th></tr>
+            <tr><th>Data/Hora</th><th>Usuário</th><th>Ação</th><th>Tipo</th><th>Descrição</th></tr>
           </thead>
           <tbody id="tbody-auditoria"></tbody>
         </table>

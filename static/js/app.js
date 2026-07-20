@@ -3,8 +3,14 @@ const state = {
   materiais: [],
   clientes: [],
   projetos: [],
+  areas: [],
   projetoAtual: null,
 };
+
+async function garantirAreasCarregadas() {
+  if (!state.areas.length) state.areas = await api("/api/areas");
+  return state.areas;
+}
 
 // ---------- HELPERS ----------
 async function api(url, options = {}) {
@@ -159,6 +165,7 @@ function ativarSubtab(nome) {
   document.querySelectorAll(".subtab").forEach((t) => t.classList.remove("ativo"));
   document.getElementById(`subtab-${nome}`).classList.add("ativo");
   if (nome === "config-auditoria") carregarAuditoria(true);
+  if (nome === "config-areas") carregarAreas();
 }
 
 function ativarTabInterna(nome) {
@@ -254,7 +261,7 @@ function renderGraficoAtividade(dados) {
 
 // ---------- MATERIAIS ----------
 const materiaisSelecionados = new Set();
-const filtrosColunaMateriais = { codigo: "", descricao: "", fabricante: "", bitola: "", unidade: "" };
+const filtrosColunaMateriais = { codigo: "", descricao: "", fabricante: "", bitola: "", unidade: "", area_nome: "" };
 
 async function carregarMateriais(busca = "") {
   const somenteDuplicados = document.getElementById("check-somente-duplicados").checked;
@@ -299,11 +306,12 @@ function renderizarTabelaMateriais() {
       <td>${m.descricao}${m.duplicado ? '<span class="badge-duplicado">Duplicado</span>' : ""}</td>
       <td>${m.fabricante || ""}</td>
       <td>${m.bitola || ""}</td><td>${m.unidade}</td>
+      <td>${m.area_nome || "-"}</td>
       <td class="somente-admin">
         <button class="link-acao" onclick="editarMaterial(${m.id})">Editar</button>
         <button class="link-acao" onclick="excluirMaterial(${m.id})">Excluir</button>
       </td>
-    </tr>`).join("") || `<tr><td colspan="7">${somenteDuplicados ? "Nenhum material duplicado encontrado." : "Nenhum material encontrado."}</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="8">${somenteDuplicados ? "Nenhum material duplicado encontrado." : "Nenhum material encontrado."}</td></tr>`;
   document.getElementById("check-todos-materiais").checked = false;
   atualizarBotaoExclusaoLote();
   document.querySelectorAll(".check-material").forEach((chk) => {
@@ -361,8 +369,10 @@ document.getElementById("check-somente-duplicados").addEventListener("change", (
   carregarMateriais(document.getElementById("materiais-busca").value);
 });
 
-function modalMaterial(material = null) {
-  const m = material || { codigo: "", descricao: "", fabricante: "", bitola: "", unidade: "" };
+async function modalMaterial(material = null) {
+  await garantirAreasCarregadas();
+  const m = material || { codigo: "", descricao: "", fabricante: "", bitola: "", unidade: "", area_id: "" };
+  const opcoesAreas = state.areas.map((a) => `<option value="${a.id}" ${m.area_id == a.id ? "selected" : ""}>${a.nome}</option>`).join("");
   abrirModal(`
     <h3>${material ? "Editar" : "Novo"} Material</h3>
     <div class="form-grid">
@@ -371,6 +381,8 @@ function modalMaterial(material = null) {
       <label>Fabricante</label><input id="mat-fabricante" value="${m.fabricante || ""}">
       <label>Bitola</label><input id="mat-bitola" value="${m.bitola || ""}">
       <label>Unidade</label><input id="mat-unidade" value="${m.unidade}">
+      <label>Área</label>
+      <select id="mat-area"><option value="">-- Selecione --</option>${opcoesAreas}</select>
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
@@ -386,7 +398,9 @@ async function salvarMaterial(id) {
     fabricante: document.getElementById("mat-fabricante").value.trim(),
     bitola: document.getElementById("mat-bitola").value.trim(),
     unidade: document.getElementById("mat-unidade").value.trim(),
+    area_id: Number(document.getElementById("mat-area").value) || null,
   };
+  if (!payload.area_id) { toast("Selecione a área do material", "erro"); return; }
   try {
     if (id) await api(`/api/materiais/${id}`, { method: "PUT", body: JSON.stringify(payload) });
     else await api("/api/materiais", { method: "POST", body: JSON.stringify(payload) });
@@ -418,19 +432,45 @@ document.getElementById("input-importar").addEventListener("change", async (e) =
   const arquivo = e.target.files[0];
   if (!arquivo) return;
   e.target.value = "";
-  try {
-    const formData = new FormData();
-    formData.append("arquivo", arquivo);
-    const analise = await api("/api/materiais/importar/excel/analisar", { method: "POST", body: formData });
-    if (analise.duplicados.length > 0) {
-      mostrarModalDuplicados(analise, arquivo);
-    } else {
-      await executarImportacao(arquivo);
-    }
-  } catch (err) { toast(err.message, "erro"); }
+  await garantirAreasCarregadas();
+  if (!state.areas.length) {
+    toast("Cadastre uma área em Configurações antes de importar materiais", "erro");
+    return;
+  }
+  mostrarModalEscolherArea(arquivo);
 });
 
-function mostrarModalDuplicados(analise, arquivo) {
+function mostrarModalEscolherArea(arquivo) {
+  const opcoesAreas = state.areas.map((a) => `<option value="${a.id}">${a.nome}</option>`).join("");
+  abrirModal(`
+    <h3>Importar materiais</h3>
+    <div class="form-grid">
+      <label>Área de destino</label>
+      <select id="importar-area">${opcoesAreas}</select>
+      <p style="color:var(--cinza); font-size:12.5px; margin:0;">Todos os materiais desta planilha serão vinculados à área escolhida.</p>
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" id="btn-continuar-importacao">Continuar</button>
+    </div>
+  `);
+  document.getElementById("btn-continuar-importacao").addEventListener("click", async () => {
+    const areaId = Number(document.getElementById("importar-area").value);
+    fecharModal();
+    try {
+      const formData = new FormData();
+      formData.append("arquivo", arquivo);
+      const analise = await api("/api/materiais/importar/excel/analisar", { method: "POST", body: formData });
+      if (analise.duplicados.length > 0) {
+        mostrarModalDuplicados(analise, arquivo, areaId);
+      } else {
+        await executarImportacao(arquivo, areaId);
+      }
+    } catch (err) { toast(err.message, "erro"); }
+  });
+}
+
+function mostrarModalDuplicados(analise, arquivo, areaId) {
   const conflitos = analise.duplicados.filter((d) => d.conflito).length;
   const linhasDuplicado = (d) => `
     <div style="margin-bottom:10px; padding:8px 10px; border-radius:6px; background:${d.conflito ? "#fdeceb" : "#f2f4f7"};">
@@ -464,17 +504,18 @@ function mostrarModalDuplicados(analise, arquivo) {
 
   document.getElementById("btn-importar-com-duplicadas").addEventListener("click", async () => {
     fecharModal();
-    await executarImportacao(arquivo, "manter");
+    await executarImportacao(arquivo, areaId, "manter");
   });
   document.getElementById("btn-importar-sem-duplicadas").addEventListener("click", async () => {
     fecharModal();
-    await executarImportacao(arquivo, "excluir");
+    await executarImportacao(arquivo, areaId, "excluir");
   });
 }
 
-async function executarImportacao(arquivo, modoDuplicados = "manter") {
+async function executarImportacao(arquivo, areaId, modoDuplicados = "manter") {
   const formData = new FormData();
   formData.append("arquivo", arquivo);
+  formData.append("area_id", areaId);
   formData.append("duplicados", modoDuplicados);
   try {
     const r = await api("/api/materiais/importar/excel", { method: "POST", body: formData });
@@ -897,8 +938,15 @@ async function carregarUsuarios() {
     </tr>`).join("");
 }
 
-function modalUsuario(usuario = null) {
-  const u = usuario || { nome: "", email: "", perfil: "visualizador", ativo: 1 };
+async function modalUsuario(usuario = null) {
+  await garantirAreasCarregadas();
+  const u = usuario || { nome: "", email: "", perfil: "visualizador", ativo: 1, areas: [] };
+  const areasDoUsuario = new Set((u.areas || []).map((a) => a.id));
+  const opcoesAreas = state.areas.map((a) => `
+    <label style="display:flex; align-items:center; gap:6px; font-weight:normal; margin:2px 0;">
+      <input type="checkbox" class="usr-area" value="${a.id}" ${areasDoUsuario.has(a.id) ? "checked" : ""}> ${a.nome}
+    </label>`).join("");
+
   abrirModal(`
     <h3>${usuario ? "Editar" : "Novo"} Usuário</h3>
     <div class="form-grid">
@@ -910,19 +958,30 @@ function modalUsuario(usuario = null) {
       </select>
       <label>Senha ${usuario ? "(deixe em branco para não alterar)" : ""}</label>
       ${campoSenhaHtml("usr-senha")}
+      <div id="usr-areas-wrap" class="${u.perfil === "master" ? "oculto" : ""}">
+        <label>Áreas autorizadas</label>
+        <div style="border:1px solid var(--borda); border-radius:8px; padding:8px 12px; max-height:160px; overflow-y:auto;">
+          ${opcoesAreas || "<span style='color:var(--cinza); font-size:13px;'>Nenhuma área cadastrada ainda.</span>"}
+        </div>
+      </div>
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
       <button class="btn-primario" onclick="salvarUsuario(${usuario ? usuario.id : "null"})">Salvar</button>
     </div>
   `);
+
+  document.getElementById("usr-perfil").addEventListener("change", (e) => {
+    document.getElementById("usr-areas-wrap").classList.toggle("oculto", e.target.value === "master");
+  });
 }
 
 async function salvarUsuario(id) {
   const senha = document.getElementById("usr-senha").value;
+  const areas = [...document.querySelectorAll(".usr-area:checked")].map((c) => Number(c.value));
   try {
     if (id) {
-      const payload = { nome: document.getElementById("usr-nome").value.trim(), perfil: document.getElementById("usr-perfil").value, ativo: 1 };
+      const payload = { nome: document.getElementById("usr-nome").value.trim(), perfil: document.getElementById("usr-perfil").value, ativo: 1, areas };
       if (senha) payload.senha = senha;
       await api(`/api/usuarios/${id}`, { method: "PUT", body: JSON.stringify(payload) });
     } else {
@@ -930,7 +989,7 @@ async function salvarUsuario(id) {
         nome: document.getElementById("usr-nome").value.trim(),
         email: document.getElementById("usr-email").value.trim(),
         perfil: document.getElementById("usr-perfil").value,
-        senha,
+        senha, areas,
       };
       await api("/api/usuarios", { method: "POST", body: JSON.stringify(payload) });
     }
@@ -974,6 +1033,57 @@ document.getElementById("form-configuracoes").addEventListener("submit", async (
     toast("Configurações salvas");
   } catch (err) { toast(err.message, "erro"); }
 });
+
+// ---------- ÁREAS ----------
+async function carregarAreas() {
+  state.areas = await api("/api/areas");
+  const tbody = document.getElementById("tbody-areas");
+  tbody.innerHTML = state.areas.map((a) => `
+    <tr>
+      <td>${a.nome}</td>
+      <td>${a.total_materiais}</td>
+      <td class="acoes-linha">
+        <button class="link-acao" onclick='modalArea(${JSON.stringify(a)})'>Editar</button>
+        <button class="link-acao" onclick="excluirArea(${a.id})">Excluir</button>
+      </td>
+    </tr>`).join("") || `<tr><td colspan="3">Nenhuma área cadastrada.</td></tr>`;
+}
+
+function modalArea(area = null) {
+  abrirModal(`
+    <h3>${area ? "Editar" : "Nova"} Área</h3>
+    <div class="form-grid">
+      <label>Nome</label><input id="area-nome" value="${area ? area.nome : ""}">
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" onclick="salvarArea(${area ? area.id : "null"})">Salvar</button>
+    </div>
+  `);
+}
+
+async function salvarArea(id) {
+  const nome = document.getElementById("area-nome").value.trim();
+  if (!nome) { toast("Informe o nome da área", "erro"); return; }
+  try {
+    if (id) await api(`/api/areas/${id}`, { method: "PUT", body: JSON.stringify({ nome }) });
+    else await api("/api/areas", { method: "POST", body: JSON.stringify({ nome }) });
+    fecharModal();
+    toast("Área salva com sucesso");
+    carregarAreas();
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+async function excluirArea(id) {
+  if (!confirm("Excluir esta área?")) return;
+  try {
+    await api(`/api/areas/${id}`, { method: "DELETE" });
+    toast("Área excluída");
+    carregarAreas();
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+document.getElementById("btn-nova-area").addEventListener("click", () => modalArea());
 
 // ---------- AUDITORIA ----------
 const ROTULOS_ENTIDADE = {
