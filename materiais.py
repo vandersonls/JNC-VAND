@@ -174,22 +174,27 @@ SINONIMOS = {
 }
 
 
-@materiais_bp.post("/api/materiais/importar/excel")
-@perfis_permitidos("master", "administrador")
-def importar_excel():
-    arquivo = request.files.get("arquivo")
-    if not arquivo:
-        return jsonify({"erro": "Nenhum arquivo enviado"}), 400
+def _texto(valor, limite):
+    """Converte qualquer valor de célula (Excel às vezes entrega número ou
+    data mesmo quando o conteúdo deveria ser texto) para string segura,
+    cortada no limite da coluna do banco para nunca quebrar o INSERT."""
+    if valor is None:
+        return ""
+    return str(valor).strip()[:limite]
 
+
+def _ler_planilha(arquivo):
+    """Lê e valida a planilha, devolvendo (total_linhas, ignoradas, linhas_validas).
+    Cada item de linhas_validas é (numero_da_linha, codigo, descricao, fabricante, bitola, unidade).
+    Lança ValueError com mensagem amigável se algo estiver errado."""
     wb = openpyxl.load_workbook(arquivo, data_only=True)
     ws = wb.active
 
     linhas = list(ws.iter_rows(values_only=True))
     if not linhas:
-        return jsonify({"erro": "Planilha vazia"}), 400
+        raise ValueError("Planilha vazia")
 
     cabecalho = [_normalizar(c) for c in linhas[0]]
-
     idx = {}
     faltando = []
     for campo, variantes in SINONIMOS.items():
@@ -198,39 +203,94 @@ def importar_excel():
             faltando.append(campo)
         else:
             idx[campo] = posicao
-
     if faltando:
-        return jsonify({"erro": f"Colunas não encontradas na planilha: {', '.join(faltando)}"}), 400
+        raise ValueError(f"Colunas não encontradas na planilha: {', '.join(faltando)}")
 
     total_linhas = len(linhas) - 1
-    ignoradas, erros = 0, []
-
-    def _texto(valor, limite):
-        """Converte qualquer valor de célula (Excel às vezes entrega número ou
-        data mesmo quando o conteúdo deveria ser texto) para string segura,
-        cortada no limite da coluna do banco para nunca quebrar o INSERT."""
-        if valor is None:
-            return ""
-        return str(valor).strip()[:limite]
-
+    ignoradas = 0
     linhas_validas = []
-    for linha in linhas[1:]:
+    for n, linha in enumerate(linhas[1:], start=2):
         codigo = linha[idx["codigo"]]
         if not codigo:
             ignoradas += 1
             continue
         linhas_validas.append((
+            n,
             _texto(codigo, 50),
             _texto(linha[idx["descricao"]], 500),
             _texto(linha[idx["fabricante"]], 150),
             _texto(linha[idx["bitola"]], 50),
             _texto(linha[idx["unidade"]], 20),
         ))
+    return total_linhas, ignoradas, linhas_validas
+
+
+def _agrupar_duplicados(linhas_validas):
+    """Agrupa linhas pelo código e sinaliza quais grupos têm dados
+    divergentes entre si (não basta o código repetir - descrição, fabricante
+    e bitola também precisam ser comparados para saber se é uma duplicidade
+    inofensiva ou um conflito real)."""
+    por_codigo = {}
+    for n, codigo, descricao, fabricante, bitola, unidade in linhas_validas:
+        por_codigo.setdefault(codigo, []).append({
+            "linha": n, "descricao": descricao, "fabricante": fabricante, "bitola": bitola, "unidade": unidade,
+        })
+
+    duplicados = []
+    for codigo, ocorrencias in por_codigo.items():
+        if len(ocorrencias) < 2:
+            continue
+        campos_distintos = {(o["descricao"], o["fabricante"], o["bitola"], o["unidade"]) for o in ocorrencias}
+        duplicados.append({
+            "codigo": codigo,
+            "linhas": [o["linha"] for o in ocorrencias],
+            "conflito": len(campos_distintos) > 1,
+            "ocorrencias": ocorrencias,
+        })
+    duplicados.sort(key=lambda d: (not d["conflito"], d["codigo"]))
+    return duplicados
+
+
+@materiais_bp.post("/api/materiais/importar/excel/analisar")
+@perfis_permitidos("master", "administrador")
+def analisar_importacao_excel():
+    arquivo = request.files.get("arquivo")
+    if not arquivo:
+        return jsonify({"erro": "Nenhum arquivo enviado"}), 400
+    try:
+        total_linhas, ignoradas, linhas_validas = _ler_planilha(arquivo)
+    except ValueError as e:
+        return jsonify({"erro": str(e)}), 400
+
+    duplicados = _agrupar_duplicados(linhas_validas)
+    codigos_unicos = len({c for _, c, *_ in linhas_validas})
+
+    return jsonify({
+        "total_linhas": total_linhas,
+        "ignoradas": ignoradas,
+        "codigos_unicos": codigos_unicos,
+        "duplicados": duplicados,
+    })
+
+
+@materiais_bp.post("/api/materiais/importar/excel")
+@perfis_permitidos("master", "administrador")
+def importar_excel():
+    arquivo = request.files.get("arquivo")
+    if not arquivo:
+        return jsonify({"erro": "Nenhum arquivo enviado"}), 400
+    try:
+        total_linhas, ignoradas, linhas_validas = _ler_planilha(arquivo)
+    except ValueError as e:
+        return jsonify({"erro": str(e)}), 400
+
+    linhas_dados = [(codigo, descricao, fabricante, bitola, unidade)
+                     for _, codigo, descricao, fabricante, bitola, unidade in linhas_validas]
 
     # Descobre de uma vez quais códigos já existem, em vez de 1 SELECT por linha
     # (essencial para não estourar o timeout do servidor em planilhas grandes).
     codigos_existentes = set()
-    todos_codigos = [c[0] for c in linhas_validas]
+    todos_codigos = [c[0] for c in linhas_dados]
     for i in range(0, len(todos_codigos), 1000):
         lote = todos_codigos[i:i + 1000]
         if not lote:
@@ -241,7 +301,7 @@ def importar_excel():
 
     inseridos, atualizados = 0, 0
     ja_vistos = set()
-    for codigo, *_ in linhas_validas:
+    for codigo, *_ in linhas_dados:
         if codigo in codigos_existentes or codigo in ja_vistos:
             atualizados += 1
         else:
@@ -256,8 +316,8 @@ def importar_excel():
             descricao = VALUES(descricao), fabricante = VALUES(fabricante),
             bitola = VALUES(bitola), unidade = VALUES(unidade), ativo = 1
     """
-    for i in range(0, len(linhas_validas), 500):
-        lote = linhas_validas[i:i + 500]
+    for i in range(0, len(linhas_dados), 500):
+        lote = linhas_dados[i:i + 500]
         if lote:
             db.execute_many(sql_upsert, lote)
 
@@ -271,5 +331,5 @@ def importar_excel():
         "inseridos": inseridos,
         "atualizados": atualizados,
         "ignoradas": ignoradas,
-        "erros": erros,
+        "erros": [],
     })

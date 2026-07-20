@@ -368,9 +368,61 @@ document.getElementById("btn-novo-material").addEventListener("click", () => mod
 document.getElementById("btn-importar-excel").addEventListener("click", () => {
   document.getElementById("input-importar").click();
 });
+
 document.getElementById("input-importar").addEventListener("change", async (e) => {
   const arquivo = e.target.files[0];
   if (!arquivo) return;
+  e.target.value = "";
+  try {
+    const formData = new FormData();
+    formData.append("arquivo", arquivo);
+    const analise = await api("/api/materiais/importar/excel/analisar", { method: "POST", body: formData });
+    if (analise.duplicados.length > 0) {
+      mostrarModalDuplicados(analise, arquivo);
+    } else {
+      await executarImportacao(arquivo);
+    }
+  } catch (err) { toast(err.message, "erro"); }
+});
+
+function mostrarModalDuplicados(analise, arquivo) {
+  const conflitos = analise.duplicados.filter((d) => d.conflito).length;
+  const linhasDuplicado = (d) => `
+    <div style="margin-bottom:10px; padding:8px 10px; border-radius:6px; background:${d.conflito ? "#fdeceb" : "#f2f4f7"};">
+      <div><b>${d.codigo}</b> — linhas ${d.linhas.join(", ")}
+        ${d.conflito ? '<span style="color:var(--erro); font-weight:600;"> ⚠ dados diferentes entre as linhas</span>' : '<span style="color:var(--cinza);"> (dados idênticos)</span>'}
+      </div>
+      ${d.conflito ? `<table class="tabela" style="margin-top:6px; font-size:11.5px;">
+        <thead><tr><th>Linha</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Unidade</th></tr></thead>
+        <tbody>
+          ${d.ocorrencias.map((o) => `<tr><td>${o.linha}</td><td>${o.descricao}</td><td>${o.fabricante}</td><td>${o.bitola}</td><td>${o.unidade}</td></tr>`).join("")}
+        </tbody>
+      </table>` : ""}
+    </div>`;
+
+  abrirModal(`
+    <h3>Códigos repetidos encontrados na planilha</h3>
+    <p style="color:var(--cinza); font-size:13px;">
+      ${analise.total_linhas} linha(s) lida(s), ${analise.codigos_unicos} código(s) único(s),
+      ${analise.duplicados.length} código(s) repetido(s)${conflitos ? ` — <b style="color:var(--erro)">${conflitos} com dados divergentes</b>` : ""}.
+      Ao importar, a última linha de cada código repetido é a que prevalece.
+    </p>
+    <div style="max-height:340px; overflow-y:auto; margin:12px 0;">
+      ${analise.duplicados.map(linhasDuplicado).join("")}
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" id="btn-confirmar-importacao">Importar mesmo assim</button>
+    </div>
+  `, "modal-grande");
+
+  document.getElementById("btn-confirmar-importacao").addEventListener("click", async () => {
+    fecharModal();
+    await executarImportacao(arquivo);
+  });
+}
+
+async function executarImportacao(arquivo) {
   const formData = new FormData();
   formData.append("arquivo", arquivo);
   try {
@@ -389,8 +441,7 @@ document.getElementById("input-importar").addEventListener("change", async (e) =
     `);
     carregarMateriais();
   } catch (err) { toast(err.message, "erro"); }
-  e.target.value = "";
-});
+}
 
 // ---------- CLIENTES ----------
 async function carregarClientes(busca = "") {
