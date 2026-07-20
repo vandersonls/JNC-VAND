@@ -231,6 +231,15 @@ h2 { margin-top: 0; color: var(--azul); }
   color: #8a6100; background: #ffe6a3; padding: 1px 6px; border-radius: 20px;
 }
 
+.linha-filtros-coluna th { padding: 6px 10px; background: #f7f8fa; }
+.linha-filtros-coluna:hover td, .linha-filtros-coluna:hover th { background: #f7f8fa; }
+.filtro-coluna {
+  width: 100%; padding: 5px 8px; font-size: 12px; border: 1px solid var(--borda); border-radius: 5px;
+  font-weight: normal; text-transform: none;
+}
+
+#materiais-busca { width: 340px; max-width: 100%; }
+
 input[type="search"], input[type="text"], input[type="email"], input[type="password"],
 input[type="number"], select, textarea {
   padding: 8px 10px; border: 1px solid var(--borda); border-radius: 6px; font-size: 13px;

@@ -254,6 +254,7 @@ function renderGraficoAtividade(dados) {
 
 // ---------- MATERIAIS ----------
 const materiaisSelecionados = new Set();
+const filtrosColunaMateriais = { codigo: "", descricao: "", fabricante: "", bitola: "", unidade: "" };
 
 async function carregarMateriais(busca = "") {
   const somenteDuplicados = document.getElementById("check-somente-duplicados").checked;
@@ -262,9 +263,24 @@ async function carregarMateriais(busca = "") {
   if (somenteDuplicados) params.set("somente_duplicados", "1");
   const url = `/api/materiais${params.toString() ? "?" + params.toString() : ""}`;
   state.materiais = await api(url);
+  renderizarTabelaMateriais();
+}
+
+function renderizarTabelaMateriais() {
+  const somenteDuplicados = document.getElementById("check-somente-duplicados").checked;
   materiaisSelecionados.clear();
+
+  const filtrado = state.materiais.filter((m) =>
+    Object.entries(filtrosColunaMateriais).every(([campo, valor]) => {
+      if (!valor) return true;
+      return (m[campo] || "").toString().toLowerCase().includes(valor.toLowerCase());
+    })
+  );
+  // Sempre em ordem alfabética crescente por código, inclusive com "somente duplicados" marcado.
+  filtrado.sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true }));
+
   const tbody = document.getElementById("tbody-materiais");
-  tbody.innerHTML = state.materiais.map((m) => `
+  tbody.innerHTML = filtrado.map((m) => `
     <tr class="${m.duplicado ? "linha-duplicada" : ""}">
       <td class="somente-admin"><input type="checkbox" class="check-material" data-id="${m.id}"></td>
       <td>${m.codigo}</td>
@@ -275,7 +291,7 @@ async function carregarMateriais(busca = "") {
         <button class="link-acao" onclick="editarMaterial(${m.id})">Editar</button>
         <button class="link-acao" onclick="excluirMaterial(${m.id})">Excluir</button>
       </td>
-    </tr>`).join("") || `<tr><td colspan="7">${somenteDuplicados ? "Nenhum material duplicado encontrado." : "Nenhum material cadastrado."}</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="7">${somenteDuplicados ? "Nenhum material duplicado encontrado." : "Nenhum material encontrado."}</td></tr>`;
   document.getElementById("check-todos-materiais").checked = false;
   atualizarBotaoExclusaoLote();
   document.querySelectorAll(".check-material").forEach((chk) => {
@@ -288,6 +304,15 @@ async function carregarMateriais(busca = "") {
   });
   aplicarPermissoes();
 }
+
+let filtroColunaTimer;
+document.querySelectorAll(".filtro-coluna").forEach((input) => {
+  input.addEventListener("input", () => {
+    filtrosColunaMateriais[input.dataset.coluna] = input.value;
+    clearTimeout(filtroColunaTimer);
+    filtroColunaTimer = setTimeout(renderizarTabelaMateriais, 200);
+  });
+});
 
 function atualizarBotaoExclusaoLote() {
   const btn = document.getElementById("btn-excluir-selecionados");
