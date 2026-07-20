@@ -200,11 +200,13 @@ def importar_excel():
     if faltando:
         return jsonify({"erro": f"Colunas não encontradas na planilha: {', '.join(faltando)}"}), 400
 
-    inseridos, atualizados, erros = 0, 0, []
+    total_linhas = len(linhas) - 1
+    inseridos, atualizados, ignoradas, erros = 0, 0, 0, []
 
     for n, linha in enumerate(linhas[1:], start=2):
         codigo = linha[idx["codigo"]]
         if not codigo:
+            ignoradas += 1
             continue
         descricao = linha[idx["descricao"]] or ""
         fabricante = linha[idx["fabricante"]] or ""
@@ -229,6 +231,13 @@ def importar_excel():
 
     registrar(
         "importar", "material", None,
-        f"Importou planilha '{arquivo.filename}': {inseridos} novos, {atualizados} atualizados",
+        f"Importou planilha '{arquivo.filename}': {total_linhas} linha(s) lida(s), "
+        f"{inseridos} novos, {atualizados} atualizados, {ignoradas} ignorada(s)",
     )
-    return jsonify({"inseridos": inseridos, "atualizados": atualizados, "erros": erros})
+    return jsonify({
+        "total_linhas": total_linhas,
+        "inseridos": inseridos,
+        "atualizados": atualizados,
+        "ignoradas": ignoradas,
+        "erros": erros,
+    })

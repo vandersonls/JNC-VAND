@@ -374,8 +374,19 @@ document.getElementById("input-importar").addEventListener("change", async (e) =
   const formData = new FormData();
   formData.append("arquivo", arquivo);
   try {
-    const resultado = await api("/api/materiais/importar/excel", { method: "POST", body: formData });
-    toast(`Importado: ${resultado.inseridos} novos, ${resultado.atualizados} atualizados`);
+    const r = await api("/api/materiais/importar/excel", { method: "POST", body: formData });
+    abrirModal(`
+      <h3>Importação concluída</h3>
+      <div class="form-grid">
+        <p>Linhas lidas na planilha: <b>${r.total_linhas}</b></p>
+        <p>Materiais novos: <b>${r.inseridos}</b></p>
+        <p>Materiais atualizados: <b>${r.atualizados}</b></p>
+        <p>Linhas ignoradas (sem código): <b>${r.ignoradas}</b></p>
+      </div>
+      <div class="modal-acoes">
+        <button class="btn-primario" onclick="fecharModal()">Ok</button>
+      </div>
+    `);
     carregarMateriais();
   } catch (err) { toast(err.message, "erro"); }
   e.target.value = "";
