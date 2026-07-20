@@ -115,14 +115,21 @@ document.getElementById("btn-logout").addEventListener("click", async () => {
   location.reload();
 });
 
+const CHAVE_ULTIMA_TAB = "njc_ultima_tab";
+
 function mostrarApp() {
   document.getElementById("tela-login").classList.add("oculto");
   document.getElementById("app").classList.remove("oculto");
   document.getElementById("usuario-nome").textContent = state.usuario.nome;
   document.getElementById("usuario-perfil").textContent = state.usuario.perfil;
   aplicarPermissoes();
-  ativarTab("dashboard");
-  carregarDashboard();
+
+  const tabsAdmin = new Set(["usuarios", "configuracoes"]);
+  let tabInicial = localStorage.getItem(CHAVE_ULTIMA_TAB) || "dashboard";
+  const tabExiste = !!document.querySelector(`.nav-item[data-tab="${tabInicial}"]`);
+  if (!tabExiste || (tabsAdmin.has(tabInicial) && !ehAdmin())) tabInicial = "dashboard";
+
+  ativarTab(tabInicial);
 }
 
 // ---------- NAVEGAÇÃO ----------
@@ -134,6 +141,8 @@ function ativarTab(nome) {
   document.querySelectorAll(".nav-item").forEach((b) => b.classList.toggle("ativo", b.dataset.tab === nome));
   document.querySelectorAll(".tab").forEach((t) => t.classList.remove("ativo"));
   document.getElementById(`tab-${nome}`).classList.add("ativo");
+  localStorage.setItem(CHAVE_ULTIMA_TAB, nome);
+  if (nome === "dashboard") carregarDashboard();
   if (nome === "materiais") carregarMateriais();
   if (nome === "clientes") carregarClientes();
   if (nome === "projetos") carregarProjetos();
