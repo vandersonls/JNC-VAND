@@ -405,26 +405,32 @@ function mostrarModalDuplicados(analise, arquivo) {
     <p style="color:var(--cinza); font-size:13px;">
       ${analise.total_linhas} linha(s) lida(s), ${analise.codigos_unicos} código(s) único(s),
       ${analise.duplicados.length} código(s) repetido(s)${conflitos ? ` — <b style="color:var(--erro)">${conflitos} com dados divergentes</b>` : ""}.
-      Ao importar, a última linha de cada código repetido é a que prevalece.
     </p>
-    <div style="max-height:340px; overflow-y:auto; margin:12px 0;">
+    <div style="max-height:300px; overflow-y:auto; margin:12px 0;">
       ${analise.duplicados.map(linhasDuplicado).join("")}
     </div>
-    <div class="modal-acoes">
+    <div class="modal-acoes" style="flex-wrap:wrap;">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
-      <button class="btn-primario" id="btn-confirmar-importacao">Importar mesmo assim</button>
+      <span style="flex:1"></span>
+      <button class="btn-secundario" id="btn-importar-sem-duplicadas">Importar sem as duplicadas</button>
+      <button class="btn-primario" id="btn-importar-com-duplicadas">Importar com as duplicadas</button>
     </div>
   `, "modal-grande");
 
-  document.getElementById("btn-confirmar-importacao").addEventListener("click", async () => {
+  document.getElementById("btn-importar-com-duplicadas").addEventListener("click", async () => {
     fecharModal();
-    await executarImportacao(arquivo);
+    await executarImportacao(arquivo, "manter");
+  });
+  document.getElementById("btn-importar-sem-duplicadas").addEventListener("click", async () => {
+    fecharModal();
+    await executarImportacao(arquivo, "excluir");
   });
 }
 
-async function executarImportacao(arquivo) {
+async function executarImportacao(arquivo, modoDuplicados = "manter") {
   const formData = new FormData();
   formData.append("arquivo", arquivo);
+  formData.append("duplicados", modoDuplicados);
   try {
     const r = await api("/api/materiais/importar/excel", { method: "POST", body: formData });
     abrirModal(`
@@ -434,6 +440,7 @@ async function executarImportacao(arquivo) {
         <p>Materiais novos: <b>${r.inseridos}</b></p>
         <p>Materiais atualizados: <b>${r.atualizados}</b></p>
         <p>Linhas ignoradas (sem código): <b>${r.ignoradas}</b></p>
+        ${r.duplicados_excluidos ? `<p>Linhas excluídas por duplicidade de código: <b>${r.duplicados_excluidos}</b></p>` : ""}
       </div>
       <div class="modal-acoes">
         <button class="btn-primario" onclick="fecharModal()">Ok</button>

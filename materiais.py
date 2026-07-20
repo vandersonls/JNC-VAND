@@ -279,10 +279,23 @@ def importar_excel():
     arquivo = request.files.get("arquivo")
     if not arquivo:
         return jsonify({"erro": "Nenhum arquivo enviado"}), 400
+    # "manter" (padrão): a última ocorrência de cada código repetido prevalece.
+    # "excluir": nenhuma linha com código repetido é importada (nem a primeira).
+    modo_duplicados = request.form.get("duplicados", "manter")
+
     try:
         total_linhas, ignoradas, linhas_validas = _ler_planilha(arquivo)
     except ValueError as e:
         return jsonify({"erro": str(e)}), 400
+
+    duplicados_excluidos = 0
+    if modo_duplicados == "excluir":
+        contagem = {}
+        for _, codigo, *_ in linhas_validas:
+            contagem[codigo] = contagem.get(codigo, 0) + 1
+        antes = len(linhas_validas)
+        linhas_validas = [item for item in linhas_validas if contagem[item[1]] == 1]
+        duplicados_excluidos = antes - len(linhas_validas)
 
     linhas_dados = [(codigo, descricao, fabricante, bitola, unidade)
                      for _, codigo, descricao, fabricante, bitola, unidade in linhas_validas]
@@ -323,13 +336,15 @@ def importar_excel():
 
     registrar(
         "importar", "material", None,
-        f"Importou planilha '{arquivo.filename}': {total_linhas} linha(s) lida(s), "
-        f"{inseridos} novos, {atualizados} atualizados, {ignoradas} ignorada(s)",
+        f"Importou planilha '{arquivo.filename}' (duplicados: {modo_duplicados}): {total_linhas} linha(s) lida(s), "
+        f"{inseridos} novos, {atualizados} atualizados, {ignoradas} ignorada(s), "
+        f"{duplicados_excluidos} excluída(s) por duplicidade",
     )
     return jsonify({
         "total_linhas": total_linhas,
         "inseridos": inseridos,
         "atualizados": atualizados,
         "ignoradas": ignoradas,
+        "duplicados_excluidos": duplicados_excluidos,
         "erros": [],
     })
