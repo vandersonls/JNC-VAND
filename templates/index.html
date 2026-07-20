@@ -176,12 +176,6 @@
         <h2 id="projeto-detalhe-titulo">Projeto</h2>
       </div>
 
-      <div class="subnav">
-        <button class="subnav-item ativo" data-subtab-pd="pd-desenho">Lista de Material por Desenho</button>
-        <button class="subnav-item" data-subtab-pd="pd-pq">Lista PQ</button>
-        <button class="subnav-item" data-subtab-pd="pd-compras">Lista de Compras</button>
-      </div>
-
       <!-- ABA: LISTA DE MATERIAL POR DESENHO -->
       <div id="subtab-pd-desenho" class="subtab-pd ativo">
         <div class="tab-header">
@@ -197,11 +191,13 @@
       <!-- ABA: LISTA PQ -->
       <div id="subtab-pd-pq" class="subtab-pd">
         <div class="tab-header">
+          <button class="btn-secundario" onclick="ativarSubtabPD('pd-desenho')">&larr; Lista de Material por Desenho</button>
           <div class="acoes">
             <a class="btn-secundario" id="link-relatorio-pq-excel" href="#" target="_blank">Relatório Excel</a>
             <a class="btn-secundario" id="link-relatorio-pq-pdf" href="#" target="_blank">Relatório PDF</a>
             <button class="btn-secundario" id="btn-historico-pq">Histórico de versões</button>
-            <button class="btn-primario somente-admin" id="btn-revisar-pq">Revisar lista</button>
+            <button class="btn-primario somente-admin" id="btn-criar-pq">+ Criar Nova PQ</button>
+            <button class="btn-primario somente-admin oculto" id="btn-revisar-pq">Revisar lista</button>
           </div>
         </div>
         <div id="pq-info" class="info-versao"></div>
@@ -214,11 +210,13 @@
       <!-- ABA: LISTA DE COMPRAS -->
       <div id="subtab-pd-compras" class="subtab-pd">
         <div class="tab-header">
+          <button class="btn-secundario" onclick="ativarSubtabPD('pd-desenho')">&larr; Lista de Material por Desenho</button>
           <div class="acoes">
             <a class="btn-secundario" id="link-relatorio-compras-excel" href="#" target="_blank">Relatório Excel</a>
             <a class="btn-secundario" id="link-relatorio-compras-pdf" href="#" target="_blank">Relatório PDF</a>
             <button class="btn-secundario" id="btn-historico-compras">Histórico de versões</button>
-            <button class="btn-primario somente-admin" id="btn-revisar-compras">Revisar lista</button>
+            <button class="btn-primario somente-admin" id="btn-criar-compras">+ Criar Nova Lista de Compras</button>
+            <button class="btn-primario somente-admin oculto" id="btn-revisar-compras">Revisar lista</button>
           </div>
         </div>
         <div id="compras-info" class="info-versao"></div>

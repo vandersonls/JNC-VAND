@@ -39,9 +39,16 @@ function ehAdmin() {
   return state.usuario && (state.usuario.perfil === "master" || state.usuario.perfil === "administrador");
 }
 
+function ehMaster() {
+  return state.usuario && state.usuario.perfil === "master";
+}
+
 function aplicarPermissoes() {
   document.querySelectorAll(".somente-admin").forEach((el) => {
     el.style.display = ehAdmin() ? "" : "none";
+  });
+  document.querySelectorAll(".somente-master").forEach((el) => {
+    el.style.display = ehMaster() ? "" : "none";
   });
 }
 
@@ -623,9 +630,19 @@ async function carregarProjetos() {
       <td class="acoes-linha">
         <button class="link-acao" onclick="abrirProjeto(${p.id})">Abrir</button>
         <button class="link-acao somente-admin" onclick="editarProjeto(${p.id})">Editar</button>
+        <button class="link-acao somente-master" onclick="excluirProjeto(${p.id})">Excluir</button>
       </td>
     </tr>`).join("") || `<tr><td colspan="6">Nenhum projeto cadastrado.</td></tr>`;
   aplicarPermissoes();
+}
+
+async function excluirProjeto(id) {
+  if (!confirm("Excluir este projeto e todo o seu histórico de listas, PQ e compras?")) return;
+  try {
+    await api(`/api/projetos/${id}`, { method: "DELETE" });
+    toast("Projeto excluído");
+    carregarProjetos();
+  } catch (err) { toast(err.message, "erro"); }
 }
 
 async function modalProjeto(projeto = null) {
@@ -700,17 +717,30 @@ async function abrirProjeto(id) {
   await carregarListas(id);
 }
 
-document.querySelectorAll(".subnav-item[data-subtab-pd]").forEach((btn) => {
-  btn.addEventListener("click", () => ativarSubtabPD(btn.dataset.subtabPd));
-});
-
 function ativarSubtabPD(nome) {
-  document.querySelectorAll(".subnav-item[data-subtab-pd]").forEach((b) => b.classList.toggle("ativo", b.dataset.subtabPd === nome));
   document.querySelectorAll(".subtab-pd").forEach((t) => t.classList.remove("ativo"));
   document.getElementById(`subtab-${nome}`).classList.add("ativo");
-  if (nome === "pd-pq") carregarListaPQ();
-  if (nome === "pd-compras") carregarListaCompras();
+  if (nome === "pd-pq") {
+    document.getElementById("btn-criar-pq").classList.remove("oculto");
+    document.getElementById("btn-revisar-pq").classList.add("oculto");
+    carregarListaPQ();
+  }
+  if (nome === "pd-compras") {
+    document.getElementById("btn-criar-compras").classList.remove("oculto");
+    document.getElementById("btn-revisar-compras").classList.add("oculto");
+    carregarListaCompras();
+  }
 }
+
+document.getElementById("btn-criar-pq").addEventListener("click", () => {
+  document.getElementById("btn-criar-pq").classList.add("oculto");
+  document.getElementById("btn-revisar-pq").classList.remove("oculto");
+});
+
+document.getElementById("btn-criar-compras").addEventListener("click", () => {
+  document.getElementById("btn-criar-compras").classList.add("oculto");
+  document.getElementById("btn-revisar-compras").classList.remove("oculto");
+});
 
 const arvoreState = { listas: [], versoesPorLista: {}, expandidas: new Set() };
 
@@ -1104,6 +1134,8 @@ async function salvarVersaoPQ() {
     await api(`/api/projetos/${state.projetoAtual.id}/lista-pq`, { method: "POST", body: JSON.stringify({ itens }) });
     fecharModal();
     toast("Nova versão da Lista PQ salva com sucesso");
+    document.getElementById("btn-revisar-pq").classList.add("oculto");
+    document.getElementById("btn-criar-pq").classList.remove("oculto");
     carregarListaPQ();
   } catch (err) { toast(err.message, "erro"); }
 }
@@ -1188,6 +1220,8 @@ async function salvarVersaoCompras() {
     await api(`/api/projetos/${state.projetoAtual.id}/lista-compras`, { method: "POST", body: JSON.stringify({ itens }) });
     fecharModal();
     toast("Nova versão da Lista de Compras salva com sucesso");
+    document.getElementById("btn-revisar-compras").classList.add("oculto");
+    document.getElementById("btn-criar-compras").classList.remove("oculto");
     carregarListaCompras();
   } catch (err) { toast(err.message, "erro"); }
 }
