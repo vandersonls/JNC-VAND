@@ -201,33 +201,55 @@ def importar_excel():
         return jsonify({"erro": f"Colunas não encontradas na planilha: {', '.join(faltando)}"}), 400
 
     total_linhas = len(linhas) - 1
-    inseridos, atualizados, ignoradas, erros = 0, 0, 0, []
+    ignoradas, erros = 0, []
 
-    for n, linha in enumerate(linhas[1:], start=2):
+    linhas_validas = []
+    for linha in linhas[1:]:
         codigo = linha[idx["codigo"]]
         if not codigo:
             ignoradas += 1
             continue
-        descricao = linha[idx["descricao"]] or ""
-        fabricante = linha[idx["fabricante"]] or ""
-        bitola = linha[idx["bitola"]] or ""
-        unidade = linha[idx["unidade"]] or ""
+        linhas_validas.append((
+            str(codigo).strip(),
+            linha[idx["descricao"]] or "",
+            linha[idx["fabricante"]] or "",
+            linha[idx["bitola"]] or "",
+            linha[idx["unidade"]] or "",
+        ))
 
-        existente = db.query_one("SELECT id FROM materiais WHERE codigo = %s", (str(codigo),))
-        if existente:
-            db.execute(
-                """UPDATE materiais SET descricao=%s, fabricante=%s, bitola=%s, unidade=%s, ativo=1
-                   WHERE id=%s""",
-                (descricao, fabricante, bitola, unidade, existente["id"]),
-            )
+    # Descobre de uma vez quais códigos já existem, em vez de 1 SELECT por linha
+    # (essencial para não estourar o timeout do servidor em planilhas grandes).
+    codigos_existentes = set()
+    todos_codigos = [c[0] for c in linhas_validas]
+    for i in range(0, len(todos_codigos), 1000):
+        lote = todos_codigos[i:i + 1000]
+        if not lote:
+            continue
+        placeholders = ", ".join(["%s"] * len(lote))
+        rows = db.query_all(f"SELECT codigo FROM materiais WHERE codigo IN ({placeholders})", tuple(lote))
+        codigos_existentes.update(r["codigo"] for r in rows)
+
+    inseridos, atualizados = 0, 0
+    ja_vistos = set()
+    for codigo, *_ in linhas_validas:
+        if codigo in codigos_existentes or codigo in ja_vistos:
             atualizados += 1
         else:
-            db.execute(
-                """INSERT INTO materiais (codigo, descricao, fabricante, bitola, unidade)
-                   VALUES (%s, %s, %s, %s, %s)""",
-                (str(codigo), descricao, fabricante, bitola, unidade),
-            )
             inseridos += 1
+        ja_vistos.add(codigo)
+
+    # Grava tudo em lotes (executemany), bem mais rápido que uma query por linha
+    sql_upsert = """
+        INSERT INTO materiais (codigo, descricao, fabricante, bitola, unidade, ativo)
+        VALUES (%s, %s, %s, %s, %s, 1)
+        ON DUPLICATE KEY UPDATE
+            descricao = VALUES(descricao), fabricante = VALUES(fabricante),
+            bitola = VALUES(bitola), unidade = VALUES(unidade), ativo = 1
+    """
+    for i in range(0, len(linhas_validas), 500):
+        lote = linhas_validas[i:i + 500]
+        if lote:
+            db.execute_many(sql_upsert, lote)
 
     registrar(
         "importar", "material", None,

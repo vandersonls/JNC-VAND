@@ -61,3 +61,21 @@ def execute(sql, params=None):
         return last_id
     finally:
         conn.close()
+
+
+def execute_many(sql, lista_params):
+    """Executa a mesma instrução para vários conjuntos de parâmetros em um só
+    round-trip por lote (usado em importações em massa, bem mais rápido que
+    uma query por linha)."""
+    if not lista_params:
+        return 0
+    conn = get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.executemany(sql, lista_params)
+        conn.commit()
+        total = cursor.rowcount
+        cursor.close()
+        return total
+    finally:
+        conn.close()
