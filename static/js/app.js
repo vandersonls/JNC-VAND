@@ -64,9 +64,30 @@ async function verificarSessao() {
   }
 }
 
-document.getElementById("toggle-login-senha").addEventListener("click", () => {
-  const input = document.getElementById("login-senha");
-  const btn = document.getElementById("toggle-login-senha");
+// Gera o HTML de um campo de senha com botão de mostrar/ocultar (olho).
+// Reutilizável em qualquer formulário/modal que precise de campo de senha.
+function campoSenhaHtml(id, extraAttrs = "") {
+  return `
+    <div class="campo-senha">
+      <input type="password" id="${id}" ${extraAttrs}>
+      <button type="button" class="toggle-senha" aria-label="Mostrar senha" tabindex="-1">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <g class="olho-aberto">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </g>
+          <path class="olho-fechado oculto" d="M3 3l18 18M10.6 10.6a3 3 0 0 0 4.2 4.2M7.4 7.3C4.7 8.9 3 12 3 12s4 7 11 7c1.6 0 3-.4 4.2-1M17.4 17.4C19.9 15.8 21 12 21 12s-1.3-2.3-3.5-4.2"/>
+        </svg>
+      </button>
+    </div>`;
+}
+
+// Delegação de evento: funciona para qualquer campo de senha existente na
+// página, inclusive os criados dinamicamente dentro de modais.
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".toggle-senha");
+  if (!btn) return;
+  const input = btn.parentElement.querySelector("input");
   const mostrando = input.type === "text";
   input.type = mostrando ? "password" : "text";
   btn.querySelector(".olho-aberto").classList.toggle("oculto", !mostrando);
@@ -724,7 +745,7 @@ function modalUsuario(usuario = null) {
         ${["master", "administrador", "visualizador"].map((p) => `<option value="${p}" ${u.perfil === p ? "selected" : ""}>${p}</option>`).join("")}
       </select>
       <label>Senha ${usuario ? "(deixe em branco para não alterar)" : ""}</label>
-      <input id="usr-senha" type="password">
+      ${campoSenhaHtml("usr-senha")}
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
