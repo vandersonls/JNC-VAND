@@ -79,6 +79,29 @@ def excluir_material(material_id):
     return jsonify({"ok": True})
 
 
+@materiais_bp.post("/api/materiais/excluir-lote")
+@perfis_permitidos("master", "administrador")
+def excluir_materiais_lote():
+    data = request.get_json(force=True) or {}
+    ids = data.get("ids") or []
+    if not ids:
+        return jsonify({"erro": "Nenhum material selecionado"}), 400
+
+    excluidos = []
+    for material_id in ids:
+        antes = db.query_one("SELECT codigo, descricao FROM materiais WHERE id = %s", (material_id,))
+        if antes:
+            db.execute("UPDATE materiais SET ativo = 0 WHERE id = %s", (material_id,))
+            excluidos.append(antes["codigo"])
+
+    registrar(
+        "excluir", "material", None,
+        f"Excluiu {len(excluidos)} material(is) em lote: {', '.join(excluidos)}",
+        antes={"codigos": excluidos},
+    )
+    return jsonify({"excluidos": len(excluidos)})
+
+
 @materiais_bp.get("/api/materiais/exportar/excel")
 @login_required
 def exportar_excel():

@@ -244,21 +244,62 @@ function renderGraficoAtividade(dados) {
 }
 
 // ---------- MATERIAIS ----------
+const materiaisSelecionados = new Set();
+
 async function carregarMateriais(busca = "") {
   const url = busca ? `/api/materiais?q=${encodeURIComponent(busca)}` : "/api/materiais";
   state.materiais = await api(url);
+  materiaisSelecionados.clear();
   const tbody = document.getElementById("tbody-materiais");
   tbody.innerHTML = state.materiais.map((m) => `
     <tr>
+      <td class="somente-admin"><input type="checkbox" class="check-material" data-id="${m.id}"></td>
       <td>${m.codigo}</td><td>${m.descricao}</td><td>${m.fabricante || ""}</td>
       <td>${m.bitola || ""}</td><td>${m.unidade}</td>
       <td class="somente-admin">
         <button class="link-acao" onclick="editarMaterial(${m.id})">Editar</button>
         <button class="link-acao" onclick="excluirMaterial(${m.id})">Excluir</button>
       </td>
-    </tr>`).join("") || `<tr><td colspan="6">Nenhum material cadastrado.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="7">Nenhum material cadastrado.</td></tr>`;
+  document.getElementById("check-todos-materiais").checked = false;
+  atualizarBotaoExclusaoLote();
+  document.querySelectorAll(".check-material").forEach((chk) => {
+    chk.addEventListener("change", () => {
+      const id = Number(chk.dataset.id);
+      if (chk.checked) materiaisSelecionados.add(id);
+      else materiaisSelecionados.delete(id);
+      atualizarBotaoExclusaoLote();
+    });
+  });
   aplicarPermissoes();
 }
+
+function atualizarBotaoExclusaoLote() {
+  const btn = document.getElementById("btn-excluir-selecionados");
+  document.getElementById("qtd-selecionados").textContent = materiaisSelecionados.size;
+  btn.classList.toggle("oculto", materiaisSelecionados.size === 0);
+}
+
+document.getElementById("check-todos-materiais").addEventListener("change", (e) => {
+  document.querySelectorAll(".check-material").forEach((chk) => {
+    chk.checked = e.target.checked;
+    const id = Number(chk.dataset.id);
+    if (e.target.checked) materiaisSelecionados.add(id);
+    else materiaisSelecionados.delete(id);
+  });
+  atualizarBotaoExclusaoLote();
+});
+
+document.getElementById("btn-excluir-selecionados").addEventListener("click", async () => {
+  const qtd = materiaisSelecionados.size;
+  if (!qtd) return;
+  if (!confirm(`Excluir ${qtd} material(is) selecionado(s)? Esta ação não pode ser desfeita.`)) return;
+  try {
+    await api("/api/materiais/excluir-lote", { method: "POST", body: JSON.stringify({ ids: [...materiaisSelecionados] }) });
+    toast(`${qtd} material(is) excluído(s)`);
+    carregarMateriais(document.getElementById("materiais-busca").value);
+  } catch (err) { toast(err.message, "erro"); }
+});
 
 let buscaMateriaisTimer;
 document.getElementById("materiais-busca").addEventListener("input", (e) => {

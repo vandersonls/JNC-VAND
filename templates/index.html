@@ -108,12 +108,16 @@
           <input type="file" id="input-importar" accept=".xlsx" hidden>
           <a class="btn-secundario" href="/api/materiais/exportar/excel">Exportar Excel</a>
           <a class="btn-secundario" href="/api/materiais/exportar/pdf">Exportar PDF</a>
+          <button class="btn-perigo somente-admin oculto" id="btn-excluir-selecionados">Excluir selecionados (<span id="qtd-selecionados">0</span>)</button>
           <button class="btn-primario somente-admin" id="btn-novo-material">+ Novo Material</button>
         </div>
       </div>
       <table class="tabela">
         <thead>
-          <tr><th>Código</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Unidade</th><th class="somente-admin">Ações</th></tr>
+          <tr>
+            <th class="somente-admin"><input type="checkbox" id="check-todos-materiais"></th>
+            <th>Código</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Unidade</th><th class="somente-admin">Ações</th>
+          </tr>
         </thead>
         <tbody id="tbody-materiais"></tbody>
       </table>
