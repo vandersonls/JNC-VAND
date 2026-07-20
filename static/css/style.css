@@ -67,14 +67,14 @@ body {
 
 .campo-senha { position: relative; }
 .campo-senha input { padding-right: 40px; }
-.toggle-senha {
+.campo-senha .toggle-senha {
   position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
-  width: 32px; height: 32px; border: none; background: none; padding: 0;
+  width: 32px; height: 32px; margin: 0; border: none; background: none; padding: 0;
   display: flex; align-items: center; justify-content: center; cursor: pointer;
   color: var(--cinza); border-radius: 6px; transition: color .15s, background .15s;
 }
-.toggle-senha:hover { color: var(--navy-escuro); background: rgba(0,0,0,0.05); }
-.toggle-senha .oculto { display: none; }
+.campo-senha .toggle-senha:hover { color: var(--navy-escuro); background: rgba(0,0,0,0.05); }
+.campo-senha .toggle-senha .oculto { display: none; }
 .card-login button {
   margin-top: 20px; width: 100%; padding: 11px; border: none; border-radius: 8px;
   background: linear-gradient(135deg, var(--dourado-claro), var(--dourado-escuro));
