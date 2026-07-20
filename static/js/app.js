@@ -1037,6 +1037,8 @@ function renderModalRevisaoPQ() {
     <tr>
       <td>${item.codigo}</td>
       <td>${item.descricao}</td>
+      <td>${item.fabricante || ""}</td>
+      <td>${item.bitola || ""}</td>
       <td style="text-align:right">${item.quantidade_base.toLocaleString("pt-BR")}</td>
       <td><input type="number" step="0.01" class="pq-percentual" data-idx="${idx}" value="${item.percentual}" style="width:80px"></td>
       <td class="pq-qtd-atualizada" data-idx="${idx}" style="text-align:right">${calcularQtdAtualizada(item).toLocaleString("pt-BR")}</td>
@@ -1054,7 +1056,7 @@ function renderModalRevisaoPQ() {
     </div>
     <div style="max-height:360px; overflow-y:auto; margin:12px 0;">
       <table class="tabela">
-        <thead><tr><th>Código</th><th>Descrição</th><th>Qtd. Base</th><th>%</th><th>Qtd. Atualizada</th><th>Unidade</th></tr></thead>
+        <thead><tr><th>Código</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Qtd. Base</th><th>%</th><th>Qtd. Atualizada</th><th>Unidade</th></tr></thead>
         <tbody>${linhas}</tbody>
       </table>
     </div>
