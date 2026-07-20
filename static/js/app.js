@@ -942,7 +942,7 @@ async function verVersao(listaId, versaoId) {
     <table class="tabela">
       <thead><tr><th>Código</th><th>Descrição</th><th>Qtd</th><th>Unidade</th></tr></thead>
       <tbody>
-        ${dados.itens.map((i) => `<tr><td>${i.codigo}</td><td>${i.descricao}</td><td>${i.quantidade}</td><td>${i.unidade}</td></tr>`).join("") || "<tr><td colspan='4'>Sem itens</td></tr>"}
+        ${dados.itens.map((i) => `<tr><td>${i.codigo}</td><td>${i.descricao}</td><td>${formatarQuantidade(i.quantidade, i.unidade)}</td><td>${i.unidade}</td></tr>`).join("") || "<tr><td colspan='4'>Sem itens</td></tr>"}
       </tbody>
     </table>
     <div class="modal-acoes">
@@ -976,17 +976,30 @@ function mostrarHistoricoGenerico(titulo, versoes, aoClicarVer) {
   });
 }
 
+const CAMPOS_QUANTIDADE = ["quantidade", "quantidade_base", "quantidade_atualizada"];
 function mostrarItensVersaoGenerico(titulo, itens, campos, rotulos) {
   abrirModal(`
     <h3>${titulo}</h3>
     <table class="tabela">
       <thead><tr>${rotulos.map((r) => `<th>${r}</th>`).join("")}</tr></thead>
       <tbody>
-        ${itens.map((i) => `<tr>${campos.map((c) => `<td>${i[c]}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${rotulos.length}">Sem itens</td></tr>`}
+        ${itens.map((i) => `<tr>${campos.map((c) => `<td>${CAMPOS_QUANTIDADE.includes(c) ? formatarQuantidade(i[c], i.unidade) : i[c]}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${rotulos.length}">Sem itens</td></tr>`}
       </tbody>
     </table>
     <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
   `, "modal-grande");
+}
+
+// Formata quantidade de acordo com a unidade: unidades de contagem (pç, un,
+// cj...) mostram numero inteiro; medidas (m, m2, etc.) mostram 2 casas decimais.
+const UNIDADES_INTEIRAS = ["pç", "pc", "un", "unid", "cj"];
+function formatarQuantidade(valor, unidade) {
+  const numero = Number(valor) || 0;
+  const un = (unidade || "").toString().trim().toLowerCase();
+  if (UNIDADES_INTEIRAS.includes(un)) {
+    return Math.round(numero).toLocaleString("pt-BR");
+  }
+  return numero.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // ---------- LISTA PQ ----------
@@ -1003,9 +1016,9 @@ function renderTabelaPQ(versao, itens) {
   tbody.innerHTML = itens.map((i) => `
     <tr>
       <td>${i.codigo}</td><td>${i.descricao}</td><td>${i.fabricante || ""}</td><td>${i.bitola || ""}</td>
-      <td>${Number(i.quantidade_base).toLocaleString("pt-BR")}</td>
+      <td>${formatarQuantidade(i.quantidade_base, i.unidade)}</td>
       <td>${Number(i.percentual).toLocaleString("pt-BR")}%</td>
-      <td>${Number(i.quantidade_atualizada).toLocaleString("pt-BR")}</td>
+      <td>${formatarQuantidade(i.quantidade_atualizada, i.unidade)}</td>
       <td>${i.unidade}</td>
     </tr>`).join("") || `<tr><td colspan="8">Nenhum item nesta versão.</td></tr>`;
 }
@@ -1039,9 +1052,9 @@ function renderModalRevisaoPQ() {
       <td>${item.descricao}</td>
       <td>${item.fabricante || ""}</td>
       <td>${item.bitola || ""}</td>
-      <td style="text-align:right">${item.quantidade_base.toLocaleString("pt-BR")}</td>
+      <td style="text-align:right">${formatarQuantidade(item.quantidade_base, item.unidade)}</td>
       <td><input type="number" step="0.01" class="pq-percentual" data-idx="${idx}" value="${item.percentual}" style="width:80px"></td>
-      <td class="pq-qtd-atualizada" data-idx="${idx}" style="text-align:right">${calcularQtdAtualizada(item).toLocaleString("pt-BR")}</td>
+      <td class="pq-qtd-atualizada" data-idx="${idx}" style="text-align:right">${formatarQuantidade(calcularQtdAtualizada(item), item.unidade)}</td>
       <td>${item.unidade}</td>
     </tr>`).join("");
 
@@ -1071,7 +1084,7 @@ function renderModalRevisaoPQ() {
       const idx = Number(input.dataset.idx);
       window._pqDraft[idx].percentual = Number(input.value) || 0;
       document.querySelector(`.pq-qtd-atualizada[data-idx="${idx}"]`).textContent =
-        calcularQtdAtualizada(window._pqDraft[idx]).toLocaleString("pt-BR");
+        formatarQuantidade(calcularQtdAtualizada(window._pqDraft[idx]), window._pqDraft[idx].unidade);
     });
   });
   document.getElementById("btn-aplicar-percentual-massa").addEventListener("click", () => {
@@ -1121,7 +1134,7 @@ function renderTabelaCompras(versao, itens) {
   tbody.innerHTML = itens.map((i) => `
     <tr>
       <td>${i.codigo}</td><td>${i.descricao}</td><td>${i.fabricante || ""}</td><td>${i.bitola || ""}</td>
-      <td>${Number(i.quantidade).toLocaleString("pt-BR")}</td><td>${i.unidade}</td>
+      <td>${formatarQuantidade(i.quantidade, i.unidade)}</td><td>${i.unidade}</td>
     </tr>`).join("") || `<tr><td colspan="6">Nenhum item nesta versão.</td></tr>`;
 }
 
