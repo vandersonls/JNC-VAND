@@ -234,9 +234,13 @@ h2 { margin-top: 0; color: var(--azul); }
 .linha-filtros-coluna th { padding: 6px 10px; background: #f7f8fa; }
 .linha-filtros-coluna:hover td, .linha-filtros-coluna:hover th { background: #f7f8fa; }
 .filtro-coluna {
-  width: 100%; padding: 5px 8px; font-size: 12px; border: 1px solid var(--borda); border-radius: 5px;
-  font-weight: normal; text-transform: none;
+  width: 100%; padding: 6px 28px 6px 10px; font-size: 12px; border: 1px solid var(--borda); border-radius: 8px;
+  font-weight: normal; text-transform: none; background: var(--branco); color: #1c1f26;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat; background-position: right 10px center; cursor: pointer;
 }
+.filtro-coluna:focus { outline: none; border-color: var(--dourado); box-shadow: 0 0 0 3px rgba(240,165,48,0.15); }
 
 #materiais-busca { width: 340px; max-width: 100%; }
 

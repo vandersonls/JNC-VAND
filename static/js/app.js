@@ -263,7 +263,19 @@ async function carregarMateriais(busca = "") {
   if (somenteDuplicados) params.set("somente_duplicados", "1");
   const url = `/api/materiais${params.toString() ? "?" + params.toString() : ""}`;
   state.materiais = await api(url);
+  Object.keys(filtrosColunaMateriais).forEach((c) => { filtrosColunaMateriais[c] = ""; });
+  popularFiltrosColuna();
   renderizarTabelaMateriais();
+}
+
+function popularFiltrosColuna() {
+  document.querySelectorAll(".filtro-coluna").forEach((select) => {
+    const campo = select.dataset.coluna;
+    const valores = [...new Set(state.materiais.map((m) => (m[campo] || "").toString().trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+    select.innerHTML = `<option value="">-- Selecione --</option>` + valores.map((v) => `<option value="${v}">${v}</option>`).join("");
+    select.value = filtrosColunaMateriais[campo] || "";
+  });
 }
 
 function renderizarTabelaMateriais() {
@@ -273,7 +285,7 @@ function renderizarTabelaMateriais() {
   const filtrado = state.materiais.filter((m) =>
     Object.entries(filtrosColunaMateriais).every(([campo, valor]) => {
       if (!valor) return true;
-      return (m[campo] || "").toString().toLowerCase().includes(valor.toLowerCase());
+      return (m[campo] || "").toString() === valor;
     })
   );
   // Sempre em ordem alfabética crescente por código, inclusive com "somente duplicados" marcado.
@@ -305,12 +317,10 @@ function renderizarTabelaMateriais() {
   aplicarPermissoes();
 }
 
-let filtroColunaTimer;
-document.querySelectorAll(".filtro-coluna").forEach((input) => {
-  input.addEventListener("input", () => {
-    filtrosColunaMateriais[input.dataset.coluna] = input.value;
-    clearTimeout(filtroColunaTimer);
-    filtroColunaTimer = setTimeout(renderizarTabelaMateriais, 200);
+document.querySelectorAll(".filtro-coluna").forEach((select) => {
+  select.addEventListener("change", () => {
+    filtrosColunaMateriais[select.dataset.coluna] = select.value;
+    renderizarTabelaMateriais();
   });
 });
 
