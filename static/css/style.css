@@ -222,6 +222,14 @@ h2 { margin-top: 0; color: var(--azul); }
 }
 .tab-header h2 { flex: 1; }
 .acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.filtro-duplicados { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--cinza); cursor: pointer; white-space: nowrap; }
+
+.tabela tr.linha-duplicada td { background: #fff6e0; }
+.tabela tr.linha-duplicada:hover td { background: #ffefc4; }
+.badge-duplicado {
+  display: inline-block; margin-left: 6px; font-size: 10px; text-transform: uppercase; font-weight: 700;
+  color: #8a6100; background: #ffe6a3; padding: 1px 6px; border-radius: 20px;
+}
 
 input[type="search"], input[type="text"], input[type="email"], input[type="password"],
 input[type="number"], select, textarea {

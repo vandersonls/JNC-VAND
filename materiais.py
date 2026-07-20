@@ -19,10 +19,30 @@ materiais_bp = Blueprint("materiais", __name__)
 COLUNAS = ["codigo", "descricao", "fabricante", "bitola", "unidade"]
 
 
+def _chave_duplicidade(row):
+    """Materiais com a mesma descrição + fabricante + bitola (ignorando
+    acentos/maiúsculas/espaços) são considerados o mesmo item cadastrado sob
+    códigos diferentes."""
+    partes = (row["descricao"], row["fabricante"], row["bitola"])
+    return tuple(_normalizar(p) for p in partes)
+
+
+def _marcar_duplicados(rows):
+    contagem = {}
+    for row in rows:
+        chave = _chave_duplicidade(row)
+        contagem[chave] = contagem.get(chave, 0) + 1
+    for row in rows:
+        row["duplicado"] = contagem[_chave_duplicidade(row)] > 1
+    return rows
+
+
 @materiais_bp.get("/api/materiais")
 @login_required
 def listar_materiais():
     busca = request.args.get("q", "").strip()
+    somente_duplicados = request.args.get("somente_duplicados") == "1"
+
     if busca:
         like = f"%{busca}%"
         rows = db.query_all(
@@ -33,6 +53,21 @@ def listar_materiais():
         )
     else:
         rows = db.query_all("SELECT * FROM materiais WHERE ativo = 1 ORDER BY codigo")
+
+    if somente_duplicados:
+        # A comparação de duplicidade precisa considerar todo o catálogo, não
+        # só os resultados já filtrados pela busca de texto.
+        todos = rows if not busca else db.query_all("SELECT * FROM materiais WHERE ativo = 1")
+        contagem = {}
+        for row in todos:
+            chave = _chave_duplicidade(row)
+            contagem[chave] = contagem.get(chave, 0) + 1
+        rows = [r for r in rows if contagem[_chave_duplicidade(r)] > 1]
+        for r in rows:
+            r["duplicado"] = True
+    else:
+        _marcar_duplicados(rows)
+
     return jsonify(rows)
 
 

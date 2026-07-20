@@ -104,6 +104,9 @@
         <h2>Materiais</h2>
         <div class="acoes">
           <input type="search" id="materiais-busca" placeholder="Buscar código, descrição, fabricante...">
+          <label class="filtro-duplicados">
+            <input type="checkbox" id="check-somente-duplicados"> Somente duplicados
+          </label>
           <button class="btn-secundario somente-admin" id="btn-importar-excel">Importar Excel</button>
           <input type="file" id="input-importar" accept=".xlsx" hidden>
           <a class="btn-secundario" href="/api/materiais/exportar/excel">Exportar Excel</a>

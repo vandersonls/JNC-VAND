@@ -256,20 +256,26 @@ function renderGraficoAtividade(dados) {
 const materiaisSelecionados = new Set();
 
 async function carregarMateriais(busca = "") {
-  const url = busca ? `/api/materiais?q=${encodeURIComponent(busca)}` : "/api/materiais";
+  const somenteDuplicados = document.getElementById("check-somente-duplicados").checked;
+  const params = new URLSearchParams();
+  if (busca) params.set("q", busca);
+  if (somenteDuplicados) params.set("somente_duplicados", "1");
+  const url = `/api/materiais${params.toString() ? "?" + params.toString() : ""}`;
   state.materiais = await api(url);
   materiaisSelecionados.clear();
   const tbody = document.getElementById("tbody-materiais");
   tbody.innerHTML = state.materiais.map((m) => `
-    <tr>
+    <tr class="${m.duplicado ? "linha-duplicada" : ""}">
       <td class="somente-admin"><input type="checkbox" class="check-material" data-id="${m.id}"></td>
-      <td>${m.codigo}</td><td>${m.descricao}</td><td>${m.fabricante || ""}</td>
+      <td>${m.codigo}</td>
+      <td>${m.descricao}${m.duplicado ? '<span class="badge-duplicado">Duplicado</span>' : ""}</td>
+      <td>${m.fabricante || ""}</td>
       <td>${m.bitola || ""}</td><td>${m.unidade}</td>
       <td class="somente-admin">
         <button class="link-acao" onclick="editarMaterial(${m.id})">Editar</button>
         <button class="link-acao" onclick="excluirMaterial(${m.id})">Excluir</button>
       </td>
-    </tr>`).join("") || `<tr><td colspan="7">Nenhum material cadastrado.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="7">${somenteDuplicados ? "Nenhum material duplicado encontrado." : "Nenhum material cadastrado."}</td></tr>`;
   document.getElementById("check-todos-materiais").checked = false;
   atualizarBotaoExclusaoLote();
   document.querySelectorAll(".check-material").forEach((chk) => {
@@ -314,6 +320,10 @@ let buscaMateriaisTimer;
 document.getElementById("materiais-busca").addEventListener("input", (e) => {
   clearTimeout(buscaMateriaisTimer);
   buscaMateriaisTimer = setTimeout(() => carregarMateriais(e.target.value), 300);
+});
+
+document.getElementById("check-somente-duplicados").addEventListener("change", () => {
+  carregarMateriais(document.getElementById("materiais-busca").value);
 });
 
 function modalMaterial(material = null) {
