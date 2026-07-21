@@ -198,6 +198,23 @@ def _doc_referencia(lista):
     return f"{lista['projeto_codigo']}-{lista['numero_desenho']}"
 
 
+def _linha_assinaturas(lista):
+    """Monta a linha 'Elaborado por / Verificado por / Aprovado por' do carimbo,
+    omitindo qualquer papel que não tenha nome preenchido."""
+    partes = []
+    for rotulo, campo_nome, campo_sigla in (
+        ("Elaborado por", "elaborador_nome", "elaborador_sigla"),
+        ("Verificado por", "verificador_nome", "verificador_sigla"),
+        ("Aprovado por", "aprovador_nome", "aprovador_sigla"),
+    ):
+        nome = lista.get(campo_nome)
+        if not nome:
+            continue
+        sigla = lista.get(campo_sigla)
+        partes.append(f"{rotulo}: {nome}{f' ({sigla})' if sigla else ''}")
+    return "    |    ".join(partes)
+
+
 def _carregar_contexto_projeto(projeto_id):
     """Reúne, para cada Lista por Desenho do projeto, sempre a sua última versão salva."""
     projeto = db.query_one(
@@ -285,6 +302,9 @@ def relatorio_excel(lista_id):
         f"Doc. Referência: {_doc_referencia(lista)}    |    Nº do Cliente: {lista['numero_cliente'] or '-'}    |    Nº do Fornecedor: {lista['numero_fornecedor'] or '-'}",
         tamanho=9, linha_atual=linha,
     )
+    assinaturas = _linha_assinaturas(lista)
+    if assinaturas:
+        linha = escrever_mesclado(assinaturas, tamanho=9, linha_atual=linha)
     linha += 1
 
     cabecalho = ["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]
@@ -385,6 +405,9 @@ def relatorio_pdf(lista_id):
         f"Nº do Cliente: {lista['numero_cliente'] or '-'} &nbsp;&nbsp;|&nbsp;&nbsp; Nº do Fornecedor: {lista['numero_fornecedor'] or '-'}",
         ref_estilo,
     ))
+    assinaturas = _linha_assinaturas(lista)
+    if assinaturas:
+        elementos.append(Paragraph(assinaturas.replace("    |    ", " &nbsp;&nbsp;|&nbsp;&nbsp; "), ref_estilo))
 
     dados_materiais = [["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]]
     for idx, item in enumerate(itens, start=1):

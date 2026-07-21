@@ -304,6 +304,20 @@ input[type="number"], select, textarea {
 }
 .modal h3 { margin-top: 0; color: var(--azul); }
 
+.form-grid-lista { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 16px; }
+.campo-linha label { font-size: 12px; color: var(--cinza); display: block; margin-bottom: 4px; }
+.campo-linha input { width: 100%; }
+.campo-dupla { display: flex; gap: 12px; }
+.campo-dupla > div { flex: 1; }
+
+.selecao-lista-wrap {
+  display: flex; flex-direction: column; gap: 2px; margin: 12px 0;
+  max-height: 320px; overflow-y: auto; border: 1px solid var(--borda); border-radius: 10px; padding: 6px;
+}
+.selecao-lista-linha { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 6px; font-weight: normal; cursor: pointer; }
+.selecao-lista-linha:hover { background: #f7f8fa; }
+.selecao-lista-linha input { flex: 0 0 auto; }
+
 .modal-maximizar {
   position: absolute; top: 14px; right: 18px; z-index: 5;
   width: 28px; height: 28px; border: none; border-radius: 6px; background: none;
@@ -376,26 +390,26 @@ input[type="number"], select, textarea {
 .arvore-filhos.oculto { display: none; }
 .arvore-carregando { color: var(--cinza); font-size: 12px; padding: 8px 0 8px 38px; }
 
-/* ---------- EDITOR DE LISTA POR DESENHO (seleção dupla) ---------- */
-.editor-duplo { display: flex; gap: 16px; margin: 4px 0 16px; }
-.editor-painel { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* ---------- EDITOR DE LISTA POR DESENHO (seleção empilhada) ---------- */
+.editor-duplo { display: flex; flex-direction: column; gap: 20px; margin: 4px 0 16px; }
+.editor-painel { min-width: 0; display: flex; flex-direction: column; }
 .editor-painel-titulo { font-size: 12px; font-weight: 600; color: var(--cinza); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; }
 .editor-pre-lista {
   background: var(--branco); border-radius: 10px; border: 1px solid var(--borda);
-  max-height: 420px; overflow-y: auto;
+  max-height: 260px; overflow-y: auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
 }
-.editor-pre-linha { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #f1f2f5; }
-.editor-pre-linha:last-child { border-bottom: none; }
+.editor-pre-linha { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #f1f2f5; border-right: 1px solid #f1f2f5; }
 .editor-pre-linha:hover { background: #f7f8fa; }
 .editor-pre-info { display: flex; flex-direction: column; min-width: 0; }
 .editor-pre-codigo { font-weight: 600; font-size: 12.5px; color: #1c1f26; }
-.editor-pre-desc { font-size: 11.5px; color: var(--cinza); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.editor-pre-desc { font-size: 11.5px; color: var(--cinza); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .editor-pre-add {
   flex: 0 0 auto; width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--borda);
   background: var(--branco); color: var(--azul); font-weight: 700; cursor: pointer;
 }
 .editor-pre-add:hover { background: var(--azul); color: var(--branco); border-color: var(--azul); }
-.editor-selecionados-wrap { max-height: 420px; overflow-y: auto; }
+.editor-selecionados-wrap { max-height: 320px; overflow-y: auto; }
 
 .subtitulo-arvore { margin: 24px 0 10px; font-size: 15px; color: var(--azul); }
 .item-material-busca.invalido { border-color: var(--erro); }

@@ -178,9 +178,16 @@ def criar_lista(projeto_id):
         return jsonify({"erro": "Número do desenho é obrigatório"}), 400
 
     lista_id = db.execute(
-        """INSERT INTO listas_desenho (projeto_id, numero_desenho, titulo, numero_cliente, numero_fornecedor)
-           VALUES (%s, %s, %s, %s, %s)""",
-        (projeto_id, numero_desenho, data.get("titulo", ""), data.get("numero_cliente", ""), data.get("numero_fornecedor", "")),
+        """INSERT INTO listas_desenho (projeto_id, numero_desenho, titulo, numero_cliente, numero_fornecedor,
+                                        elaborador_nome, elaborador_sigla, verificador_nome, verificador_sigla,
+                                        aprovador_nome, aprovador_sigla)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        (
+            projeto_id, numero_desenho, data.get("titulo", ""), data.get("numero_cliente", ""), data.get("numero_fornecedor", ""),
+            data.get("elaborador_nome", ""), data.get("elaborador_sigla", ""),
+            data.get("verificador_nome", ""), data.get("verificador_sigla", ""),
+            data.get("aprovador_nome", ""), data.get("aprovador_sigla", ""),
+        ),
     )
     versao_id = db.execute(
         """INSERT INTO lista_desenho_versoes (lista_desenho_id, versao, status, observacoes, criado_por)
@@ -206,12 +213,23 @@ def editar_lista(lista_id):
     if not lista:
         return jsonify({"erro": "Lista não encontrada"}), 404
 
-    if any(campo in data for campo in ("titulo", "numero_desenho", "numero_cliente", "numero_fornecedor")):
+    campos_cabecalho = (
+        "titulo", "numero_desenho", "numero_cliente", "numero_fornecedor",
+        "elaborador_nome", "elaborador_sigla", "verificador_nome", "verificador_sigla",
+        "aprovador_nome", "aprovador_sigla",
+    )
+    if any(campo in data for campo in campos_cabecalho):
         db.execute(
-            "UPDATE listas_desenho SET titulo=%s, numero_desenho=%s, numero_cliente=%s, numero_fornecedor=%s WHERE id=%s",
+            """UPDATE listas_desenho SET titulo=%s, numero_desenho=%s, numero_cliente=%s, numero_fornecedor=%s,
+                                          elaborador_nome=%s, elaborador_sigla=%s, verificador_nome=%s, verificador_sigla=%s,
+                                          aprovador_nome=%s, aprovador_sigla=%s
+               WHERE id=%s""",
             (
                 data.get("titulo", lista["titulo"]), data.get("numero_desenho", lista["numero_desenho"]),
                 data.get("numero_cliente", lista["numero_cliente"]), data.get("numero_fornecedor", lista["numero_fornecedor"]),
+                data.get("elaborador_nome", lista["elaborador_nome"]), data.get("elaborador_sigla", lista["elaborador_sigla"]),
+                data.get("verificador_nome", lista["verificador_nome"]), data.get("verificador_sigla", lista["verificador_sigla"]),
+                data.get("aprovador_nome", lista["aprovador_nome"]), data.get("aprovador_sigla", lista["aprovador_sigla"]),
                 lista_id,
             ),
         )

@@ -36,22 +36,39 @@ def obter_lista_compras(projeto_id):
     return jsonify({"versao": versao, "itens": itens})
 
 
-@lista_compras_bp.get("/api/projetos/<int:projeto_id>/lista-compras/base")
+@lista_compras_bp.post("/api/projetos/<int:projeto_id>/lista-compras/base")
 @login_required
 def base_lista_compras(projeto_id):
     """Base para uma nova versão da Lista de Compras: a última versão salva
-    da Lista PQ do projeto."""
+    da Lista PQ do projeto. Se lista_ids for informado, filtra apenas os
+    materiais que pertencem à versão atual dessas listas por desenho."""
+    data = request.get_json(force=True) or {}
+    lista_ids = data.get("lista_ids") or []
     projeto = db.query_one("SELECT pq_versao_atual_id FROM projetos WHERE id = %s", (projeto_id,))
     if not projeto or not projeto["pq_versao_atual_id"]:
         return jsonify([])
+
+    filtro_materiais = ""
+    params = [projeto["pq_versao_atual_id"]]
+    if lista_ids:
+        placeholders = ", ".join(["%s"] * len(lista_ids))
+        filtro_materiais = f"""AND i.material_id IN (
+            SELECT DISTINCT li.material_id
+            FROM listas_desenho ld
+            JOIN lista_desenho_versoes v ON v.id = ld.versao_atual_id
+            JOIN lista_desenho_itens li ON li.versao_id = v.id
+            WHERE ld.id IN ({placeholders})
+        )"""
+        params.extend(lista_ids)
+
     linhas = db.query_all(
-        """SELECT i.material_id, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade,
-                  i.quantidade_atualizada AS quantidade
-           FROM lista_pq_itens i
-           JOIN materiais m ON m.id = i.material_id
-           WHERE i.versao_id = %s
-           ORDER BY m.codigo""",
-        (projeto["pq_versao_atual_id"],),
+        f"""SELECT i.material_id, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade,
+                   i.quantidade_atualizada AS quantidade
+            FROM lista_pq_itens i
+            JOIN materiais m ON m.id = i.material_id
+            WHERE i.versao_id = %s {filtro_materiais}
+            ORDER BY m.codigo""",
+        tuple(params),
     )
     return jsonify(linhas)
 

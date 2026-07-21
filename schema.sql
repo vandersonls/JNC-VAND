@@ -167,6 +167,12 @@ CREATE TABLE IF NOT EXISTS listas_desenho (
     titulo VARCHAR(200),
     numero_cliente VARCHAR(100),
     numero_fornecedor VARCHAR(100),
+    elaborador_nome VARCHAR(150),
+    elaborador_sigla VARCHAR(20),
+    verificador_nome VARCHAR(150),
+    verificador_sigla VARCHAR(20),
+    aprovador_nome VARCHAR(150),
+    aprovador_sigla VARCHAR(20),
     versao_atual_id INT NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_lista_projeto FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
@@ -182,6 +188,37 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'numero_fornecedor');
 SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN numero_fornecedor VARCHAR(100) AFTER numero_cliente', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- Campos de carimbo/aprovação (elaborador, verificador, aprovador - nome e sigla)
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'elaborador_nome');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN elaborador_nome VARCHAR(150) AFTER numero_fornecedor', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'elaborador_sigla');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN elaborador_sigla VARCHAR(20) AFTER elaborador_nome', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'verificador_nome');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN verificador_nome VARCHAR(150) AFTER elaborador_sigla', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'verificador_sigla');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN verificador_sigla VARCHAR(20) AFTER verificador_nome', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'aprovador_nome');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN aprovador_nome VARCHAR(150) AFTER verificador_sigla', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'aprovador_sigla');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN aprovador_sigla VARCHAR(20) AFTER aprovador_nome', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- =========================================================

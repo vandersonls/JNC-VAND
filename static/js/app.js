@@ -736,14 +736,61 @@ function ativarSubtabPD(nome) {
   }
 }
 
-document.getElementById("btn-criar-pq").addEventListener("click", () => {
-  document.getElementById("btn-criar-pq").classList.add("oculto");
-  document.getElementById("btn-revisar-pq").classList.remove("oculto");
+document.getElementById("btn-criar-pq").addEventListener("click", async () => {
+  const listas = await api(`/api/projetos/${state.projetoAtual.id}/listas`);
+  if (!listas.length) { toast("Este projeto ainda não tem nenhuma Lista por Desenho cadastrada", "erro"); return; }
+  abrirSelecaoListas(
+    "Selecionar Listas para a PQ",
+    "Escolha quais Listas por Desenho entrarão na consolidação da Lista PQ. Por padrão, todas estão marcadas.",
+    listas,
+    (selecionados) => {
+      window._pqListaIdsSelecionados = selecionados;
+      document.getElementById("btn-criar-pq").classList.add("oculto");
+      document.getElementById("btn-revisar-pq").classList.remove("oculto");
+    },
+  );
 });
 
-document.getElementById("btn-criar-compras").addEventListener("click", () => {
-  document.getElementById("btn-criar-compras").classList.add("oculto");
-  document.getElementById("btn-revisar-compras").classList.remove("oculto");
+// Modal genérico de checklist de listas por desenho, reaproveitado por PQ e Compras.
+function abrirSelecaoListas(titulo, mensagem, listas, aoConfirmar) {
+  const linhas = listas.map((l) => `
+    <label class="selecao-lista-linha">
+      <input type="checkbox" class="selecao-lista-check" value="${l.id}" checked>
+      <span>${l.numero_cliente || "-"} / ${l.numero_fornecedor || "-"}${l.titulo ? " — " + l.titulo : ""} <span class="arvore-sub">(${l.numero_desenho})</span></span>
+    </label>`).join("");
+  abrirModal(`
+    <h3>${titulo}</h3>
+    <p style="color:var(--cinza); font-size:13px;">${mensagem}</p>
+    <div class="selecao-lista-wrap">${linhas}</div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" id="btn-continuar-selecao-listas">Continuar</button>
+    </div>
+  `);
+  document.getElementById("btn-continuar-selecao-listas").addEventListener("click", () => {
+    const selecionados = Array.from(document.querySelectorAll(".selecao-lista-check:checked")).map((c) => Number(c.value));
+    if (!selecionados.length) { toast("Selecione ao menos uma lista", "erro"); return; }
+    fecharModal();
+    aoConfirmar(selecionados);
+  });
+}
+
+document.getElementById("btn-criar-compras").addEventListener("click", async () => {
+  const dadosPQ = await api(`/api/projetos/${state.projetoAtual.id}/lista-pq`);
+  if (!dadosPQ.versao) { toast("A Lista PQ deste projeto ainda não tem nenhuma versão salva", "erro"); return; }
+  const versaoPQ = await api(`/api/lista-pq/versoes/${dadosPQ.versao.id}`);
+  const origens = versaoPQ.versao.origens || [];
+  if (!origens.length) { toast("Esta versão da Lista PQ não tem listas de origem registradas", "erro"); return; }
+  abrirSelecaoListas(
+    "Selecionar Listas para a Lista de Compras",
+    "Escolha quais listas por desenho (que compõem a Lista PQ atual) entrarão na Lista de Compras. Por padrão, todas estão marcadas.",
+    origens.map((o) => ({ id: o.lista_desenho_id, numero_desenho: o.numero_desenho, titulo: o.titulo })),
+    (selecionados) => {
+      window._comprasListaIdsSelecionados = selecionados;
+      document.getElementById("btn-criar-compras").classList.add("oculto");
+      document.getElementById("btn-revisar-compras").classList.remove("oculto");
+    },
+  );
 });
 
 const arvoreState = { listas: [], versoesPorLista: {}, expandidas: new Set() };
@@ -780,11 +827,13 @@ function renderNoLista(l) {
         </button>
         ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleListaArvore(${l.id})">
-          <span class="arvore-titulo">${l.numero_desenho}${l.titulo ? " — " + l.titulo : ""}</span>
+          <span class="arvore-titulo">${l.numero_cliente || "-"} / ${l.numero_fornecedor || "-"}${l.titulo ? " — " + l.titulo : ""}</span>
           <span class="arvore-sub">${l.versao_atual ? "v" + l.versao_atual : "sem versão"}</span>
         </span>
         <span class="arvore-acoes">
           <button class="link-acao" onclick="abrirEditorLista(${l.id})">Abrir</button>
+          <a class="link-acao" href="/api/listas/${l.id}/relatorio/excel" target="_blank">Excel</a>
+          <a class="link-acao" href="/api/listas/${l.id}/relatorio/pdf" target="_blank">PDF</a>
           <button class="link-acao" onclick="ativarSubtabPD('pd-pq')">Lista PQ</button>
           <button class="link-acao" onclick="ativarSubtabPD('pd-compras')">Lista de Compras</button>
           <button class="link-acao somente-admin" onclick="excluirLista(${l.id})">Excluir</button>
@@ -834,37 +883,14 @@ async function excluirLista(id) {
   carregarListas(state.projetoAtual.id);
 }
 
-function modalNovaLista() {
-  abrirModal(`
-    <h3>Nova Lista por Desenho</h3>
-    <div class="form-grid">
-      <label>Nº do Desenho</label><input id="lista-numero">
-      <label>Título</label><input id="lista-titulo">
-      <label>Nº do Cliente</label><input id="lista-numero-cliente">
-      <label>Nº do Fornecedor</label><input id="lista-numero-fornecedor">
-    </div>
-    <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
-      <button class="btn-primario" onclick="continuarNovaLista()">Continuar</button>
-    </div>
-  `);
-}
-
 // A lista só é criada no banco quando a primeira versão (com os itens
 // escolhidos) é salva - assim não sobra uma "v1" vazia no histórico.
-async function continuarNovaLista() {
-  const numero_desenho = document.getElementById("lista-numero").value.trim();
-  const titulo = document.getElementById("lista-titulo").value.trim();
-  const numero_cliente = document.getElementById("lista-numero-cliente").value.trim();
-  const numero_fornecedor = document.getElementById("lista-numero-fornecedor").value.trim();
-  if (!numero_desenho) { toast("Informe o número do desenho", "erro"); return; }
+document.getElementById("btn-nova-lista").addEventListener("click", async () => {
   if (!state.materiais.length) state.materiais = await api("/api/materiais");
   window._itensEditor = [];
   window._editorBusca = "";
-  renderEditorLista(null, { numero_desenho, titulo, numero_cliente, numero_fornecedor });
-}
-
-document.getElementById("btn-nova-lista").addEventListener("click", modalNovaLista);
+  renderEditorLista(null, {});
+});
 
 // ---------- EDITOR DA LISTA (com versionamento) ----------
 async function abrirEditorLista(listaId) {
@@ -883,11 +909,26 @@ async function abrirEditorLista(listaId) {
 
 function renderEditorLista(listaId, lista) {
   abrirModal(`
-    <h3>Lista por Desenho — ${lista.numero_desenho}</h3>
-    <div class="form-grid" style="flex-direction:row; gap:12px;">
-      <div style="flex:1"><label>Título</label><input id="editor-titulo" value="${lista.titulo || ""}"></div>
-      <div style="flex:1"><label>Nº do Cliente</label><input id="editor-numero-cliente" value="${lista.numero_cliente || ""}"></div>
-      <div style="flex:1"><label>Nº do Fornecedor</label><input id="editor-numero-fornecedor" value="${lista.numero_fornecedor || ""}"></div>
+    <h3>${lista.numero_desenho ? `Lista por Desenho — ${lista.numero_desenho}` : "Nova Lista por Desenho"}</h3>
+    <div class="form-grid-lista">
+      <div class="campo-linha"><label>Título do Documento</label><input id="editor-titulo" value="${lista.titulo || ""}"></div>
+      <div class="campo-linha campo-dupla">
+        <div><label>Número do Cliente</label><input id="editor-numero-cliente" value="${lista.numero_cliente || ""}"></div>
+        <div><label>Número do Fornecedor</label><input id="editor-numero-fornecedor" value="${lista.numero_fornecedor || ""}"></div>
+      </div>
+      <div class="campo-linha"><label>Número do Desenho de Referência</label><input id="editor-numero-desenho" value="${lista.numero_desenho || ""}"></div>
+      <div class="campo-linha campo-dupla">
+        <div><label>Nome do Elaborador</label><input id="editor-elaborador-nome" value="${lista.elaborador_nome || ""}"></div>
+        <div><label>Sigla</label><input id="editor-elaborador-sigla" value="${lista.elaborador_sigla || ""}"></div>
+      </div>
+      <div class="campo-linha campo-dupla">
+        <div><label>Nome do Verificador</label><input id="editor-verificador-nome" value="${lista.verificador_nome || ""}"></div>
+        <div><label>Sigla</label><input id="editor-verificador-sigla" value="${lista.verificador_sigla || ""}"></div>
+      </div>
+      <div class="campo-linha campo-dupla">
+        <div><label>Nome do Aprovador</label><input id="editor-aprovador-nome" value="${lista.aprovador_nome || ""}"></div>
+        <div><label>Sigla</label><input id="editor-aprovador-sigla" value="${lista.aprovador_sigla || ""}"></div>
+      </div>
     </div>
     <input id="editor-busca-material" placeholder="Pesquisar material (código ou descrição)" style="width:100%; margin-bottom:10px;">
     <div class="editor-duplo">
@@ -924,11 +965,19 @@ function renderEditorLista(listaId, lista) {
   });
   document.getElementById("btn-revisar-desenho").addEventListener("click", () => {
     if (!window._itensEditor.length) { toast("Adicione ao menos um material", "erro"); return; }
+    const numero_desenho = document.getElementById("editor-numero-desenho").value.trim();
+    if (!numero_desenho) { toast("Informe o número do desenho de referência", "erro"); return; }
     window._editorCabecalho = {
-      numero_desenho: lista.numero_desenho,
+      numero_desenho,
       titulo: document.getElementById("editor-titulo").value.trim(),
       numero_cliente: document.getElementById("editor-numero-cliente").value.trim(),
       numero_fornecedor: document.getElementById("editor-numero-fornecedor").value.trim(),
+      elaborador_nome: document.getElementById("editor-elaborador-nome").value.trim(),
+      elaborador_sigla: document.getElementById("editor-elaborador-sigla").value.trim(),
+      verificador_nome: document.getElementById("editor-verificador-nome").value.trim(),
+      verificador_sigla: document.getElementById("editor-verificador-sigla").value.trim(),
+      aprovador_nome: document.getElementById("editor-aprovador-nome").value.trim(),
+      aprovador_sigla: document.getElementById("editor-aprovador-sigla").value.trim(),
     };
     renderReviewLista(listaId, lista);
   });
@@ -938,8 +987,17 @@ function renderEditorLista(listaId, lista) {
 
   function redesenharPreLista() {
     const termo = (window._editorBusca || "").trim().toLowerCase();
-    const materiaisFiltrados = !termo ? state.materiais : state.materiais.filter((m) =>
-      m.codigo.toLowerCase().includes(termo) || (m.descricao || "").toLowerCase().includes(termo));
+    let materiaisFiltrados = state.materiais;
+    if (termo) {
+      materiaisFiltrados = state.materiais
+        .filter((m) => m.codigo.toLowerCase().includes(termo) || (m.descricao || "").toLowerCase().includes(termo))
+        .map((m) => ({ m, comeca: (m.descricao || "").toLowerCase().startsWith(termo) || m.codigo.toLowerCase().startsWith(termo) }))
+        .sort((a, b) => {
+          if (a.comeca !== b.comeca) return a.comeca ? -1 : 1;
+          return (a.m.descricao || "").localeCompare(b.m.descricao || "", "pt-BR");
+        })
+        .map((x) => x.m);
+    }
     const cont = document.getElementById("editor-pre-lista");
     cont.innerHTML = materiaisFiltrados.slice(0, 200).map((m) => `
       <div class="editor-pre-linha" data-material-id="${m.id}">
@@ -1003,7 +1061,7 @@ function renderReviewLista(listaId, lista) {
     </tr>`).join("");
 
   abrirModal(`
-    <h3>Revisar Lista por Desenho — ${lista.numero_desenho}</h3>
+    <h3>Revisar Lista por Desenho — ${window._editorCabecalho.numero_desenho}</h3>
     <div style="max-height:420px; overflow-y:auto; margin:12px 0;">
       <table class="tabela">
         <thead><tr><th>Código</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Qtd</th><th>Unidade</th></tr></thead>
@@ -1023,17 +1081,24 @@ function renderReviewLista(listaId, lista) {
       window._itensEditor[Number(input.dataset.idx)].quantidade = e.target.value;
     });
   });
-  document.getElementById("btn-voltar-editor-desenho").addEventListener("click", () => renderEditorLista(listaId, lista));
+  document.getElementById("btn-voltar-editor-desenho").addEventListener("click", () => renderEditorLista(listaId, { ...lista, ...window._editorCabecalho }));
   document.getElementById("btn-salvar-editor-desenho").addEventListener("click", () => salvarEditorLista(listaId));
 }
 
 async function salvarEditorLista(listaId) {
   const itens = (window._itensEditor || []).filter((i) => i.material_id);
-  const cabecalho = window._editorCabecalho || { titulo: "", numero_cliente: "", numero_fornecedor: "" };
+  const cabecalho = window._editorCabecalho || {};
   const payload = {
+    numero_desenho: cabecalho.numero_desenho,
     titulo: cabecalho.titulo,
     numero_cliente: cabecalho.numero_cliente,
     numero_fornecedor: cabecalho.numero_fornecedor,
+    elaborador_nome: cabecalho.elaborador_nome,
+    elaborador_sigla: cabecalho.elaborador_sigla,
+    verificador_nome: cabecalho.verificador_nome,
+    verificador_sigla: cabecalho.verificador_sigla,
+    aprovador_nome: cabecalho.aprovador_nome,
+    aprovador_sigla: cabecalho.aprovador_sigla,
     itens: itens.map((i) => ({ material_id: Number(i.material_id), quantidade: Number(i.quantidade) || 0, observacao: i.observacao || "" })),
   };
   try {
@@ -1041,7 +1106,6 @@ async function salvarEditorLista(listaId) {
       await api(`/api/listas/${listaId}`, { method: "PUT", body: JSON.stringify(payload) });
       toast("Nova versão salva com sucesso");
     } else {
-      payload.numero_desenho = cabecalho.numero_desenho;
       await api(`/api/projetos/${state.projetoAtual.id}/listas`, { method: "POST", body: JSON.stringify(payload) });
       toast("Lista criada com sucesso");
     }
@@ -1085,14 +1149,9 @@ function mostrarItensVersaoGenerico(titulo, itens, campos, rotulos) {
 
 // Formata quantidade de acordo com a unidade: unidades de contagem (pç, un,
 // cj...) mostram numero inteiro; medidas (m, m2, etc.) mostram 2 casas decimais.
-const UNIDADES_INTEIRAS = ["pç", "pc", "un", "unid", "cj"];
 function formatarQuantidade(valor, unidade) {
   const numero = Number(valor) || 0;
-  const un = (unidade || "").toString().trim().toLowerCase();
-  if (UNIDADES_INTEIRAS.includes(un)) {
-    return Math.round(numero).toLocaleString("pt-BR");
-  }
-  return numero.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return Math.round(numero).toLocaleString("pt-BR");
 }
 
 // ---------- LISTA PQ ----------
@@ -1182,8 +1241,9 @@ function calcularQtdAtualizada(item) {
 
 document.getElementById("btn-revisar-pq").addEventListener("click", async () => {
   const projetoId = state.projetoAtual.id;
+  const listaIds = window._pqListaIdsSelecionados || [];
   const [base, atual] = await Promise.all([
-    api(`/api/projetos/${projetoId}/lista-pq/base`),
+    api(`/api/projetos/${projetoId}/lista-pq/base`, { method: "POST", body: JSON.stringify({ lista_ids: listaIds }) }),
     api(`/api/projetos/${projetoId}/lista-pq`),
   ]);
   if (!base.length) { toast("Nenhum material encontrado nas Listas por Desenho deste projeto ainda", "erro"); return; }
@@ -1254,7 +1314,8 @@ async function salvarVersaoPQ() {
     quantidade_atualizada: calcularQtdAtualizada(item), observacao: item.observacao || "",
   }));
   try {
-    await api(`/api/projetos/${state.projetoAtual.id}/lista-pq`, { method: "POST", body: JSON.stringify({ itens }) });
+    const lista_ids = window._pqListaIdsSelecionados || [];
+    await api(`/api/projetos/${state.projetoAtual.id}/lista-pq`, { method: "POST", body: JSON.stringify({ itens, lista_ids }) });
     fecharModal();
     toast("Nova versão da Lista PQ salva com sucesso");
     document.getElementById("btn-revisar-pq").classList.add("oculto");
@@ -1351,8 +1412,11 @@ function renderTabelaCompras(versao, itens) {
 }
 
 document.getElementById("btn-revisar-compras").addEventListener("click", async () => {
-  const base = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras/base`);
-  if (!base.length) { toast("A Lista PQ deste projeto ainda não tem nenhuma versão salva", "erro"); return; }
+  const listaIds = window._comprasListaIdsSelecionados || [];
+  const base = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras/base`, {
+    method: "POST", body: JSON.stringify({ lista_ids: listaIds }),
+  });
+  if (!base.length) { toast("Nenhum material encontrado para as listas selecionadas", "erro"); return; }
   window._comprasDraft = base.map((b) => ({
     material_id: b.material_id, codigo: b.codigo, descricao: b.descricao, fabricante: b.fabricante,
     bitola: b.bitola, unidade: b.unidade, quantidade: Number(b.quantidade), observacao: "",

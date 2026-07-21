@@ -36,23 +36,31 @@ def obter_lista_pq(projeto_id):
     return jsonify({"versao": versao, "itens": itens})
 
 
-@lista_pq_bp.get("/api/projetos/<int:projeto_id>/lista-pq/base")
+@lista_pq_bp.post("/api/projetos/<int:projeto_id>/lista-pq/base")
 @login_required
 def base_lista_pq(projeto_id):
-    """Consolida a última versão de CADA Lista por Desenho do projeto (soma
-    quantidades por material) - é a base sobre a qual o percentual da Lista PQ
-    é aplicado."""
+    """Consolida a última versão de cada Lista por Desenho SELECIONADA do
+    projeto (soma quantidades por material) - é a base sobre a qual o
+    percentual da Lista PQ é aplicado. Sem lista_ids, usa todas as listas."""
+    data = request.get_json(force=True) or {}
+    lista_ids = data.get("lista_ids") or []
+    filtro_listas = ""
+    params = [projeto_id]
+    if lista_ids:
+        placeholders = ", ".join(["%s"] * len(lista_ids))
+        filtro_listas = f"AND ld.id IN ({placeholders})"
+        params.extend(lista_ids)
     linhas = db.query_all(
-        """SELECT i.material_id, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade,
-                  SUM(i.quantidade) AS quantidade_base
-           FROM listas_desenho ld
-           JOIN lista_desenho_versoes v ON v.id = ld.versao_atual_id
-           JOIN lista_desenho_itens i ON i.versao_id = v.id
-           JOIN materiais m ON m.id = i.material_id
-           WHERE ld.projeto_id = %s
-           GROUP BY i.material_id, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
-           ORDER BY m.codigo""",
-        (projeto_id,),
+        f"""SELECT i.material_id, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade,
+                   SUM(i.quantidade) AS quantidade_base
+            FROM listas_desenho ld
+            JOIN lista_desenho_versoes v ON v.id = ld.versao_atual_id
+            JOIN lista_desenho_itens i ON i.versao_id = v.id
+            JOIN materiais m ON m.id = i.material_id
+            WHERE ld.projeto_id = %s {filtro_listas}
+            GROUP BY i.material_id, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
+            ORDER BY m.codigo""",
+        tuple(params),
     )
     return jsonify(linhas)
 
@@ -122,13 +130,20 @@ def salvar_lista_pq(projeto_id):
         )
     db.execute("UPDATE projetos SET pq_versao_atual_id = %s WHERE id = %s", (versao_id, projeto_id))
 
+    lista_ids = data.get("lista_ids") or []
+    filtro_listas = ""
+    params = [projeto_id]
+    if lista_ids:
+        placeholders = ", ".join(["%s"] * len(lista_ids))
+        filtro_listas = f"AND ld.id IN ({placeholders})"
+        params.extend(lista_ids)
     origens = db.query_all(
-        """SELECT ld.id AS lista_desenho_id, ld.numero_desenho, ld.titulo,
-                  v.id AS lista_desenho_versao_id, v.versao AS versao_numero
-           FROM listas_desenho ld
-           JOIN lista_desenho_versoes v ON v.id = ld.versao_atual_id
-           WHERE ld.projeto_id = %s""",
-        (projeto_id,),
+        f"""SELECT ld.id AS lista_desenho_id, ld.numero_desenho, ld.titulo,
+                   v.id AS lista_desenho_versao_id, v.versao AS versao_numero
+            FROM listas_desenho ld
+            JOIN lista_desenho_versoes v ON v.id = ld.versao_atual_id
+            WHERE ld.projeto_id = %s {filtro_listas}""",
+        tuple(params),
     )
     for origem in origens:
         db.execute(
