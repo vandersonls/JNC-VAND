@@ -302,6 +302,11 @@ input[type="number"], select, textarea {
   width: 1200px; max-width: 96vw;
   min-height: 500px; max-height: 92vh;
 }
+/* 40% mais estreito que o modal-grande - usado no cabeçalho da Lista por Desenho */
+.modal-media {
+  width: 720px; max-width: 94vw;
+  max-height: 92vh;
+}
 .modal h3 { margin-top: 0; color: var(--azul); }
 
 .form-grid-lista { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 16px; }
@@ -391,6 +396,7 @@ input[type="number"], select, textarea {
 .arvore-carregando { color: var(--cinza); font-size: 12px; padding: 8px 0 8px 38px; }
 
 .subtitulo-arvore { margin: 24px 0 10px; font-size: 15px; color: var(--azul); }
+.revisao-item-qtd { font-weight: bold; color: var(--erro); }
 
 .busca-adicionar-material { display: flex; gap: 10px; margin: 4px 0 16px; align-items: flex-start; }
 .busca-input-wrap { position: relative; flex: 1; }

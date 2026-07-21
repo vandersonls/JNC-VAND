@@ -946,7 +946,7 @@ function renderCabecalhoLista(listaId, lista) {
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
       <button class="btn-primario" id="btn-continuar-cabecalho">Continuar</button>
     </div>
-  `, "modal-grande");
+  `, "modal-media");
   aplicarPermissoes();
 
   document.getElementById("btn-continuar-cabecalho").addEventListener("click", () => {
@@ -1120,7 +1120,7 @@ function renderEditorLista(listaId, lista) {
     tbody.innerHTML = window._itensEditor.map((item, idx) => `
       <tr>
         <td>${_rotuloMaterial(item)}</td>
-        <td><input type="number" step="1" min="0" class="item-qtd" data-idx="${idx}" value="${item.quantidade}" style="width:100px"></td>
+        <td><input type="number" step="1" min="0" class="item-qtd" data-idx="${idx}" value="${Math.round(Number(item.quantidade)) || 0}" style="width:100px"></td>
         <td><button class="btn-perigo" type="button" data-idx="${idx}">Remover</button></td>
       </tr>`).join("") || `<tr><td colspan="3">Nenhum material adicionado.</td></tr>`;
 
@@ -1142,7 +1142,7 @@ function renderReviewLista(listaId, lista) {
   const linhas = window._itensEditor.map((item, idx) => `
     <tr>
       <td>${item.codigo}</td><td>${item.descricao}</td><td>${item.fabricante || ""}</td><td>${item.bitola || ""}</td>
-      <td><input type="number" step="0.001" min="0" class="revisao-item-qtd" data-idx="${idx}" value="${item.quantidade}" style="width:90px"></td>
+      <td><input type="number" step="1" min="0" class="revisao-item-qtd" data-idx="${idx}" value="${Math.round(Number(item.quantidade)) || 0}" style="width:90px"></td>
       <td>${item.unidade || ""}</td>
     </tr>`).join("");
 
@@ -1164,7 +1164,7 @@ function renderReviewLista(listaId, lista) {
 
   document.querySelectorAll(".revisao-item-qtd").forEach((input) => {
     input.addEventListener("input", (e) => {
-      window._itensEditor[Number(input.dataset.idx)].quantidade = e.target.value;
+      window._itensEditor[Number(input.dataset.idx)].quantidade = Math.round(Number(e.target.value)) || 0;
     });
   });
   document.getElementById("btn-voltar-editor-desenho").addEventListener("click", () => renderEditorLista(listaId, { ...lista, ...window._editorCabecalho }));
@@ -1185,7 +1185,7 @@ async function salvarEditorLista(listaId) {
     verificador_sigla: cabecalho.verificador_sigla,
     aprovador_nome: cabecalho.aprovador_nome,
     aprovador_sigla: cabecalho.aprovador_sigla,
-    itens: itens.map((i) => ({ material_id: Number(i.material_id), quantidade: Number(i.quantidade) || 0, observacao: i.observacao || "" })),
+    itens: itens.map((i) => ({ material_id: Number(i.material_id), quantidade: Math.round(Number(i.quantidade)) || 0, observacao: i.observacao || "" })),
   };
   try {
     if (listaId) {
@@ -1515,7 +1515,7 @@ function renderModalRevisaoCompras() {
     <tr>
       <td>${item.codigo}</td>
       <td>${item.descricao}</td>
-      <td><input type="number" step="0.001" class="compras-qtd" data-idx="${idx}" value="${item.quantidade}" style="width:100px"></td>
+      <td><input type="number" step="1" min="0" class="compras-qtd" data-idx="${idx}" value="${Math.round(Number(item.quantidade)) || 0}" style="width:100px"></td>
       <td>${item.unidade}</td>
     </tr>`).join("");
 
@@ -1536,7 +1536,7 @@ function renderModalRevisaoCompras() {
 
   document.querySelectorAll(".compras-qtd").forEach((input) => {
     input.addEventListener("input", () => {
-      window._comprasDraft[Number(input.dataset.idx)].quantidade = Number(input.value) || 0;
+      window._comprasDraft[Number(input.dataset.idx)].quantidade = Math.round(Number(input.value)) || 0;
     });
   });
   document.getElementById("btn-salvar-versao-compras").addEventListener("click", salvarVersaoCompras);
@@ -1544,7 +1544,7 @@ function renderModalRevisaoCompras() {
 
 async function salvarVersaoCompras() {
   const itens = window._comprasDraft.map((item) => ({
-    material_id: item.material_id, quantidade: item.quantidade, observacao: item.observacao || "",
+    material_id: item.material_id, quantidade: Math.round(Number(item.quantidade)) || 0, observacao: item.observacao || "",
   }));
   try {
     await api(`/api/projetos/${state.projetoAtual.id}/lista-compras`, { method: "POST", body: JSON.stringify({ itens }) });
