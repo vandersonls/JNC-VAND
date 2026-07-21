@@ -400,9 +400,23 @@ input[type="number"], select, textarea {
   background: var(--branco); border: 1px solid var(--borda); border-radius: 8px;
   max-height: 280px; overflow-y: auto; box-shadow: 0 8px 24px rgba(15,23,42,0.14);
 }
-.autocomplete-item { padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f1f2f5; }
+.autocomplete-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f1f2f5; }
 .autocomplete-item:last-child { border-bottom: none; }
 .autocomplete-item:hover { background: #f1f5f9; }
+.autocomplete-item.selecionado { background: #eaf1fb; }
+.autocomplete-item input[type="checkbox"] { flex: 0 0 auto; pointer-events: none; }
+
+.chips-selecionados { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 16px; }
+.chips-selecionados:empty { margin: 0; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px;
+  background: #eaf1fb; color: var(--azul); border-radius: 20px; font-size: 12px; font-weight: 600;
+}
+.chip-remover {
+  border: none; background: none; color: var(--azul); cursor: pointer; font-size: 15px; line-height: 1;
+  width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+}
+.chip-remover:hover { background: rgba(31,58,95,0.15); }
 
 /* ---------- TOAST ---------- */
 .toast {

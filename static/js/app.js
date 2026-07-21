@@ -977,6 +977,7 @@ function renderEditorLista(listaId, lista) {
       </div>
       <button class="btn-secundario" id="btn-adicionar-item" type="button">Adicionar</button>
     </div>
+    <div class="chips-selecionados" id="chips-selecionados"></div>
     <table class="tabela">
       <thead><tr><th>Material</th><th style="width:110px">Quantidade</th><th></th></tr></thead>
       <tbody id="itens-editor"></tbody>
@@ -993,9 +994,11 @@ function renderEditorLista(listaId, lista) {
   `, "modal-grande");
   aplicarPermissoes();
 
-  let materialSelecionado = null;
+  const selecionados = new Map();
   const inputBusca = document.getElementById("busca-novo-material");
   const listaAutocomplete = document.getElementById("autocomplete-lista");
+  const btnAdicionar = document.getElementById("btn-adicionar-item");
+  const chipsCont = document.getElementById("chips-selecionados");
 
   function buscarMateriais(termo) {
     const alvo = termo.trim().toLowerCase();
@@ -1016,23 +1019,39 @@ function renderEditorLista(listaId, lista) {
     listaAutocomplete.innerHTML = "";
   }
 
-  function selecionarMaterialBusca(material) {
-    materialSelecionado = material;
-    inputBusca.value = _rotuloMaterial(material);
-    fecharAutocomplete();
+  function redesenharChips() {
+    const itens = Array.from(selecionados.values());
+    chipsCont.innerHTML = itens.map((m) => `
+      <span class="chip">${m.codigo}<button type="button" class="chip-remover" data-material-id="${m.id}" title="Remover da seleção">&times;</button></span>
+    `).join("");
+    chipsCont.querySelectorAll(".chip-remover").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        selecionados.delete(Number(btn.dataset.materialId));
+        redesenharChips();
+      });
+    });
+    btnAdicionar.textContent = selecionados.size ? `Adicionar (${selecionados.size})` : "Adicionar";
   }
 
   inputBusca.addEventListener("input", () => {
-    materialSelecionado = null;
     const resultados = buscarMateriais(inputBusca.value);
     if (!resultados.length) { fecharAutocomplete(); return; }
     listaAutocomplete.innerHTML = resultados.map((m) => `
-      <div class="autocomplete-item" data-material-id="${m.id}">${_rotuloMaterial(m)}</div>
+      <div class="autocomplete-item ${selecionados.has(m.id) ? "selecionado" : ""}" data-material-id="${m.id}">
+        <input type="checkbox" tabindex="-1" ${selecionados.has(m.id) ? "checked" : ""}>
+        <span>${_rotuloMaterial(m)}</span>
+      </div>
     `).join("");
     listaAutocomplete.classList.remove("oculto");
     listaAutocomplete.querySelectorAll(".autocomplete-item").forEach((el) => {
       el.addEventListener("click", () => {
-        selecionarMaterialBusca(resultados.find((m) => m.id === Number(el.dataset.materialId)));
+        const id = Number(el.dataset.materialId);
+        const material = resultados.find((m) => m.id === id);
+        if (selecionados.has(id)) selecionados.delete(id);
+        else selecionados.set(id, material);
+        el.classList.toggle("selecionado");
+        el.querySelector("input[type=checkbox]").checked = selecionados.has(id);
+        redesenharChips();
       });
     });
   });
@@ -1040,21 +1059,24 @@ function renderEditorLista(listaId, lista) {
     if (!e.target.closest(".busca-input-wrap")) fecharAutocomplete();
   });
 
-  document.getElementById("btn-adicionar-item").addEventListener("click", () => {
-    if (!materialSelecionado) { toast("Selecione um material válido na busca", "erro"); return; }
-    const material = materialSelecionado;
-    const existente = window._itensEditor.find((i) => i.material_id === material.id);
-    if (existente) {
-      existente.quantidade = Number(existente.quantidade || 0) + 1;
-    } else {
-      window._itensEditor.push({
-        material_id: material.id, codigo: material.codigo, descricao: material.descricao,
-        fabricante: material.fabricante, bitola: material.bitola, unidade: material.unidade,
-        quantidade: 1, observacao: "",
-      });
-    }
+  btnAdicionar.addEventListener("click", () => {
+    if (!selecionados.size) { toast("Selecione ao menos um material na busca", "erro"); return; }
+    selecionados.forEach((material) => {
+      const existente = window._itensEditor.find((i) => i.material_id === material.id);
+      if (existente) {
+        existente.quantidade = Number(existente.quantidade || 0) + 1;
+      } else {
+        window._itensEditor.push({
+          material_id: material.id, codigo: material.codigo, descricao: material.descricao,
+          fabricante: material.fabricante, bitola: material.bitola, unidade: material.unidade,
+          quantidade: 1, observacao: "",
+        });
+      }
+    });
+    selecionados.clear();
     inputBusca.value = "";
-    materialSelecionado = null;
+    fecharAutocomplete();
+    redesenharChips();
     redesenharItensEditor();
   });
 
