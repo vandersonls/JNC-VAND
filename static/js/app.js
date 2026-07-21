@@ -902,7 +902,7 @@ async function abrirEditorLista(listaId) {
   const itensIniciais = dados.itens.map((i) => ({
     material_id: i.material_id, codigo: i.codigo, descricao: i.descricao,
     fabricante: i.fabricante, bitola: i.bitola, unidade: i.unidade,
-    quantidade: i.quantidade, observacao: i.observacao || "",
+    quantidade: Math.round(Number(i.quantidade)) || 0, observacao: i.observacao || "",
   }));
   window._itensEditor = itensIniciais;
 
