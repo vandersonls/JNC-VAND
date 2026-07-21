@@ -895,6 +895,15 @@ function _rotuloMaterial(m) {
   return `${m.codigo} — ${m.descricao}`;
 }
 
+// Escapa caracteres especiais de HTML (ex.: "<", ">") antes de inserir texto
+// vindo do banco (descrições de materiais) via innerHTML - sem isso, uma
+// descrição contendo "<" quebra a estrutura da página.
+function escapeHtml(texto) {
+  return String(texto ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
 // ---------- EDITOR DA LISTA (com versionamento) ----------
 async function abrirEditorLista(listaId) {
   if (!state.materiais.length) state.materiais = await api("/api/materiais");
@@ -1002,7 +1011,11 @@ function renderEditorLista(listaId, lista) {
 
   function buscarMateriais(termo) {
     const alvo = termo.trim().toLowerCase();
-    if (!alvo) return [];
+    if (!alvo) {
+      return [...state.materiais]
+        .sort((a, b) => (a.descricao || "").localeCompare(b.descricao || "", "pt-BR"))
+        .slice(0, 100);
+    }
     return state.materiais
       .filter((m) => m.codigo.toLowerCase().includes(alvo) || (m.descricao || "").toLowerCase().includes(alvo))
       .map((m) => ({ m, comeca: m.codigo.toLowerCase().startsWith(alvo) || (m.descricao || "").toLowerCase().startsWith(alvo) }))
@@ -1011,7 +1024,7 @@ function renderEditorLista(listaId, lista) {
         return (a.m.descricao || "").localeCompare(b.m.descricao || "", "pt-BR");
       })
       .map((x) => x.m)
-      .slice(0, 50);
+      .slice(0, 100);
   }
 
   function fecharAutocomplete() {
@@ -1033,7 +1046,7 @@ function renderEditorLista(listaId, lista) {
     btnAdicionar.textContent = selecionados.size ? `Adicionar (${selecionados.size})` : "Adicionar";
   }
 
-  inputBusca.addEventListener("input", () => {
+  function atualizarAutocomplete() {
     const resultados = buscarMateriais(inputBusca.value);
     if (!resultados.length) { fecharAutocomplete(); return; }
     listaAutocomplete.innerHTML = resultados.map((m) => `
@@ -1054,7 +1067,10 @@ function renderEditorLista(listaId, lista) {
         redesenharChips();
       });
     });
-  });
+  }
+
+  inputBusca.addEventListener("input", atualizarAutocomplete);
+  inputBusca.addEventListener("focus", atualizarAutocomplete);
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".busca-input-wrap")) fecharAutocomplete();
   });

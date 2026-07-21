@@ -394,18 +394,19 @@ input[type="number"], select, textarea {
 
 .busca-adicionar-material { display: flex; gap: 10px; margin: 4px 0 16px; align-items: flex-start; }
 .busca-input-wrap { position: relative; flex: 1; }
-.busca-input-wrap input { width: 100%; }
+.busca-input-wrap input { width: 100%; padding: 14px 12px; font-size: 14px; }
 .autocomplete-lista {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
   background: var(--branco); border: 1px solid var(--borda); border-radius: 8px;
   max-height: 280px; overflow-y: auto; box-shadow: 0 8px 24px rgba(15,23,42,0.14);
 }
 .autocomplete-item { padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f1f2f5; }
+.autocomplete-item::after { content: ""; display: table; clear: both; }
 .autocomplete-item:last-child { border-bottom: none; }
 .autocomplete-item:hover { background: #f1f5f9; }
 .autocomplete-item.selecionado { background: #eaf1fb; }
-.autocomplete-item input[type="checkbox"] { margin-right: 8px; vertical-align: top; pointer-events: none; }
-.autocomplete-item span { display: inline; }
+.autocomplete-item input[type="checkbox"] { float: left; margin: 2px 8px 0 0; pointer-events: none; }
+.autocomplete-item span { display: block; overflow: hidden; }
 
 .chips-selecionados { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 16px; }
 .chips-selecionados:empty { margin: 0; }
