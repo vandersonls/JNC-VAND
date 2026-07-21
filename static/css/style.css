@@ -405,8 +405,8 @@ input[type="number"], select, textarea {
 .autocomplete-item:last-child { border-bottom: none; }
 .autocomplete-item:hover { background: #f1f5f9; }
 .autocomplete-item.selecionado { background: #eaf1fb; }
-.autocomplete-item input[type="checkbox"] { display: table-cell; width: 20%; vertical-align: top; margin-top: 2px; pointer-events: none; }
-.autocomplete-item span { display: table-cell; width: 80%; vertical-align: top; }
+.autocomplete-item input[type="checkbox"] { display: table-cell; width: 28px; vertical-align: top; margin-top: 2px; pointer-events: none; }
+.autocomplete-item span { display: table-cell; vertical-align: top; }
 
 .chips-selecionados {
   display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px;
