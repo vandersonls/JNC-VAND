@@ -888,7 +888,7 @@ async function excluirLista(id) {
 document.getElementById("btn-nova-lista").addEventListener("click", async () => {
   if (!state.materiais.length) state.materiais = await api("/api/materiais");
   window._itensEditor = [];
-  renderEditorLista(null, {});
+  renderCabecalhoLista(null, {});
 });
 
 function _rotuloMaterial(m) {
@@ -906,38 +906,79 @@ async function abrirEditorLista(listaId) {
   }));
   window._itensEditor = itensIniciais;
 
-  renderEditorLista(listaId, dados.lista);
+  renderCabecalhoLista(listaId, dados.lista);
 }
 
-function renderEditorLista(listaId, lista) {
+// TELA 1: cabeçalho (título, cliente/fornecedor, desenho de referência, carimbo).
+function renderCabecalhoLista(listaId, lista) {
   abrirModal(`
     <h3>${lista.numero_desenho ? `Lista por Desenho — ${lista.numero_desenho}` : "Nova Lista por Desenho"}</h3>
     <div class="form-grid-lista">
-      <div class="campo-linha"><label>Título do Documento</label><input id="editor-titulo" value="${lista.titulo || ""}"></div>
+      <div class="campo-linha"><label>Título do Documento</label><input id="cab-titulo" value="${lista.titulo || ""}"></div>
       <div class="campo-linha campo-dupla">
-        <div><label>Número do Cliente</label><input id="editor-numero-cliente" value="${lista.numero_cliente || ""}"></div>
-        <div><label>Número do Fornecedor</label><input id="editor-numero-fornecedor" value="${lista.numero_fornecedor || ""}"></div>
+        <div><label>Número do Cliente</label><input id="cab-numero-cliente" value="${lista.numero_cliente || ""}"></div>
+        <div><label>Número do Fornecedor</label><input id="cab-numero-fornecedor" value="${lista.numero_fornecedor || ""}"></div>
       </div>
-      <div class="campo-linha"><label>Número do Desenho de Referência</label><input id="editor-numero-desenho" value="${lista.numero_desenho || ""}"></div>
+      <div class="campo-linha"><label>Número do Desenho de Referência</label><input id="cab-numero-desenho" value="${lista.numero_desenho || ""}"></div>
       <div class="campo-linha campo-dupla">
-        <div><label>Nome do Elaborador</label><input id="editor-elaborador-nome" value="${lista.elaborador_nome || ""}"></div>
-        <div><label>Sigla</label><input id="editor-elaborador-sigla" value="${lista.elaborador_sigla || ""}"></div>
-      </div>
-      <div class="campo-linha campo-dupla">
-        <div><label>Nome do Verificador</label><input id="editor-verificador-nome" value="${lista.verificador_nome || ""}"></div>
-        <div><label>Sigla</label><input id="editor-verificador-sigla" value="${lista.verificador_sigla || ""}"></div>
+        <div><label>Nome do Elaborador</label><input id="cab-elaborador-nome" value="${lista.elaborador_nome || ""}"></div>
+        <div><label>Sigla</label><input id="cab-elaborador-sigla" value="${lista.elaborador_sigla || ""}"></div>
       </div>
       <div class="campo-linha campo-dupla">
-        <div><label>Nome do Aprovador</label><input id="editor-aprovador-nome" value="${lista.aprovador_nome || ""}"></div>
-        <div><label>Sigla</label><input id="editor-aprovador-sigla" value="${lista.aprovador_sigla || ""}"></div>
+        <div><label>Nome do Verificador</label><input id="cab-verificador-nome" value="${lista.verificador_nome || ""}"></div>
+        <div><label>Sigla</label><input id="cab-verificador-sigla" value="${lista.verificador_sigla || ""}"></div>
+      </div>
+      <div class="campo-linha campo-dupla">
+        <div><label>Nome do Aprovador</label><input id="cab-aprovador-nome" value="${lista.aprovador_nome || ""}"></div>
+        <div><label>Sigla</label><input id="cab-aprovador-sigla" value="${lista.aprovador_sigla || ""}"></div>
       </div>
     </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-primario" id="btn-continuar-cabecalho">Continuar</button>
+    </div>
+  `, "modal-grande");
+  aplicarPermissoes();
+
+  document.getElementById("btn-continuar-cabecalho").addEventListener("click", () => {
+    const numero_desenho = document.getElementById("cab-numero-desenho").value.trim();
+    if (!numero_desenho) { toast("Informe o número do desenho de referência", "erro"); return; }
+    const listaAtualizada = {
+      ...lista,
+      numero_desenho,
+      titulo: document.getElementById("cab-titulo").value.trim(),
+      numero_cliente: document.getElementById("cab-numero-cliente").value.trim(),
+      numero_fornecedor: document.getElementById("cab-numero-fornecedor").value.trim(),
+      elaborador_nome: document.getElementById("cab-elaborador-nome").value.trim(),
+      elaborador_sigla: document.getElementById("cab-elaborador-sigla").value.trim(),
+      verificador_nome: document.getElementById("cab-verificador-nome").value.trim(),
+      verificador_sigla: document.getElementById("cab-verificador-sigla").value.trim(),
+      aprovador_nome: document.getElementById("cab-aprovador-nome").value.trim(),
+      aprovador_sigla: document.getElementById("cab-aprovador-sigla").value.trim(),
+    };
+    renderEditorLista(listaId, listaAtualizada);
+  });
+}
+
+// TELA 2: busca de materiais + tabela (Material | Quantidade).
+function renderEditorLista(listaId, lista) {
+  const resumo = [
+    lista.numero_desenho,
+    `${lista.numero_cliente || "-"} / ${lista.numero_fornecedor || "-"}`,
+    lista.titulo,
+  ].filter(Boolean).join(" — ");
+
+  abrirModal(`
+    <h3>Materiais — ${resumo}</h3>
     <datalist id="materiais-datalist">${state.materiais.map((m) => `<option value="${_rotuloMaterial(m)}">`).join("")}</datalist>
+    <div class="busca-adicionar-material">
+      <input id="busca-novo-material" list="materiais-datalist" placeholder="Buscar por código ou descrição...">
+      <button class="btn-secundario" id="btn-adicionar-item" type="button">Adicionar</button>
+    </div>
     <table class="tabela">
       <thead><tr><th>Material</th><th style="width:110px">Quantidade</th><th></th></tr></thead>
       <tbody id="itens-editor"></tbody>
     </table>
-    <button class="btn-secundario somente-admin" id="btn-adicionar-item" type="button">+ Adicionar Material</button>
     <div class="modal-acoes">
       ${listaId ? `
         <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/excel" target="_blank">Relatório Excel</a>
@@ -950,69 +991,66 @@ function renderEditorLista(listaId, lista) {
   `, "modal-grande");
   aplicarPermissoes();
 
-  document.getElementById("btn-adicionar-item").addEventListener("click", () => {
-    window._itensEditor.push({ material_id: "", quantidade: 1, observacao: "" });
-    redesenharItensEditor();
-  });
-  document.getElementById("btn-revisar-desenho").addEventListener("click", () => {
-    if (!window._itensEditor.length) { toast("Adicione ao menos um material", "erro"); return; }
-    const numero_desenho = document.getElementById("editor-numero-desenho").value.trim();
-    if (!numero_desenho) { toast("Informe o número do desenho de referência", "erro"); return; }
-    window._editorCabecalho = {
-      numero_desenho,
-      titulo: document.getElementById("editor-titulo").value.trim(),
-      numero_cliente: document.getElementById("editor-numero-cliente").value.trim(),
-      numero_fornecedor: document.getElementById("editor-numero-fornecedor").value.trim(),
-      elaborador_nome: document.getElementById("editor-elaborador-nome").value.trim(),
-      elaborador_sigla: document.getElementById("editor-elaborador-sigla").value.trim(),
-      verificador_nome: document.getElementById("editor-verificador-nome").value.trim(),
-      verificador_sigla: document.getElementById("editor-verificador-sigla").value.trim(),
-      aprovador_nome: document.getElementById("editor-aprovador-nome").value.trim(),
-      aprovador_sigla: document.getElementById("editor-aprovador-sigla").value.trim(),
-    };
-    renderReviewLista(listaId, lista);
-  });
-
-  redesenharItensEditor();
-
   function resolverMaterial(texto) {
     const alvo = texto.trim().toLowerCase();
     if (!alvo) return null;
     return state.materiais.find((m) => _rotuloMaterial(m).toLowerCase() === alvo);
   }
 
+  document.getElementById("btn-adicionar-item").addEventListener("click", () => {
+    const input = document.getElementById("busca-novo-material");
+    const material = resolverMaterial(input.value);
+    if (!material) { toast("Selecione um material válido na busca", "erro"); return; }
+    const existente = window._itensEditor.find((i) => i.material_id === material.id);
+    if (existente) {
+      existente.quantidade = Number(existente.quantidade || 0) + 1;
+    } else {
+      window._itensEditor.push({
+        material_id: material.id, codigo: material.codigo, descricao: material.descricao,
+        fabricante: material.fabricante, bitola: material.bitola, unidade: material.unidade,
+        quantidade: 1, observacao: "",
+      });
+    }
+    input.value = "";
+    redesenharItensEditor();
+  });
+
+  document.getElementById("btn-revisar-desenho").addEventListener("click", () => {
+    if (!window._itensEditor.length) { toast("Adicione ao menos um material", "erro"); return; }
+    window._editorCabecalho = {
+      numero_desenho: lista.numero_desenho,
+      titulo: lista.titulo || "",
+      numero_cliente: lista.numero_cliente || "",
+      numero_fornecedor: lista.numero_fornecedor || "",
+      elaborador_nome: lista.elaborador_nome || "",
+      elaborador_sigla: lista.elaborador_sigla || "",
+      verificador_nome: lista.verificador_nome || "",
+      verificador_sigla: lista.verificador_sigla || "",
+      aprovador_nome: lista.aprovador_nome || "",
+      aprovador_sigla: lista.aprovador_sigla || "",
+    };
+    renderReviewLista(listaId, lista);
+  });
+
+  redesenharItensEditor();
+
   function redesenharItensEditor() {
     const tbody = document.getElementById("itens-editor");
     tbody.innerHTML = window._itensEditor.map((item, idx) => `
-      <tr data-idx="${idx}">
-        <td><input class="item-material-busca" list="materiais-datalist" placeholder="Buscar por código ou descrição..."
-             value="${item.codigo ? _rotuloMaterial(item) : ""}" style="width:100%"></td>
-        <td><input class="item-qtd" type="number" step="1" min="0" value="${item.quantidade}" style="width:100px"></td>
-        <td><button class="btn-perigo" type="button" title="Remover">Remover</button></td>
+      <tr>
+        <td>${_rotuloMaterial(item)}</td>
+        <td><input type="number" step="1" min="0" class="item-qtd" data-idx="${idx}" value="${item.quantidade}" style="width:100px"></td>
+        <td><button class="btn-perigo" type="button" data-idx="${idx}">Remover</button></td>
       </tr>`).join("") || `<tr><td colspan="3">Nenhum material adicionado.</td></tr>`;
 
-    tbody.querySelectorAll("tr[data-idx]").forEach((linha) => {
-      const idx = Number(linha.dataset.idx);
-      const item = window._itensEditor[idx];
-      const busca = linha.querySelector(".item-material-busca");
-      busca.addEventListener("change", () => {
-        const material = resolverMaterial(busca.value);
-        if (material) {
-          item.material_id = material.id; item.codigo = material.codigo; item.descricao = material.descricao;
-          item.fabricante = material.fabricante; item.bitola = material.bitola; item.unidade = material.unidade;
-          busca.value = _rotuloMaterial(material);
-          busca.classList.remove("invalido");
-        } else if (busca.value.trim() === "") {
-          item.material_id = "";
-          busca.classList.remove("invalido");
-        } else {
-          item.material_id = "";
-          busca.classList.add("invalido");
-        }
+    tbody.querySelectorAll(".item-qtd").forEach((input) => {
+      input.addEventListener("input", (e) => {
+        window._itensEditor[Number(input.dataset.idx)].quantidade = e.target.value;
       });
-      linha.querySelector(".item-qtd").addEventListener("input", (e) => { item.quantidade = e.target.value; });
-      linha.querySelector(".btn-perigo").addEventListener("click", () => {
-        window._itensEditor.splice(idx, 1);
+    });
+    tbody.querySelectorAll(".btn-perigo").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        window._itensEditor.splice(Number(btn.dataset.idx), 1);
         redesenharItensEditor();
       });
     });
