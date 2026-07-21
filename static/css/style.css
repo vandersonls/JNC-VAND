@@ -392,8 +392,17 @@ input[type="number"], select, textarea {
 
 .subtitulo-arvore { margin: 24px 0 10px; font-size: 15px; color: var(--azul); }
 
-.busca-adicionar-material { display: flex; gap: 10px; margin: 4px 0 16px; }
-.busca-adicionar-material input { flex: 1; }
+.busca-adicionar-material { display: flex; gap: 10px; margin: 4px 0 16px; align-items: flex-start; }
+.busca-input-wrap { position: relative; flex: 1; }
+.busca-input-wrap input { width: 100%; }
+.autocomplete-lista {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
+  background: var(--branco); border: 1px solid var(--borda); border-radius: 8px;
+  max-height: 280px; overflow-y: auto; box-shadow: 0 8px 24px rgba(15,23,42,0.14);
+}
+.autocomplete-item { padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f1f2f5; }
+.autocomplete-item:last-child { border-bottom: none; }
+.autocomplete-item:hover { background: #f1f5f9; }
 
 /* ---------- TOAST ---------- */
 .toast {

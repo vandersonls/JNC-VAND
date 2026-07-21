@@ -970,9 +970,11 @@ function renderEditorLista(listaId, lista) {
 
   abrirModal(`
     <h3>Materiais — ${resumo}</h3>
-    <datalist id="materiais-datalist">${state.materiais.map((m) => `<option value="${_rotuloMaterial(m)}">`).join("")}</datalist>
     <div class="busca-adicionar-material">
-      <input id="busca-novo-material" list="materiais-datalist" placeholder="Buscar por código ou descrição...">
+      <div class="busca-input-wrap">
+        <input id="busca-novo-material" placeholder="Buscar por código ou descrição..." autocomplete="off">
+        <div class="autocomplete-lista oculto" id="autocomplete-lista"></div>
+      </div>
       <button class="btn-secundario" id="btn-adicionar-item" type="button">Adicionar</button>
     </div>
     <table class="tabela">
@@ -991,16 +993,56 @@ function renderEditorLista(listaId, lista) {
   `, "modal-grande");
   aplicarPermissoes();
 
-  function resolverMaterial(texto) {
-    const alvo = texto.trim().toLowerCase();
-    if (!alvo) return null;
-    return state.materiais.find((m) => _rotuloMaterial(m).toLowerCase() === alvo);
+  let materialSelecionado = null;
+  const inputBusca = document.getElementById("busca-novo-material");
+  const listaAutocomplete = document.getElementById("autocomplete-lista");
+
+  function buscarMateriais(termo) {
+    const alvo = termo.trim().toLowerCase();
+    if (!alvo) return [];
+    return state.materiais
+      .filter((m) => m.codigo.toLowerCase().includes(alvo) || (m.descricao || "").toLowerCase().includes(alvo))
+      .map((m) => ({ m, comeca: m.codigo.toLowerCase().startsWith(alvo) || (m.descricao || "").toLowerCase().startsWith(alvo) }))
+      .sort((a, b) => {
+        if (a.comeca !== b.comeca) return a.comeca ? -1 : 1;
+        return (a.m.descricao || "").localeCompare(b.m.descricao || "", "pt-BR");
+      })
+      .map((x) => x.m)
+      .slice(0, 50);
   }
 
+  function fecharAutocomplete() {
+    listaAutocomplete.classList.add("oculto");
+    listaAutocomplete.innerHTML = "";
+  }
+
+  function selecionarMaterialBusca(material) {
+    materialSelecionado = material;
+    inputBusca.value = _rotuloMaterial(material);
+    fecharAutocomplete();
+  }
+
+  inputBusca.addEventListener("input", () => {
+    materialSelecionado = null;
+    const resultados = buscarMateriais(inputBusca.value);
+    if (!resultados.length) { fecharAutocomplete(); return; }
+    listaAutocomplete.innerHTML = resultados.map((m) => `
+      <div class="autocomplete-item" data-material-id="${m.id}">${_rotuloMaterial(m)}</div>
+    `).join("");
+    listaAutocomplete.classList.remove("oculto");
+    listaAutocomplete.querySelectorAll(".autocomplete-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        selecionarMaterialBusca(resultados.find((m) => m.id === Number(el.dataset.materialId)));
+      });
+    });
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".busca-input-wrap")) fecharAutocomplete();
+  });
+
   document.getElementById("btn-adicionar-item").addEventListener("click", () => {
-    const input = document.getElementById("busca-novo-material");
-    const material = resolverMaterial(input.value);
-    if (!material) { toast("Selecione um material válido na busca", "erro"); return; }
+    if (!materialSelecionado) { toast("Selecione um material válido na busca", "erro"); return; }
+    const material = materialSelecionado;
     const existente = window._itensEditor.find((i) => i.material_id === material.id);
     if (existente) {
       existente.quantidade = Number(existente.quantidade || 0) + 1;
@@ -1011,7 +1053,8 @@ function renderEditorLista(listaId, lista) {
         quantidade: 1, observacao: "",
       });
     }
-    input.value = "";
+    inputBusca.value = "";
+    materialSelecionado = null;
     redesenharItensEditor();
   });
 
