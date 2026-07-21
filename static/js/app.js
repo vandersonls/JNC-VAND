@@ -888,9 +888,12 @@ async function excluirLista(id) {
 document.getElementById("btn-nova-lista").addEventListener("click", async () => {
   if (!state.materiais.length) state.materiais = await api("/api/materiais");
   window._itensEditor = [];
-  window._editorBusca = "";
   renderEditorLista(null, {});
 });
+
+function _rotuloMaterial(m) {
+  return `${m.codigo} — ${m.descricao}`;
+}
 
 // ---------- EDITOR DA LISTA (com versionamento) ----------
 async function abrirEditorLista(listaId) {
@@ -902,7 +905,6 @@ async function abrirEditorLista(listaId) {
     quantidade: i.quantidade, observacao: i.observacao || "",
   }));
   window._itensEditor = itensIniciais;
-  window._editorBusca = "";
 
   renderEditorLista(listaId, dados.lista);
 }
@@ -930,22 +932,12 @@ function renderEditorLista(listaId, lista) {
         <div><label>Sigla</label><input id="editor-aprovador-sigla" value="${lista.aprovador_sigla || ""}"></div>
       </div>
     </div>
-    <input id="editor-busca-material" placeholder="Pesquisar material (código ou descrição)" style="width:100%; margin-bottom:10px;">
-    <div class="editor-duplo">
-      <div class="editor-painel">
-        <div class="editor-painel-titulo">Lista de Pré-seleção</div>
-        <div class="editor-pre-lista" id="editor-pre-lista"></div>
-      </div>
-      <div class="editor-painel">
-        <div class="editor-painel-titulo">Itens Selecionados</div>
-        <div class="editor-selecionados-wrap">
-          <table class="tabela">
-            <thead><tr><th style="width:90px">Qtd</th><th>Código</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Unidade</th><th></th></tr></thead>
-            <tbody id="editor-selecionados"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+    <datalist id="materiais-datalist">${state.materiais.map((m) => `<option value="${_rotuloMaterial(m)}">`).join("")}</datalist>
+    <table class="tabela">
+      <thead><tr><th>Material</th><th style="width:110px">Quantidade</th><th></th></tr></thead>
+      <tbody id="itens-editor"></tbody>
+    </table>
+    <button class="btn-secundario somente-admin" id="btn-adicionar-item" type="button">+ Adicionar Material</button>
     <div class="modal-acoes">
       ${listaId ? `
         <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/excel" target="_blank">Relatório Excel</a>
@@ -958,10 +950,9 @@ function renderEditorLista(listaId, lista) {
   `, "modal-grande");
   aplicarPermissoes();
 
-  document.getElementById("editor-busca-material").value = window._editorBusca;
-  document.getElementById("editor-busca-material").addEventListener("input", (e) => {
-    window._editorBusca = e.target.value;
-    redesenharPreLista();
+  document.getElementById("btn-adicionar-item").addEventListener("click", () => {
+    window._itensEditor.push({ material_id: "", quantidade: 1, observacao: "" });
+    redesenharItensEditor();
   });
   document.getElementById("btn-revisar-desenho").addEventListener("click", () => {
     if (!window._itensEditor.length) { toast("Adicione ao menos um material", "erro"); return; }
@@ -982,71 +973,47 @@ function renderEditorLista(listaId, lista) {
     renderReviewLista(listaId, lista);
   });
 
-  redesenharPreLista();
-  redesenharSelecionados();
+  redesenharItensEditor();
 
-  function redesenharPreLista() {
-    const termo = (window._editorBusca || "").trim().toLowerCase();
-    let materiaisFiltrados = state.materiais;
-    if (termo) {
-      materiaisFiltrados = state.materiais
-        .filter((m) => m.codigo.toLowerCase().includes(termo) || (m.descricao || "").toLowerCase().includes(termo))
-        .map((m) => ({ m, comeca: (m.descricao || "").toLowerCase().startsWith(termo) || m.codigo.toLowerCase().startsWith(termo) }))
-        .sort((a, b) => {
-          if (a.comeca !== b.comeca) return a.comeca ? -1 : 1;
-          return (a.m.descricao || "").localeCompare(b.m.descricao || "", "pt-BR");
-        })
-        .map((x) => x.m);
-    }
-    const cont = document.getElementById("editor-pre-lista");
-    cont.innerHTML = materiaisFiltrados.slice(0, 200).map((m) => `
-      <div class="editor-pre-linha" data-material-id="${m.id}">
-        <span class="editor-pre-info">
-          <span class="editor-pre-codigo">${m.codigo}</span>
-          <span class="editor-pre-desc">${m.descricao}${m.fabricante ? " · " + m.fabricante : ""}${m.bitola ? " · " + m.bitola : ""}</span>
-        </span>
-        <button class="editor-pre-add" type="button" title="Adicionar">&gt;</button>
-      </div>`).join("") || `<div class="arvore-vazio">Nenhum material encontrado.</div>`;
-    cont.querySelectorAll(".editor-pre-linha").forEach((linha) => {
-      linha.querySelector(".editor-pre-add").addEventListener("click", () => {
-        adicionarMaterialSelecao(Number(linha.dataset.materialId));
-      });
-    });
+  function resolverMaterial(texto) {
+    const alvo = texto.trim().toLowerCase();
+    if (!alvo) return null;
+    return state.materiais.find((m) => _rotuloMaterial(m).toLowerCase() === alvo);
   }
 
-  function adicionarMaterialSelecao(materialId) {
-    const existente = window._itensEditor.find((i) => i.material_id === materialId);
-    if (existente) {
-      existente.quantidade = Number(existente.quantidade || 0) + 1;
-    } else {
-      const material = state.materiais.find((m) => m.id === materialId);
-      if (!material) return;
-      window._itensEditor.push({
-        material_id: material.id, codigo: material.codigo, descricao: material.descricao,
-        fabricante: material.fabricante, bitola: material.bitola, unidade: material.unidade,
-        quantidade: 1, observacao: "",
-      });
-    }
-    redesenharSelecionados();
-  }
-
-  function redesenharSelecionados() {
-    const tbody = document.getElementById("editor-selecionados");
+  function redesenharItensEditor() {
+    const tbody = document.getElementById("itens-editor");
     tbody.innerHTML = window._itensEditor.map((item, idx) => `
-      <tr>
-        <td><input type="number" step="0.001" min="0" class="editor-item-qtd" data-idx="${idx}" value="${item.quantidade}" style="width:80px"></td>
-        <td>${item.codigo}</td><td>${item.descricao}</td><td>${item.fabricante || ""}</td><td>${item.bitola || ""}</td><td>${item.unidade || ""}</td>
-        <td><button class="btn-perigo" type="button" data-idx="${idx}" title="Remover">X</button></td>
-      </tr>`).join("") || `<tr><td colspan="7">Nenhum item selecionado.</td></tr>`;
-    tbody.querySelectorAll(".editor-item-qtd").forEach((input) => {
-      input.addEventListener("input", (e) => {
-        window._itensEditor[Number(input.dataset.idx)].quantidade = e.target.value;
+      <tr data-idx="${idx}">
+        <td><input class="item-material-busca" list="materiais-datalist" placeholder="Buscar por código ou descrição..."
+             value="${item.codigo ? _rotuloMaterial(item) : ""}" style="width:100%"></td>
+        <td><input class="item-qtd" type="number" step="1" min="0" value="${item.quantidade}" style="width:100px"></td>
+        <td><button class="btn-perigo" type="button" title="Remover">Remover</button></td>
+      </tr>`).join("") || `<tr><td colspan="3">Nenhum material adicionado.</td></tr>`;
+
+    tbody.querySelectorAll("tr[data-idx]").forEach((linha) => {
+      const idx = Number(linha.dataset.idx);
+      const item = window._itensEditor[idx];
+      const busca = linha.querySelector(".item-material-busca");
+      busca.addEventListener("change", () => {
+        const material = resolverMaterial(busca.value);
+        if (material) {
+          item.material_id = material.id; item.codigo = material.codigo; item.descricao = material.descricao;
+          item.fabricante = material.fabricante; item.bitola = material.bitola; item.unidade = material.unidade;
+          busca.value = _rotuloMaterial(material);
+          busca.classList.remove("invalido");
+        } else if (busca.value.trim() === "") {
+          item.material_id = "";
+          busca.classList.remove("invalido");
+        } else {
+          item.material_id = "";
+          busca.classList.add("invalido");
+        }
       });
-    });
-    tbody.querySelectorAll(".btn-perigo").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        window._itensEditor.splice(Number(btn.dataset.idx), 1);
-        redesenharSelecionados();
+      linha.querySelector(".item-qtd").addEventListener("input", (e) => { item.quantidade = e.target.value; });
+      linha.querySelector(".btn-perigo").addEventListener("click", () => {
+        window._itensEditor.splice(idx, 1);
+        redesenharItensEditor();
       });
     });
   }

@@ -390,27 +390,6 @@ input[type="number"], select, textarea {
 .arvore-filhos.oculto { display: none; }
 .arvore-carregando { color: var(--cinza); font-size: 12px; padding: 8px 0 8px 38px; }
 
-/* ---------- EDITOR DE LISTA POR DESENHO (seleção empilhada) ---------- */
-.editor-duplo { display: flex; flex-direction: column; gap: 20px; margin: 4px 0 16px; }
-.editor-painel { min-width: 0; display: flex; flex-direction: column; }
-.editor-painel-titulo { font-size: 12px; font-weight: 600; color: var(--cinza); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; }
-.editor-pre-lista {
-  background: var(--branco); border-radius: 10px; border: 1px solid var(--borda);
-  max-height: 260px; overflow-y: auto;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-}
-.editor-pre-linha { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #f1f2f5; border-right: 1px solid #f1f2f5; }
-.editor-pre-linha:hover { background: #f7f8fa; }
-.editor-pre-info { display: flex; flex-direction: column; min-width: 0; }
-.editor-pre-codigo { font-weight: 600; font-size: 12.5px; color: #1c1f26; }
-.editor-pre-desc { font-size: 11.5px; color: var(--cinza); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.editor-pre-add {
-  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--borda);
-  background: var(--branco); color: var(--azul); font-weight: 700; cursor: pointer;
-}
-.editor-pre-add:hover { background: var(--azul); color: var(--branco); border-color: var(--azul); }
-.editor-selecionados-wrap { max-height: 320px; overflow-y: auto; }
-
 .subtitulo-arvore { margin: 24px 0 10px; font-size: 15px; color: var(--azul); }
 .item-material-busca.invalido { border-color: var(--erro); }
 
