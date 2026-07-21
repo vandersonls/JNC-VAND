@@ -406,7 +406,6 @@ input[type="number"], select, textarea {
 .autocomplete-item:hover { background: #f1f5f9; }
 .autocomplete-item.selecionado { background: #eaf1fb; }
 .autocomplete-item input[type="checkbox"] { float: left; margin: 2px 8px 0 0; pointer-events: none; }
-.autocomplete-item span { display: block; overflow: hidden; }
 
 .chips-selecionados { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 16px; }
 .chips-selecionados:empty { margin: 0; }
