@@ -400,12 +400,12 @@ input[type="number"], select, textarea {
   background: var(--branco); border: 1px solid var(--borda); border-radius: 8px;
   max-height: 280px; overflow-y: auto; box-shadow: 0 8px 24px rgba(15,23,42,0.14);
 }
-.autocomplete-item { padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f1f2f5; }
-.autocomplete-item::after { content: ""; display: table; clear: both; }
+.autocomplete-item { display: flex; align-items: flex-start; padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f1f2f5; }
 .autocomplete-item:last-child { border-bottom: none; }
 .autocomplete-item:hover { background: #f1f5f9; }
 .autocomplete-item.selecionado { background: #eaf1fb; }
-.autocomplete-item input[type="checkbox"] { float: left; margin: 2px 8px 0 0; pointer-events: none; }
+.autocomplete-item input[type="checkbox"] { margin: 2px 8px 0 0; pointer-events: none; }
+.autocomplete-item span { width: calc(100% - 26px); }
 
 .chips-selecionados { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 16px; }
 .chips-selecionados:empty { margin: 0; }
