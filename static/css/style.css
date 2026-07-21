@@ -408,8 +408,11 @@ input[type="number"], select, textarea {
 .autocomplete-item input[type="checkbox"] { margin: 2px 8px 0 0; pointer-events: none; }
 .autocomplete-item span { width: calc(100% - 26px); }
 
-.chips-selecionados { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 16px; }
-.chips-selecionados:empty { margin: 0; }
+.chips-selecionados {
+  display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 16px;
+  max-height: 68px; overflow-y: auto;
+}
+.chips-selecionados:empty { margin: 0; max-height: 0; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px;
   background: #eaf1fb; color: var(--azul); border-radius: 20px; font-size: 12px; font-weight: 600;
