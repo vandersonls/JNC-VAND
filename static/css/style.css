@@ -401,12 +401,12 @@ input[type="number"], select, textarea {
   background: var(--branco); border: 1px solid var(--borda); border-radius: 8px;
   max-height: 280px; overflow-y: auto; box-shadow: 0 8px 24px rgba(15,23,42,0.14);
 }
-.autocomplete-item { display: table; table-layout: fixed; width: 100%; padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f1f2f5; }
+.autocomplete-item { position: relative; padding: 8px 12px 8px 34px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f1f2f5; }
 .autocomplete-item:last-child { border-bottom: none; }
 .autocomplete-item:hover { background: #f1f5f9; }
 .autocomplete-item.selecionado { background: #eaf1fb; }
-.autocomplete-item input[type="checkbox"] { display: table-cell; width: 28px; vertical-align: top; margin-top: 2px; pointer-events: none; }
-.autocomplete-item span { display: table-cell; vertical-align: top; }
+.autocomplete-item input[type="checkbox"] { position: absolute; left: 12px; top: 10px; margin: 0; pointer-events: none; }
+.autocomplete-item span { display: block; }
 
 .chips-selecionados {
   display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px;
