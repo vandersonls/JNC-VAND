@@ -395,7 +395,7 @@ input[type="number"], select, textarea {
 .busca-adicionar-material { display: flex; gap: 10px; margin: 4px 0 16px; align-items: flex-start; }
 .busca-input-wrap { position: relative; flex: 1; }
 .busca-input-wrap input { width: 100%; padding: 14px 12px; font-size: 14px; }
-#btn-adicionar-item { flex: 0 0 auto; min-width: 140px; }
+#btn-adicionar-item { flex: 0 0 auto; min-width: 210px; }
 .autocomplete-lista {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
   background: var(--branco); border: 1px solid var(--borda); border-radius: 8px;
