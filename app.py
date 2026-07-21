@@ -1,3 +1,4 @@
+import hashlib
 import os
 from urllib.parse import urlparse
 
@@ -43,6 +44,24 @@ def _montar_db_config():
 DB_CONFIG = _montar_db_config()
 
 
+def _hash_arquivo(caminho_relativo):
+    """Hash do conteúdo do arquivo, usado como ?v= nos links de estático.
+    Muda sozinho sempre que o arquivo muda (a cada deploy), forçando o
+    navegador a buscar a versão nova em vez de usar uma copiada em cache."""
+    caminho = os.path.join(os.path.dirname(__file__), "static", caminho_relativo)
+    try:
+        with open(caminho, "rb") as f:
+            return hashlib.md5(f.read()).hexdigest()[:10]
+    except FileNotFoundError:
+        return "0"
+
+
+ASSET_VERSIONS = {
+    "js/app.js": _hash_arquivo("js/app.js"),
+    "css/style.css": _hash_arquivo("css/style.css"),
+}
+
+
 def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "troque-esta-chave-em-producao")
@@ -72,9 +91,19 @@ def create_app():
         atualizar_atividade_sessao()
         return response
 
+    @app.context_processor
+    def injetar_versoes_estaticas():
+        return {"asset_versions": ASSET_VERSIONS}
+
     @app.route("/")
     def index():
-        return render_template("index.html")
+        resposta = app.make_response(render_template("index.html"))
+        # A página principal referencia os arquivos estáticos com ?v=<hash>;
+        # se ela mesma ficasse em cache, o navegador nunca veria a URL nova
+        # depois de um deploy. Os arquivos JS/CSS (que têm o hash na URL)
+        # podem ficar em cache por muito tempo sem esse problema.
+        resposta.headers["Cache-Control"] = "no-cache"
+        return resposta
 
     @app.route("/health")
     def health():
