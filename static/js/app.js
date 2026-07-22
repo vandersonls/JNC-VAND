@@ -65,6 +65,16 @@ function fecharModal() {
 document.getElementById("modal-overlay").addEventListener("click", (e) => {
   if (e.target.id === "modal-overlay") fecharModal();
 });
+
+// Evita perda de trabalho: se o usuário tentar recarregar ou fechar a aba
+// com algum pop-up aberto (edição em andamento), o navegador pergunta antes.
+window.addEventListener("beforeunload", (e) => {
+  const modalAberto = !document.getElementById("modal-overlay").classList.contains("oculto");
+  if (modalAberto) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
 document.getElementById("btn-modal-maximizar").addEventListener("click", () => {
   document.getElementById("modal-conteudo").classList.toggle("modal-maximizado");
 });
