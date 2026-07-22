@@ -3,7 +3,6 @@ import os
 from urllib.parse import urlparse
 
 from flask import Flask, render_template
-from flask_cors import CORS
 
 import db
 from auth import auth_bp, login_manager, gerenciar_sessao
@@ -65,7 +64,16 @@ ASSET_VERSIONS = {
 def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "troque-esta-chave-em-producao")
-    CORS(app, supports_credentials=True)
+    # Flags de segurança do cookie de sessão:
+    #  - Secure: só trafega em HTTPS (Railway serve HTTPS)
+    #  - HttpOnly: JavaScript não consegue ler o cookie (mitiga roubo via XSS)
+    #  - SameSite=Lax: o cookie não é enviado em requisições cross-site (mitiga CSRF)
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    # O app é servido no mesmo domínio da API (SPA same-origin), então NÃO
+    # habilitamos CORS - liberar origens cruzadas só aumentaria a superfície
+    # de ataque sem necessidade.
 
     db.init_pool(DB_CONFIG)
     print(f"[NJC] Banco configurado: host={DB_CONFIG['DB_HOST']} port={DB_CONFIG['DB_PORT']} db={DB_CONFIG['DB_NAME']}")

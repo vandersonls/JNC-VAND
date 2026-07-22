@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from flask_login import login_required
+from flask_login import login_required, current_user
 
 import db
 from auth import perfis_permitidos
@@ -15,6 +15,36 @@ def areas_permitidas(usuario):
         return None
     rows = db.query_all("SELECT area_id FROM usuario_areas WHERE usuario_id = %s", (usuario.id,))
     return [r["area_id"] for r in rows]
+
+
+def area_permitida(area_id):
+    """True se o usuário logado pode acessar a área informada (master sempre)."""
+    permitidas = areas_permitidas(current_user)
+    return permitidas is None or (area_id in permitidas)
+
+
+def projeto_permitido(projeto_id):
+    """True se o usuário logado pode acessar o projeto (pela área dele).
+    Master sempre pode."""
+    permitidas = areas_permitidas(current_user)
+    if permitidas is None:
+        return True
+    row = db.query_one("SELECT area_id FROM projetos WHERE id = %s", (projeto_id,))
+    return bool(row) and row["area_id"] in permitidas
+
+
+def projeto_da_lista(lista_id):
+    row = db.query_one("SELECT projeto_id FROM listas_desenho WHERE id = %s", (lista_id,))
+    return row["projeto_id"] if row else None
+
+
+def projeto_da_versao_desenho(versao_id):
+    row = db.query_one(
+        """SELECT ld.projeto_id FROM lista_desenho_versoes v
+           JOIN listas_desenho ld ON ld.id = v.lista_desenho_id WHERE v.id = %s""",
+        (versao_id,),
+    )
+    return row["projeto_id"] if row else None
 
 
 @areas_bp.get("/api/areas")

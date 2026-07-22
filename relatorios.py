@@ -14,6 +14,7 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image as PdfImage
 
 import db
+from areas import projeto_permitido, projeto_da_lista
 
 relatorios_bp = Blueprint("relatorios", __name__)
 
@@ -217,6 +218,8 @@ def _linha_assinaturas(lista):
 
 def _carregar_contexto_projeto(projeto_id):
     """Reúne, para cada Lista por Desenho do projeto, sempre a sua última versão salva."""
+    if not projeto_permitido(projeto_id):
+        return None
     projeto = db.query_one(
         """SELECT p.*, c.razao_social AS cliente_nome
            FROM projetos p LEFT JOIN clientes c ON c.id = p.cliente_id
@@ -268,6 +271,9 @@ def _carregar_contexto_projeto(projeto_id):
 @relatorios_bp.get("/api/listas/<int:lista_id>/relatorio/excel")
 @login_required
 def relatorio_excel(lista_id):
+    pid = projeto_da_lista(lista_id)
+    if pid is None or not projeto_permitido(pid):
+        return jsonify({"erro": "Sem permissão para este relatório"}), 403
     ctx = _carregar_contexto(lista_id, request.args.get("versao_id", type=int))
     if not ctx:
         return jsonify({"erro": "Lista não encontrada"}), 404
@@ -380,6 +386,9 @@ def relatorio_excel(lista_id):
 @relatorios_bp.get("/api/listas/<int:lista_id>/relatorio/pdf")
 @login_required
 def relatorio_pdf(lista_id):
+    pid = projeto_da_lista(lista_id)
+    if pid is None or not projeto_permitido(pid):
+        return jsonify({"erro": "Sem permissão para este relatório"}), 403
     ctx = _carregar_contexto(lista_id, request.args.get("versao_id", type=int))
     if not ctx:
         return jsonify({"erro": "Lista não encontrada"}), 404
@@ -626,6 +635,8 @@ def relatorio_projeto_pdf(projeto_id):
 
 
 def _carregar_projeto_para_relatorio(projeto_id):
+    if not projeto_permitido(projeto_id):
+        return None
     projeto = db.query_one(
         """SELECT p.*, c.razao_social AS cliente_nome, c.logo_url AS cliente_logo_url
            FROM projetos p LEFT JOIN clientes c ON c.id = p.cliente_id

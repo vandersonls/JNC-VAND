@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_login import current_user
 
 import db
-from auth import perfis_permitidos, hash_senha
+from auth import perfis_permitidos, hash_senha, validar_forca_senha
 from auditoria import registrar
 
 usuarios_bp = Blueprint("usuarios", __name__)
@@ -40,6 +40,9 @@ def criar_usuario():
     areas = data.get("areas") or []
     if not nome or not email or not senha:
         return jsonify({"erro": "Nome, email e senha são obrigatórios"}), 400
+    erro_senha = validar_forca_senha(senha)
+    if erro_senha:
+        return jsonify({"erro": erro_senha}), 400
     if perfil not in ("master", "administrador", "visualizador"):
         return jsonify({"erro": "Perfil inválido"}), 400
     existente = db.query_one("SELECT id FROM usuarios WHERE email = %s", (email,))
@@ -64,6 +67,10 @@ def editar_usuario(usuario_id):
     areas = data.get("areas") or []
     if not nome or perfil not in ("master", "administrador", "visualizador"):
         return jsonify({"erro": "Nome e perfil válidos são obrigatórios"}), 400
+    if data.get("senha"):
+        erro_senha = validar_forca_senha(data["senha"])
+        if erro_senha:
+            return jsonify({"erro": erro_senha}), 400
 
     antes = db.query_one("SELECT nome, email, perfil, ativo FROM usuarios WHERE id = %s", (usuario_id,))
     senha_alterada = bool(data.get("senha"))

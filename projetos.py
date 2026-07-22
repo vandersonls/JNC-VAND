@@ -4,6 +4,7 @@ from flask_login import login_required, current_user
 import db
 from auth import perfis_permitidos
 from auditoria import registrar
+from areas import areas_permitidas, area_permitida, projeto_permitido, projeto_da_lista, projeto_da_versao_desenho
 
 projetos_bp = Blueprint("projetos", __name__)
 
@@ -16,12 +17,22 @@ CAMPOS_PROJETO = ["codigo", "nome", "cliente_id", "descricao", "status"]
 @projetos_bp.get("/api/projetos")
 @login_required
 def listar_projetos():
+    permitidas = areas_permitidas(current_user)
+    filtro, params = "", ()
+    if permitidas is not None:
+        if not permitidas:
+            return jsonify([])  # usuário sem nenhuma área não vê projeto algum
+        placeholders = ", ".join(["%s"] * len(permitidas))
+        filtro = f"WHERE p.area_id IN ({placeholders})"
+        params = tuple(permitidas)
     rows = db.query_all(
-        """SELECT p.*, c.razao_social AS cliente_nome, a.nome AS area_nome
-           FROM projetos p
-           LEFT JOIN clientes c ON c.id = p.cliente_id
-           LEFT JOIN areas a ON a.id = p.area_id
-           ORDER BY p.criado_em DESC"""
+        f"""SELECT p.*, c.razao_social AS cliente_nome, a.nome AS area_nome
+            FROM projetos p
+            LEFT JOIN clientes c ON c.id = p.cliente_id
+            LEFT JOIN areas a ON a.id = p.area_id
+            {filtro}
+            ORDER BY p.criado_em DESC""",
+        params,
     )
     return jsonify(rows)
 
@@ -39,6 +50,8 @@ def obter_projeto(projeto_id):
     )
     if not row:
         return jsonify({"erro": "Projeto não encontrado"}), 404
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Você não tem permissão para acessar este projeto"}), 403
     return jsonify(row)
 
 
@@ -48,6 +61,8 @@ def criar_projeto():
     data = request.get_json(force=True) or {}
     if not data.get("codigo") or not data.get("nome") or not data.get("cliente_id") or not data.get("area_id"):
         return jsonify({"erro": "Cliente, nome, código e área são obrigatórios"}), 400
+    if not area_permitida(int(data["area_id"])):
+        return jsonify({"erro": "Você não tem permissão para criar projetos nesta área"}), 403
     novo_id = db.execute(
         """INSERT INTO projetos (codigo, nome, cliente_id, status, numero_cliente, numero_fornecedor, area_id, criado_por)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
@@ -67,6 +82,10 @@ def editar_projeto(projeto_id):
     data = request.get_json(force=True) or {}
     if not data.get("codigo") or not data.get("nome") or not data.get("cliente_id") or not data.get("area_id"):
         return jsonify({"erro": "Cliente, nome, código e área são obrigatórios"}), 400
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Você não tem permissão para editar este projeto"}), 403
+    if not area_permitida(int(data["area_id"])):
+        return jsonify({"erro": "Você não tem permissão para mover o projeto para esta área"}), 403
     antes = db.query_one(
         "SELECT codigo, nome, cliente_id, status, numero_cliente, numero_fornecedor, area_id FROM projetos WHERE id = %s",
         (projeto_id,),
@@ -101,6 +120,8 @@ def excluir_projeto(projeto_id):
 @projetos_bp.get("/api/projetos/<int:projeto_id>/listas")
 @login_required
 def listar_listas(projeto_id):
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para acessar este projeto"}), 403
     rows = db.query_all(
         """SELECT ld.*, v.versao AS versao_atual, v.criado_em AS versao_criado_em
            FROM listas_desenho ld
@@ -129,6 +150,8 @@ def obter_lista(lista_id):
     lista = db.query_one("SELECT * FROM listas_desenho WHERE id = %s", (lista_id,))
     if not lista:
         return jsonify({"erro": "Lista não encontrada"}), 404
+    if not projeto_permitido(lista["projeto_id"]):
+        return jsonify({"erro": "Sem permissão para acessar esta lista"}), 403
     versao = None
     itens = []
     if lista["versao_atual_id"]:
@@ -140,6 +163,9 @@ def obter_lista(lista_id):
 @projetos_bp.get("/api/listas/<int:lista_id>/versoes")
 @login_required
 def listar_versoes(lista_id):
+    projeto_id = projeto_da_lista(lista_id)
+    if projeto_id is None or not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para acessar esta lista"}), 403
     rows = db.query_all(
         """SELECT v.*, u.nome AS criado_por_nome
            FROM lista_desenho_versoes v
@@ -157,6 +183,9 @@ def obter_versao(versao_id):
     versao = db.query_one("SELECT * FROM lista_desenho_versoes WHERE id = %s", (versao_id,))
     if not versao:
         return jsonify({"erro": "Versão não encontrada"}), 404
+    projeto_id = projeto_da_versao_desenho(versao_id)
+    if projeto_id is None or not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para acessar esta versão"}), 403
     return jsonify({"versao": versao, "itens": _carregar_itens(versao_id)})
 
 
@@ -176,6 +205,8 @@ def criar_lista(projeto_id):
     numero_desenho = (data.get("numero_desenho") or "").strip()
     if not numero_desenho:
         return jsonify({"erro": "Número do desenho é obrigatório"}), 400
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para criar listas neste projeto"}), 403
 
     lista_id = db.execute(
         """INSERT INTO listas_desenho (projeto_id, numero_desenho, titulo, numero_cliente, numero_fornecedor,
@@ -212,6 +243,8 @@ def editar_lista(lista_id):
     lista = db.query_one("SELECT * FROM listas_desenho WHERE id = %s", (lista_id,))
     if not lista:
         return jsonify({"erro": "Lista não encontrada"}), 404
+    if not projeto_permitido(lista["projeto_id"]):
+        return jsonify({"erro": "Sem permissão para editar esta lista"}), 403
 
     campos_cabecalho = (
         "titulo", "numero_desenho", "numero_cliente", "numero_fornecedor",
@@ -259,6 +292,9 @@ def editar_lista(lista_id):
 @projetos_bp.delete("/api/listas/<int:lista_id>")
 @perfis_permitidos("master", "administrador")
 def excluir_lista(lista_id):
+    projeto_id = projeto_da_lista(lista_id)
+    if projeto_id is None or not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para excluir esta lista"}), 403
     antes = db.query_one("SELECT numero_desenho, titulo FROM listas_desenho WHERE id = %s", (lista_id,))
     db.execute("UPDATE listas_desenho SET versao_atual_id = NULL WHERE id = %s", (lista_id,))
     db.execute("DELETE FROM listas_desenho WHERE id = %s", (lista_id,))

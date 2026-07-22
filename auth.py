@@ -18,6 +18,23 @@ login_manager = LoginManager()
 # em sistemas corporativos.
 SESSAO_TIMEOUT_MINUTOS = 30
 
+# Proteção contra força bruta: após MAX_TENTATIVAS falhas seguidas, a conta
+# fica bloqueada por BLOQUEIO_MINUTOS. Uma janela evita bloqueio permanente.
+MAX_TENTATIVAS_LOGIN = 8
+BLOQUEIO_MINUTOS = 15
+
+
+def validar_forca_senha(senha):
+    """Retorna None se a senha é aceitável, ou uma mensagem de erro.
+    Regra mínima: ao menos 8 caracteres, com letra e número."""
+    if not senha or len(senha) < 8:
+        return "A senha deve ter ao menos 8 caracteres."
+    tem_letra = any(c.isalpha() for c in senha)
+    tem_numero = any(c.isdigit() for c in senha)
+    if not (tem_letra and tem_numero):
+        return "A senha deve conter letras e números."
+    return None
+
 
 class Usuario(UserMixin):
     def __init__(self, row):
@@ -66,8 +83,30 @@ def login():
     senha = data.get("senha") or ""
 
     row = db.query_one("SELECT * FROM usuarios WHERE email = %s AND ativo = 1", (email,))
+
+    # Conta bloqueada por excesso de tentativas?
+    if row:
+        bloqueado_ate = row.get("login_bloqueado_ate")
+        if bloqueado_ate and datetime.now() < bloqueado_ate:
+            faltam = int((bloqueado_ate - datetime.now()).total_seconds() // 60) + 1
+            return jsonify({"erro": f"Conta temporariamente bloqueada por excesso de tentativas. "
+                                    f"Tente novamente em {faltam} minuto(s)."}), 429
+
     if not row or not check_password_hash(row["senha_hash"], senha):
+        # Registra a falha e bloqueia a conta se passar do limite.
+        if row:
+            falhas = (row.get("login_falhas") or 0) + 1
+            if falhas >= MAX_TENTATIVAS_LOGIN:
+                db.execute(
+                    "UPDATE usuarios SET login_falhas = 0, login_bloqueado_ate = %s WHERE id = %s",
+                    (datetime.now() + timedelta(minutes=BLOQUEIO_MINUTOS), row["id"]),
+                )
+            else:
+                db.execute("UPDATE usuarios SET login_falhas = %s WHERE id = %s", (falhas, row["id"]))
         return jsonify({"erro": "Email ou senha inválidos"}), 401
+
+    # Login válido: zera o contador de falhas.
+    db.execute("UPDATE usuarios SET login_falhas = 0, login_bloqueado_ate = NULL WHERE id = %s", (row["id"],))
 
     ultima_atividade = row.get("sessao_ultima_atividade")
     if ultima_atividade and datetime.now() - ultima_atividade < timedelta(minutes=SESSAO_TIMEOUT_MINUTOS):

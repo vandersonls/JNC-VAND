@@ -4,8 +4,14 @@ from flask_login import login_required, current_user
 import db
 from auth import perfis_permitidos
 from auditoria import registrar
+from areas import projeto_permitido
 
 lista_pq_bp = Blueprint("lista_pq", __name__)
+
+
+def _pq_versao_projeto(versao_id):
+    row = db.query_one("SELECT projeto_id FROM lista_pq_versoes WHERE id = %s", (versao_id,))
+    return row["projeto_id"] if row else None
 
 
 def _carregar_itens(versao_id):
@@ -22,6 +28,8 @@ def _carregar_itens(versao_id):
 @lista_pq_bp.get("/api/projetos/<int:projeto_id>/lista-pq")
 @login_required
 def obter_lista_pq(projeto_id):
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para acessar este projeto"}), 403
     projeto = db.query_one("SELECT pq_versao_atual_id FROM projetos WHERE id = %s", (projeto_id,))
     if not projeto:
         return jsonify({"erro": "Projeto não encontrado"}), 404
@@ -42,6 +50,8 @@ def base_lista_pq(projeto_id):
     """Consolida a última versão de cada Lista por Desenho SELECIONADA do
     projeto (soma quantidades por material) - é a base sobre a qual o
     percentual da Lista PQ é aplicado. Sem lista_ids, usa todas as listas."""
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para acessar este projeto"}), 403
     data = request.get_json(force=True) or {}
     lista_ids = data.get("lista_ids") or []
     filtro_listas = ""
@@ -77,6 +87,8 @@ def _carregar_origens(versao_id):
 @lista_pq_bp.get("/api/projetos/<int:projeto_id>/lista-pq/versoes")
 @login_required
 def listar_versoes_pq(projeto_id):
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para acessar este projeto"}), 403
     rows = db.query_all(
         """SELECT v.*, u.nome AS criado_por_nome
            FROM lista_pq_versoes v LEFT JOIN usuarios u ON u.id = v.criado_por
@@ -94,6 +106,8 @@ def obter_versao_pq(versao_id):
     versao = db.query_one("SELECT * FROM lista_pq_versoes WHERE id = %s", (versao_id,))
     if not versao:
         return jsonify({"erro": "Versão não encontrada"}), 404
+    if not projeto_permitido(versao["projeto_id"]):
+        return jsonify({"erro": "Sem permissão para acessar esta versão"}), 403
     versao["origens"] = _carregar_origens(versao_id)
     return jsonify({"versao": versao, "itens": _carregar_itens(versao_id)})
 
@@ -102,6 +116,8 @@ def obter_versao_pq(versao_id):
 @perfis_permitidos("master", "administrador")
 def salvar_lista_pq(projeto_id):
     """Sempre cria uma NOVA versão (a anterior nunca é alterada)."""
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para salvar neste projeto"}), 403
     data = request.get_json(force=True) or {}
     itens = data.get("itens") or []
     if not itens:

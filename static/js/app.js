@@ -309,7 +309,7 @@ function popularFiltrosColuna() {
     const campo = select.dataset.coluna;
     const valores = [...new Set(state.materiais.map((m) => (m[campo] || "").toString().trim()).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
-    select.innerHTML = `<option value="">-- Selecione --</option>` + valores.map((v) => `<option value="${v}">${v}</option>`).join("");
+    select.innerHTML = `<option value="">-- Selecione --</option>` + valores.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
     select.value = filtrosColunaMateriais[campo] || "";
   });
 }
@@ -331,11 +331,11 @@ function renderizarTabelaMateriais() {
   tbody.innerHTML = filtrado.map((m) => `
     <tr class="${m.duplicado ? "linha-duplicada" : ""}">
       <td class="somente-admin"><input type="checkbox" class="check-material" data-id="${m.id}"></td>
-      <td>${m.codigo}</td>
-      <td>${m.descricao}${m.duplicado ? '<span class="badge-duplicado">Duplicado</span>' : ""}</td>
-      <td>${m.fabricante || ""}</td>
-      <td>${m.bitola || ""}</td><td>${m.unidade}</td>
-      <td>${m.area_nome || "-"}</td>
+      <td>${esc(m.codigo)}</td>
+      <td>${esc(m.descricao)}${m.duplicado ? '<span class="badge-duplicado">Duplicado</span>' : ""}</td>
+      <td>${esc(m.fabricante || "")}</td>
+      <td>${esc(m.bitola || "")}</td><td>${esc(m.unidade)}</td>
+      <td>${esc(m.area_nome || "-")}</td>
       <td class="somente-admin">
         <button class="link-acao" onclick="editarMaterial(${m.id})">Editar</button>
         <button class="link-acao" onclick="excluirMaterial(${m.id})">Excluir</button>
@@ -401,15 +401,15 @@ document.getElementById("check-somente-duplicados").addEventListener("change", (
 async function modalMaterial(material = null) {
   await garantirAreasCarregadas();
   const m = material || { codigo: "", descricao: "", fabricante: "", bitola: "", unidade: "", area_id: "" };
-  const opcoesAreas = state.areas.map((a) => `<option value="${a.id}" ${m.area_id == a.id ? "selected" : ""}>${a.nome}</option>`).join("");
+  const opcoesAreas = state.areas.map((a) => `<option value="${a.id}" ${m.area_id == a.id ? "selected" : ""}>${esc(a.nome)}</option>`).join("");
   abrirModal(`
     <h3>${material ? "Editar" : "Novo"} Material</h3>
     <div class="form-grid">
-      <label>Código</label><input id="mat-codigo" value="${m.codigo}">
-      <label>Descrição</label><input id="mat-descricao" value="${m.descricao}">
-      <label>Fabricante</label><input id="mat-fabricante" value="${m.fabricante || ""}">
-      <label>Bitola</label><input id="mat-bitola" value="${m.bitola || ""}">
-      <label>Unidade</label><input id="mat-unidade" value="${m.unidade}">
+      <label>Código</label><input id="mat-codigo" value="${esc(m.codigo)}">
+      <label>Descrição</label><input id="mat-descricao" value="${esc(m.descricao)}">
+      <label>Fabricante</label><input id="mat-fabricante" value="${esc(m.fabricante || "")}">
+      <label>Bitola</label><input id="mat-bitola" value="${esc(m.bitola || "")}">
+      <label>Unidade</label><input id="mat-unidade" value="${esc(m.unidade)}">
       <label>Área</label>
       <select id="mat-area"><option value="">-- Selecione --</option>${opcoesAreas}</select>
     </div>
@@ -470,7 +470,7 @@ document.getElementById("input-importar").addEventListener("change", async (e) =
 });
 
 function mostrarModalEscolherArea(arquivo) {
-  const opcoesAreas = state.areas.map((a) => `<option value="${a.id}">${a.nome}</option>`).join("");
+  const opcoesAreas = state.areas.map((a) => `<option value="${a.id}">${esc(a.nome)}</option>`).join("");
   abrirModal(`
     <h3>Importar materiais</h3>
     <div class="form-grid">
@@ -503,13 +503,13 @@ function mostrarModalDuplicados(analise, arquivo, areaId) {
   const conflitos = analise.duplicados.filter((d) => d.conflito).length;
   const linhasDuplicado = (d) => `
     <div style="margin-bottom:10px; padding:8px 10px; border-radius:6px; background:${d.conflito ? "#fdeceb" : "#f2f4f7"};">
-      <div><b>${d.codigo}</b> — linhas ${d.linhas.join(", ")}
+      <div><b>${esc(d.codigo)}</b> — linhas ${d.linhas.join(", ")}
         ${d.conflito ? '<span style="color:var(--erro); font-weight:600;"> ⚠ dados diferentes entre as linhas</span>' : '<span style="color:var(--cinza);"> (dados idênticos)</span>'}
       </div>
       ${d.conflito ? `<table class="tabela" style="margin-top:6px; font-size:11.5px;">
         <thead><tr><th>Linha</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Unidade</th></tr></thead>
         <tbody>
-          ${d.ocorrencias.map((o) => `<tr><td>${o.linha}</td><td>${o.descricao}</td><td>${o.fabricante}</td><td>${o.bitola}</td><td>${o.unidade}</td></tr>`).join("")}
+          ${d.ocorrencias.map((o) => `<tr><td>${o.linha}</td><td>${esc(o.descricao)}</td><td>${esc(o.fabricante)}</td><td>${esc(o.bitola)}</td><td>${esc(o.unidade)}</td></tr>`).join("")}
         </tbody>
       </table>` : ""}
     </div>`;
@@ -572,8 +572,8 @@ async function carregarClientes(busca = "") {
   const tbody = document.getElementById("tbody-clientes");
   tbody.innerHTML = state.clientes.map((c) => `
     <tr>
-      <td>${c.razao_social}</td><td>${c.nome_fantasia || ""}</td><td>${c.cnpj_cpf || ""}</td>
-      <td>${c.contato || ""}</td><td>${c.telefone || ""}</td>
+      <td>${esc(c.razao_social)}</td><td>${esc(c.nome_fantasia || "")}</td><td>${esc(c.cnpj_cpf || "")}</td>
+      <td>${esc(c.contato || "")}</td><td>${esc(c.telefone || "")}</td>
       <td class="somente-admin">
         <button class="link-acao" onclick="editarCliente(${c.id})">Editar</button>
         <button class="link-acao" onclick="excluirCliente(${c.id})">Excluir</button>
@@ -593,14 +593,14 @@ function modalCliente(cliente = null) {
   abrirModal(`
     <h3>${cliente ? "Editar" : "Novo"} Cliente</h3>
     <div class="form-grid">
-      <label>Razão Social</label><input id="cli-razao" value="${c.razao_social}">
-      <label>Nome Fantasia</label><input id="cli-fantasia" value="${c.nome_fantasia || ""}">
-      <label>CNPJ/CPF</label><input id="cli-doc" value="${c.cnpj_cpf || ""}">
-      <label>Contato</label><input id="cli-contato" value="${c.contato || ""}">
-      <label>Telefone</label><input id="cli-telefone" value="${c.telefone || ""}">
-      <label>Email</label><input id="cli-email" value="${c.email || ""}">
-      <label>Endereço</label><input id="cli-endereco" value="${c.endereco || ""}">
-      <label>URL da Logo</label><input id="cli-logo" value="${c.logo_url || ""}" placeholder="https://...">
+      <label>Razão Social</label><input id="cli-razao" value="${esc(c.razao_social)}">
+      <label>Nome Fantasia</label><input id="cli-fantasia" value="${esc(c.nome_fantasia || "")}">
+      <label>CNPJ/CPF</label><input id="cli-doc" value="${esc(c.cnpj_cpf || "")}">
+      <label>Contato</label><input id="cli-contato" value="${esc(c.contato || "")}">
+      <label>Telefone</label><input id="cli-telefone" value="${esc(c.telefone || "")}">
+      <label>Email</label><input id="cli-email" value="${esc(c.email || "")}">
+      <label>Endereço</label><input id="cli-endereco" value="${esc(c.endereco || "")}">
+      <label>URL da Logo</label><input id="cli-logo" value="${esc(c.logo_url || "")}" placeholder="https://...">
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
@@ -648,7 +648,7 @@ async function carregarProjetos() {
   const tbody = document.getElementById("tbody-projetos");
   tbody.innerHTML = state.projetos.map((p) => `
     <tr>
-      <td>${p.codigo}</td><td>${p.nome}</td><td>${p.cliente_nome || "-"}</td><td>${p.status}</td><td>${p.area_nome || "-"}</td>
+      <td>${esc(p.codigo)}</td><td>${esc(p.nome)}</td><td>${esc(p.cliente_nome || "-")}</td><td>${esc(p.status)}</td><td>${esc(p.area_nome || "-")}</td>
       <td class="acoes-linha">
         <button class="link-acao" onclick="abrirProjeto(${p.id})">Abrir</button>
         <button class="link-acao somente-admin" onclick="editarProjeto(${p.id})">Editar</button>
@@ -671,21 +671,21 @@ async function modalProjeto(projeto = null) {
   if (!state.clientes.length) state.clientes = await api("/api/clientes");
   await garantirAreasCarregadas();
   const p = projeto || { codigo: "", nome: "", cliente_id: "", status: "planejamento", numero_cliente: "", numero_fornecedor: "", area_id: "" };
-  const opcoesClientes = state.clientes.map((c) => `<option value="${c.id}" ${p.cliente_id == c.id ? "selected" : ""}>${c.razao_social}</option>`).join("");
-  const opcoesAreas = state.areas.map((a) => `<option value="${a.id}" ${p.area_id == a.id ? "selected" : ""}>${a.nome}</option>`).join("");
+  const opcoesClientes = state.clientes.map((c) => `<option value="${c.id}" ${p.cliente_id == c.id ? "selected" : ""}>${esc(c.razao_social)}</option>`).join("");
+  const opcoesAreas = state.areas.map((a) => `<option value="${a.id}" ${p.area_id == a.id ? "selected" : ""}>${esc(a.nome)}</option>`).join("");
   abrirModal(`
     <h3>${projeto ? "Editar" : "Novo"} Projeto</h3>
     <div class="form-grid">
       <label>Cliente</label>
       <select id="proj-cliente"><option value="">-- Selecione --</option>${opcoesClientes}</select>
-      <label>Nome do Projeto</label><input id="proj-nome" value="${p.nome}">
+      <label>Nome do Projeto</label><input id="proj-nome" value="${esc(p.nome)}">
       <label>Status</label>
       <select id="proj-status">
         ${["planejamento", "em_andamento", "concluido", "cancelado"].map((s) => `<option value="${s}" ${p.status === s ? "selected" : ""}>${s}</option>`).join("")}
       </select>
-      <label>Código</label><input id="proj-codigo" value="${p.codigo}">
-      <label>Nº do Cliente</label><input id="proj-numero-cliente" value="${p.numero_cliente || ""}">
-      <label>Nº do Fornecedor</label><input id="proj-numero-fornecedor" value="${p.numero_fornecedor || ""}">
+      <label>Código</label><input id="proj-codigo" value="${esc(p.codigo)}">
+      <label>Nº do Cliente</label><input id="proj-numero-cliente" value="${esc(p.numero_cliente || "")}">
+      <label>Nº do Fornecedor</label><input id="proj-numero-fornecedor" value="${esc(p.numero_fornecedor || "")}">
       <label>Área</label>
       <select id="proj-area"><option value="">-- Selecione --</option>${opcoesAreas}</select>
     </div>
@@ -774,7 +774,7 @@ function abrirSelecaoListas(titulo, mensagem, listas, aoConfirmar) {
   const linhas = listas.map((l) => `
     <label class="selecao-lista-linha">
       <input type="checkbox" class="selecao-lista-check" value="${l.id}" checked>
-      <span>${l.numero_cliente || "-"} / ${l.numero_fornecedor || "-"}${l.titulo ? " — " + l.titulo : ""} <span class="arvore-sub">(${l.numero_desenho})</span></span>
+      <span>${esc(l.numero_cliente || "-")} / ${esc(l.numero_fornecedor || "-")}${l.titulo ? " — " + esc(l.titulo) : ""} <span class="arvore-sub">(${esc(l.numero_desenho)})</span></span>
     </label>`).join("");
   abrirModal(`
     <h3>${titulo}</h3>
@@ -845,7 +845,7 @@ function renderNoLista(l) {
         </button>
         ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleListaArvore(${l.id})">
-          <span class="arvore-titulo">${l.numero_cliente || "-"} / ${l.numero_fornecedor || "-"}${l.titulo ? " — " + l.titulo : ""}</span>
+          <span class="arvore-titulo">${esc(l.numero_cliente || "-")} / ${esc(l.numero_fornecedor || "-")}${l.titulo ? " — " + esc(l.titulo) : ""}</span>
           <span class="arvore-sub">${l.versao_atual ? "v" + l.versao_atual : "sem versão"}</span>
         </span>
         <span class="arvore-acoes">
@@ -872,7 +872,7 @@ function renderFilhosVersoes(listaId, versoes) {
       ${ICONE_ARQUIVO}
       <span class="arvore-label" onclick="verVersao(${listaId}, ${v.id})">
         <span class="arvore-titulo">v${v.versao}</span>
-        <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${v.criado_por_nome || "-"}</span>
+        <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${esc(v.criado_por_nome || "-")}</span>
       </span>
       <span class="arvore-acoes">
         <button class="link-acao" onclick="verVersao(${listaId}, ${v.id})">Ver</button>
@@ -921,6 +921,8 @@ function escapeHtml(texto) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
+// Alias curto (função declarada = hoisted, seguro em qualquer ponto do arquivo)
+function esc(texto) { return escapeHtml(texto); }
 
 // ---------- EDITOR DA LISTA (com versionamento) ----------
 async function abrirEditorLista(listaId) {
@@ -939,25 +941,25 @@ async function abrirEditorLista(listaId) {
 // TELA 1: cabeçalho (título, cliente/fornecedor, desenho de referência, carimbo).
 function renderCabecalhoLista(listaId, lista) {
   abrirModal(`
-    <h3>${lista.numero_desenho ? `Lista por Desenho — ${lista.numero_desenho}` : "Nova Lista por Desenho"}</h3>
+    <h3>${lista.numero_desenho ? `Lista por Desenho — ${esc(lista.numero_desenho)}` : "Nova Lista por Desenho"}</h3>
     <div class="form-grid-lista">
-      <div class="campo-linha"><label>Título do Documento</label><input id="cab-titulo" value="${lista.titulo || ""}"></div>
+      <div class="campo-linha"><label>Título do Documento</label><input id="cab-titulo" value="${esc(lista.titulo || "")}"></div>
       <div class="campo-linha campo-dupla">
-        <div><label>Número do Cliente</label><input id="cab-numero-cliente" value="${lista.numero_cliente || ""}"></div>
-        <div><label>Número do Fornecedor</label><input id="cab-numero-fornecedor" value="${lista.numero_fornecedor || ""}"></div>
+        <div><label>Número do Cliente</label><input id="cab-numero-cliente" value="${esc(lista.numero_cliente || "")}"></div>
+        <div><label>Número do Fornecedor</label><input id="cab-numero-fornecedor" value="${esc(lista.numero_fornecedor || "")}"></div>
       </div>
-      <div class="campo-linha"><label>Número do Desenho de Referência</label><input id="cab-numero-desenho" value="${lista.numero_desenho || ""}"></div>
+      <div class="campo-linha"><label>Número do Desenho de Referência</label><input id="cab-numero-desenho" value="${esc(lista.numero_desenho || "")}"></div>
       <div class="campo-linha campo-dupla">
-        <div><label>Nome do Elaborador</label><input id="cab-elaborador-nome" value="${lista.elaborador_nome || ""}"></div>
-        <div><label>Sigla</label><input id="cab-elaborador-sigla" value="${lista.elaborador_sigla || ""}"></div>
-      </div>
-      <div class="campo-linha campo-dupla">
-        <div><label>Nome do Verificador</label><input id="cab-verificador-nome" value="${lista.verificador_nome || ""}"></div>
-        <div><label>Sigla</label><input id="cab-verificador-sigla" value="${lista.verificador_sigla || ""}"></div>
+        <div><label>Nome do Elaborador</label><input id="cab-elaborador-nome" value="${esc(lista.elaborador_nome || "")}"></div>
+        <div><label>Sigla</label><input id="cab-elaborador-sigla" value="${esc(lista.elaborador_sigla || "")}"></div>
       </div>
       <div class="campo-linha campo-dupla">
-        <div><label>Nome do Aprovador</label><input id="cab-aprovador-nome" value="${lista.aprovador_nome || ""}"></div>
-        <div><label>Sigla</label><input id="cab-aprovador-sigla" value="${lista.aprovador_sigla || ""}"></div>
+        <div><label>Nome do Verificador</label><input id="cab-verificador-nome" value="${esc(lista.verificador_nome || "")}"></div>
+        <div><label>Sigla</label><input id="cab-verificador-sigla" value="${esc(lista.verificador_sigla || "")}"></div>
+      </div>
+      <div class="campo-linha campo-dupla">
+        <div><label>Nome do Aprovador</label><input id="cab-aprovador-nome" value="${esc(lista.aprovador_nome || "")}"></div>
+        <div><label>Sigla</label><input id="cab-aprovador-sigla" value="${esc(lista.aprovador_sigla || "")}"></div>
       </div>
     </div>
     <div class="modal-acoes">
@@ -996,7 +998,7 @@ function renderEditorLista(listaId, lista) {
   ].filter(Boolean).join(" — ");
 
   abrirModal(`
-    <h3>Materiais — ${resumo}</h3>
+    <h3>Materiais — ${esc(resumo)}</h3>
     <div class="busca-adicionar-material">
       <div class="busca-input-wrap">
         <input id="busca-novo-material" placeholder="Buscar por código ou descrição..." autocomplete="off">
@@ -1053,7 +1055,7 @@ function renderEditorLista(listaId, lista) {
   function redesenharChips() {
     const itens = Array.from(selecionados.values());
     chipsCont.innerHTML = itens.map((m) => `
-      <span class="chip">${m.codigo}<button type="button" class="chip-remover" data-material-id="${m.id}" title="Remover da seleção">&times;</button></span>
+      <span class="chip">${esc(m.codigo)}<button type="button" class="chip-remover" data-material-id="${m.id}" title="Remover da seleção">&times;</button></span>
     `).join("");
     chipsCont.querySelectorAll(".chip-remover").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1070,7 +1072,7 @@ function renderEditorLista(listaId, lista) {
     listaAutocomplete.innerHTML = resultados.map((m) => `
       <div class="autocomplete-item ${selecionados.has(m.id) ? "selecionado" : ""}" data-material-id="${m.id}">
         <input type="checkbox" tabindex="-1" ${selecionados.has(m.id) ? "checked" : ""}>
-        <span>${_rotuloMaterial(m)}</span>
+        <span>${esc(_rotuloMaterial(m))}</span>
       </div>
     `).join("");
     listaAutocomplete.classList.remove("oculto");
@@ -1137,7 +1139,7 @@ function renderEditorLista(listaId, lista) {
     const tbody = document.getElementById("itens-editor");
     tbody.innerHTML = window._itensEditor.map((item, idx) => `
       <tr>
-        <td>${_rotuloMaterial(item)}</td>
+        <td>${esc(_rotuloMaterial(item))}</td>
         <td><input type="number" step="1" min="0" class="item-qtd" data-idx="${idx}" value="${Math.round(Number(item.quantidade)) || 0}" style="width:100px"></td>
         <td><button class="btn-perigo" type="button" data-idx="${idx}">Remover</button></td>
       </tr>`).join("") || `<tr><td colspan="3">Nenhum material adicionado.</td></tr>`;
@@ -1159,13 +1161,13 @@ function renderEditorLista(listaId, lista) {
 function renderReviewLista(listaId, lista) {
   const linhas = window._itensEditor.map((item, idx) => `
     <tr>
-      <td>${item.codigo}</td><td>${item.descricao}</td><td>${item.fabricante || ""}</td><td>${item.bitola || ""}</td>
+      <td>${esc(item.codigo)}</td><td>${esc(item.descricao)}</td><td>${esc(item.fabricante || "")}</td><td>${esc(item.bitola || "")}</td>
       <td><input type="number" step="1" min="0" class="revisao-item-qtd" data-idx="${idx}" value="${Math.round(Number(item.quantidade)) || 0}" style="width:90px"></td>
-      <td>${item.unidade || ""}</td>
+      <td>${esc(item.unidade || "")}</td>
     </tr>`).join("");
 
   abrirModal(`
-    <h3>Revisar Lista por Desenho — ${window._editorCabecalho.numero_desenho}</h3>
+    <h3>Revisar Lista por Desenho — ${esc(window._editorCabecalho.numero_desenho)}</h3>
     <div style="max-height:420px; overflow-y:auto; margin:12px 0;">
       <table class="tabela">
         <thead><tr><th>Código</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Qtd</th><th>Unidade</th></tr></thead>
@@ -1225,7 +1227,7 @@ async function verVersao(listaId, versaoId) {
     <table class="tabela">
       <thead><tr><th>Código</th><th>Descrição</th><th>Qtd</th><th>Unidade</th></tr></thead>
       <tbody>
-        ${dados.itens.map((i) => `<tr><td>${i.codigo}</td><td>${i.descricao}</td><td>${formatarQuantidade(i.quantidade, i.unidade)}</td><td>${i.unidade}</td></tr>`).join("") || "<tr><td colspan='4'>Sem itens</td></tr>"}
+        ${dados.itens.map((i) => `<tr><td>${esc(i.codigo)}</td><td>${esc(i.descricao)}</td><td>${formatarQuantidade(i.quantidade, i.unidade)}</td><td>${esc(i.unidade)}</td></tr>`).join("") || "<tr><td colspan='4'>Sem itens</td></tr>"}
       </tbody>
     </table>
     <div class="modal-acoes">
@@ -1244,7 +1246,7 @@ function mostrarItensVersaoGenerico(titulo, itens, campos, rotulos) {
     <table class="tabela">
       <thead><tr>${rotulos.map((r) => `<th>${r}</th>`).join("")}</tr></thead>
       <tbody>
-        ${itens.map((i) => `<tr>${campos.map((c) => `<td>${CAMPOS_QUANTIDADE.includes(c) ? formatarQuantidade(i[c], i.unidade) : i[c]}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${rotulos.length}">Sem itens</td></tr>`}
+        ${itens.map((i) => `<tr>${campos.map((c) => `<td>${CAMPOS_QUANTIDADE.includes(c) ? formatarQuantidade(i[c], i.unidade) : esc(i[c])}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${rotulos.length}">Sem itens</td></tr>`}
       </tbody>
     </table>
     <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
@@ -1287,7 +1289,7 @@ function renderNoPQ(v) {
           <span class="arvore-toggle invisivel"></span>
           ${ICONE_ARQUIVO}
           <span class="arvore-label">
-            <span class="arvore-titulo">${o.numero_desenho}${o.titulo ? " — " + o.titulo : ""}</span>
+            <span class="arvore-titulo">${esc(o.numero_desenho)}${o.titulo ? " — " + esc(o.titulo) : ""}</span>
             <span class="arvore-sub">v${o.versao_numero}</span>
           </span>
         </div>`).join("")
@@ -1299,7 +1301,7 @@ function renderNoPQ(v) {
         ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleArvorePQ(${v.id})">
           <span class="arvore-titulo">v${v.versao}</span>
-          <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${v.criado_por_nome || "-"}</span>
+          <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${esc(v.criado_por_nome || "-")}</span>
         </span>
         <span class="arvore-acoes">
           <button class="link-acao" onclick="verVersaoPQ(${v.id})">Ver</button>
@@ -1326,16 +1328,16 @@ async function verVersaoPQ(versaoId) {
 
 function renderTabelaPQ(versao, itens) {
   document.getElementById("pq-info").innerHTML = versao
-    ? `Revisão <b>${versao.versao}</b> — salva em ${new Date(versao.criado_em).toLocaleString("pt-BR")} por <b>${versao.criado_por_nome || "-"}</b>`
+    ? `Revisão <b>${versao.versao}</b> — salva em ${new Date(versao.criado_em).toLocaleString("pt-BR")} por <b>${esc(versao.criado_por_nome || "-")}</b>`
     : `Nenhuma versão salva ainda. Clique em "Revisar lista" para montar a primeira versão a partir da Lista de Material por Desenho.`;
   const tbody = document.getElementById("tbody-pq");
   tbody.innerHTML = itens.map((i) => `
     <tr>
-      <td>${i.codigo}</td><td>${i.descricao}</td><td>${i.fabricante || ""}</td><td>${i.bitola || ""}</td>
+      <td>${esc(i.codigo)}</td><td>${esc(i.descricao)}</td><td>${esc(i.fabricante || "")}</td><td>${esc(i.bitola || "")}</td>
       <td>${formatarQuantidade(i.quantidade_base, i.unidade)}</td>
       <td>${Number(i.percentual).toLocaleString("pt-BR")}%</td>
       <td>${formatarQuantidade(i.quantidade_atualizada, i.unidade)}</td>
-      <td>${i.unidade}</td>
+      <td>${esc(i.unidade)}</td>
     </tr>`).join("") || `<tr><td colspan="8">Nenhum item nesta versão.</td></tr>`;
 }
 
@@ -1365,14 +1367,14 @@ document.getElementById("btn-revisar-pq").addEventListener("click", async () => 
 function renderModalRevisaoPQ() {
   const linhas = window._pqDraft.map((item, idx) => `
     <tr>
-      <td>${item.codigo}</td>
-      <td>${item.descricao}</td>
-      <td>${item.fabricante || ""}</td>
-      <td>${item.bitola || ""}</td>
+      <td>${esc(item.codigo)}</td>
+      <td>${esc(item.descricao)}</td>
+      <td>${esc(item.fabricante || "")}</td>
+      <td>${esc(item.bitola || "")}</td>
       <td style="text-align:right">${formatarQuantidade(item.quantidade_base, item.unidade)}</td>
       <td><input type="number" step="0.01" class="pq-percentual" data-idx="${idx}" value="${item.percentual}" style="width:80px"></td>
       <td class="pq-qtd-atualizada" data-idx="${idx}" style="text-align:right">${formatarQuantidade(calcularQtdAtualizada(item), item.unidade)}</td>
-      <td>${item.unidade}</td>
+      <td>${esc(item.unidade)}</td>
     </tr>`).join("");
 
   abrirModal(`
@@ -1466,7 +1468,7 @@ function renderNoCompras(v) {
             <span class="arvore-toggle invisivel"></span>
             ${ICONE_ARQUIVO}
             <span class="arvore-label">
-              <span class="arvore-titulo">${o.numero_desenho}${o.titulo ? " — " + o.titulo : ""}</span>
+              <span class="arvore-titulo">${esc(o.numero_desenho)}${o.titulo ? " — " + esc(o.titulo) : ""}</span>
               <span class="arvore-sub">v${o.versao_numero}</span>
             </span>
           </div>`).join("")}`
@@ -1478,7 +1480,7 @@ function renderNoCompras(v) {
         ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleArvoreCompras(${v.id})">
           <span class="arvore-titulo">v${v.versao}</span>
-          <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${v.criado_por_nome || "-"}</span>
+          <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${esc(v.criado_por_nome || "-")}</span>
         </span>
         <span class="arvore-acoes">
           <button class="link-acao" onclick="verVersaoCompras(${v.id})">Ver</button>
@@ -1505,13 +1507,13 @@ async function verVersaoCompras(versaoId) {
 
 function renderTabelaCompras(versao, itens) {
   document.getElementById("compras-info").innerHTML = versao
-    ? `Revisão <b>${versao.versao}</b> — salva em ${new Date(versao.criado_em).toLocaleString("pt-BR")} por <b>${versao.criado_por_nome || "-"}</b>`
+    ? `Revisão <b>${versao.versao}</b> — salva em ${new Date(versao.criado_em).toLocaleString("pt-BR")} por <b>${esc(versao.criado_por_nome || "-")}</b>`
     : `Nenhuma versão salva ainda. Clique em "Revisar lista" para montar a primeira versão a partir da Lista PQ.`;
   const tbody = document.getElementById("tbody-compras");
   tbody.innerHTML = itens.map((i) => `
     <tr>
-      <td>${i.codigo}</td><td>${i.descricao}</td><td>${i.fabricante || ""}</td><td>${i.bitola || ""}</td>
-      <td>${formatarQuantidade(i.quantidade, i.unidade)}</td><td>${i.unidade}</td>
+      <td>${esc(i.codigo)}</td><td>${esc(i.descricao)}</td><td>${esc(i.fabricante || "")}</td><td>${esc(i.bitola || "")}</td>
+      <td>${formatarQuantidade(i.quantidade, i.unidade)}</td><td>${esc(i.unidade)}</td>
     </tr>`).join("") || `<tr><td colspan="6">Nenhum item nesta versão.</td></tr>`;
 }
 
@@ -1531,10 +1533,10 @@ document.getElementById("btn-revisar-compras").addEventListener("click", async (
 function renderModalRevisaoCompras() {
   const linhas = window._comprasDraft.map((item, idx) => `
     <tr>
-      <td>${item.codigo}</td>
-      <td>${item.descricao}</td>
+      <td>${esc(item.codigo)}</td>
+      <td>${esc(item.descricao)}</td>
       <td><input type="number" step="1" min="0" class="compras-qtd" data-idx="${idx}" value="${Math.round(Number(item.quantidade)) || 0}" style="width:100px"></td>
-      <td>${item.unidade}</td>
+      <td>${esc(item.unidade)}</td>
     </tr>`).join("");
 
   abrirModal(`
@@ -1580,9 +1582,9 @@ async function carregarUsuarios() {
   const tbody = document.getElementById("tbody-usuarios");
   tbody.innerHTML = usuarios.map((u) => `
     <tr>
-      <td>${u.nome}</td><td>${u.email}</td><td>${u.perfil}</td><td>${u.ativo ? "Sim" : "Não"}</td>
+      <td>${esc(u.nome)}</td><td>${esc(u.email)}</td><td>${esc(u.perfil)}</td><td>${u.ativo ? "Sim" : "Não"}</td>
       <td class="acoes-linha">
-        <button class="link-acao" onclick='editarUsuario(${JSON.stringify(u)})'>Editar</button>
+        <button class="link-acao" onclick='editarUsuario(${esc(JSON.stringify(u))})'>Editar</button>
         <button class="link-acao" onclick="excluirUsuario(${u.id})">Desativar</button>
       </td>
     </tr>`).join("");
@@ -1594,14 +1596,14 @@ async function modalUsuario(usuario = null) {
   const areasDoUsuario = new Set((u.areas || []).map((a) => a.id));
   const opcoesAreas = state.areas.map((a) => `
     <label style="display:flex; align-items:center; gap:6px; font-weight:normal; margin:2px 0;">
-      <input type="checkbox" class="usr-area" value="${a.id}" ${areasDoUsuario.has(a.id) ? "checked" : ""}> ${a.nome}
+      <input type="checkbox" class="usr-area" value="${a.id}" ${areasDoUsuario.has(a.id) ? "checked" : ""}> ${esc(a.nome)}
     </label>`).join("");
 
   abrirModal(`
     <h3>${usuario ? "Editar" : "Novo"} Usuário</h3>
     <div class="form-grid">
-      <label>Nome</label><input id="usr-nome" value="${u.nome}">
-      <label>Email</label><input id="usr-email" value="${u.email}" ${usuario ? "disabled" : ""}>
+      <label>Nome</label><input id="usr-nome" value="${esc(u.nome)}">
+      <label>Email</label><input id="usr-email" value="${esc(u.email)}" ${usuario ? "disabled" : ""}>
       <label>Perfil</label>
       <select id="usr-perfil">
         ${["master", "administrador", "visualizador"].map((p) => `<option value="${p}" ${u.perfil === p ? "selected" : ""}>${p}</option>`).join("")}
@@ -1757,7 +1759,7 @@ async function carregarAreas() {
   const tbody = document.getElementById("tbody-areas");
   tbody.innerHTML = state.areas.map((a) => `
     <tr>
-      <td>${a.nome}</td>
+      <td>${esc(a.nome)}</td>
       <td>${a.total_materiais}</td>
       <td class="acoes-linha">
         <button class="link-acao" onclick='modalArea(${JSON.stringify(a)})'>Editar</button>
@@ -1842,10 +1844,10 @@ async function carregarAuditoria(reiniciar = false) {
   const linhas = resultado.itens.map((ev) => `
     <tr>
       <td>${new Date(ev.criado_em).toLocaleString("pt-BR")}</td>
-      <td>${ev.usuario_nome}</td>
-      <td><span class="badge-acao ${ev.acao}">${ROTULOS_ACAO[ev.acao] || ev.acao}</span></td>
-      <td>${ROTULOS_ENTIDADE[ev.entidade] || ev.entidade}</td>
-      <td>${ev.descricao}</td>
+      <td>${esc(ev.usuario_nome)}</td>
+      <td><span class="badge-acao ${esc(ev.acao)}">${esc(ROTULOS_ACAO[ev.acao] || ev.acao)}</span></td>
+      <td>${esc(ROTULOS_ENTIDADE[ev.entidade] || ev.entidade)}</td>
+      <td>${esc(ev.descricao)}</td>
     </tr>`).join("");
 
   tbody.innerHTML = reiniciar || auditoriaState.offset === 0

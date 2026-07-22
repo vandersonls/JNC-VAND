@@ -23,6 +23,17 @@ SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
 SET @sql = IF(@col_exists = 0, 'ALTER TABLE usuarios ADD COLUMN sessao_ultima_atividade DATETIME NULL', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
+-- Controle de tentativas de login (proteção contra força bruta)
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'usuarios' AND COLUMN_NAME = 'login_falhas');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE usuarios ADD COLUMN login_falhas INT NOT NULL DEFAULT 0', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'usuarios' AND COLUMN_NAME = 'login_bloqueado_ate');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE usuarios ADD COLUMN login_bloqueado_ate DATETIME NULL', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 -- =========================================================
 -- CLIENTES
 -- =========================================================
