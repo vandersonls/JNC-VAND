@@ -13,9 +13,10 @@ import db
 auth_bp = Blueprint("auth", __name__)
 login_manager = LoginManager()
 
-# Tempo de inatividade após o qual uma sessão é considerada encerrada e o
-# login em outro local volta a ser permitido.
-SESSAO_TIMEOUT_MINUTOS = 10
+# Tempo de inatividade após o qual a sessão é encerrada automaticamente
+# (e o login em outro local volta a ser permitido). 30 min é o padrão comum
+# em sistemas corporativos.
+SESSAO_TIMEOUT_MINUTOS = 30
 
 
 class Usuario(UserMixin):
@@ -75,7 +76,9 @@ def login():
                     "Aguarde alguns minutos de inatividade da outra sessão ou saia dela e tente novamente."
         }), 409
 
-    login_user(Usuario(row), remember=True)
+    # Sem remember=True: o cookie de sessão expira quando o navegador é
+    # fechado, em vez de ficar valido por meses.
+    login_user(Usuario(row))
     db.execute("UPDATE usuarios SET sessao_ultima_atividade = NOW() WHERE id = %s", (row["id"],))
     from auditoria import registrar  # import local evita ciclo (auditoria importa perfis_permitidos daqui)
     registrar("login", "usuario", row["id"], f"{row['nome']} entrou no sistema")
@@ -94,11 +97,18 @@ def logout():
     return jsonify({"ok": True})
 
 
-def atualizar_atividade_sessao():
-    """Chamado a cada requisição autenticada para manter a sessão 'viva' e
-    liberar o login em outro local após SESSAO_TIMEOUT_MINUTOS de inatividade."""
-    if current_user.is_authenticated:
-        db.execute("UPDATE usuarios SET sessao_ultima_atividade = NOW() WHERE id = %s", (current_user.id,))
+def gerenciar_sessao():
+    """Chamado antes de cada requisição. Se o usuário estiver inativo há mais
+    de SESSAO_TIMEOUT_MINUTOS, encerra a sessão de verdade (não só bloqueia
+    login em outro local); caso contrário, renova o horário de atividade."""
+    if not current_user.is_authenticated:
+        return
+    row = db.query_one("SELECT sessao_ultima_atividade FROM usuarios WHERE id = %s", (current_user.id,))
+    ultima_atividade = row["sessao_ultima_atividade"] if row else None
+    if ultima_atividade and datetime.now() - ultima_atividade > timedelta(minutes=SESSAO_TIMEOUT_MINUTOS):
+        logout_user()
+        return
+    db.execute("UPDATE usuarios SET sessao_ultima_atividade = NOW() WHERE id = %s", (current_user.id,))
 
 
 @auth_bp.get("/api/me")

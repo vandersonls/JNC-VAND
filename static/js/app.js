@@ -19,6 +19,14 @@ async function api(url, options = {}) {
     opts.headers["Content-Type"] = "application/json";
   }
   const resp = await fetch(url, opts);
+  if (resp.status === 401 && state.usuario) {
+    // A sessão expirou (inatividade) enquanto a pessoa estava usando o
+    // sistema - avisa e volta para a tela de login, sem pop-up de "sair?".
+    state.usuario = null;
+    toast("Sua sessão expirou por inatividade. Faça login novamente.", "erro");
+    setTimeout(() => location.reload(), 1800);
+    throw new Error("Sessão expirada");
+  }
   let data = null;
   try { data = await resp.json(); } catch (_) { /* respostas binárias (excel/pdf) não chegam aqui */ }
   if (!resp.ok) {

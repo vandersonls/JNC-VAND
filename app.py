@@ -6,7 +6,7 @@ from flask import Flask, render_template
 from flask_cors import CORS
 
 import db
-from auth import auth_bp, login_manager, atualizar_atividade_sessao
+from auth import auth_bp, login_manager, gerenciar_sessao
 from materiais import materiais_bp
 from clientes import clientes_bp
 from projetos import projetos_bp
@@ -86,10 +86,12 @@ def create_app():
     app.register_blueprint(lista_pq_bp)
     app.register_blueprint(lista_compras_bp)
 
-    @app.after_request
-    def marcar_atividade(response):
-        atualizar_atividade_sessao()
-        return response
+    @app.before_request
+    def verificar_sessao():
+        # Roda antes da rota: se a sessão já expirou por inatividade, o
+        # usuário é deslogado aqui mesmo, e o @login_required da rota
+        # (se houver) já responde 401 corretamente.
+        gerenciar_sessao()
 
     @app.context_processor
     def injetar_versoes_estaticas():
