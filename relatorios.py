@@ -1,5 +1,8 @@
 import io
+import ipaddress
+import socket
 import urllib.request
+from urllib.parse import urlparse
 
 import openpyxl
 from openpyxl.drawing.image import Image as ExcelImage
@@ -19,15 +22,42 @@ from areas import projeto_permitido, projeto_da_lista
 relatorios_bp = Blueprint("relatorios", __name__)
 
 
+def _url_segura_para_baixar(url):
+    """Proteção contra SSRF: só permite http/https apontando para endereços
+    públicos. Bloqueia esquemas perigosos (file://, etc.) e qualquer host que
+    resolva para IP interno/privado (loopback, rede local, metadados da nuvem)."""
+    try:
+        p = urlparse(url)
+    except Exception:
+        return False
+    if p.scheme not in ("http", "https") or not p.hostname:
+        return False
+    porta = p.port or (443 if p.scheme == "https" else 80)
+    try:
+        enderecos = socket.getaddrinfo(p.hostname, porta)
+    except Exception:
+        return False
+    for info in enderecos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            return False
+    return True
+
+
 def _baixar_imagem(url):
     """Baixa uma imagem de logo por URL. Nunca lança exceção - um link de
-    logo quebrado ou lento não pode impedir a geração do relatório."""
-    if not url:
+    logo quebrado, lento ou não permitido não pode impedir a geração do
+    relatório. Limita o tamanho lido para não estourar a memória do servidor."""
+    if not url or not _url_segura_para_baixar(url):
         return None
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=5) as resp:
-            return resp.read()
+            return resp.read(5 * 1024 * 1024)  # no máximo 5 MB (logo real é bem menor)
     except Exception:
         return None
 

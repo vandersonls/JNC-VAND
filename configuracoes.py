@@ -11,6 +11,10 @@ from auditoria import registrar
 
 config_bp = Blueprint("config", __name__)
 
+# Só estas chaves de configuração podem ser gravadas pela tela do sistema.
+# Qualquer outra é ignorada (evita inserção arbitrária de linhas na tabela).
+CHAVES_CONFIG_PERMITIDAS = {"nome_empresa", "logo_url", "formato_data"}
+
 
 @config_bp.get("/api/configuracoes")
 @login_required
@@ -23,13 +27,17 @@ def listar_configuracoes():
 @perfis_permitidos("master", "administrador")
 def atualizar_configuracoes():
     data = request.get_json(force=True) or {}
+    aplicadas = {}
     for chave, valor in data.items():
+        if chave not in CHAVES_CONFIG_PERMITIDAS:
+            continue  # ignora chaves não reconhecidas
         db.execute(
             "INSERT INTO configuracoes (chave, valor) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE valor = VALUES(valor)",
             (chave, valor),
         )
-    registrar("editar", "configuracao", None, "Atualizou as configurações do sistema", depois=data)
+        aplicadas[chave] = valor
+    registrar("editar", "configuracao", None, "Atualizou as configurações do sistema", depois=aplicadas)
     return jsonify({"ok": True})
 
 
