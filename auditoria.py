@@ -8,8 +8,6 @@ from auth import perfis_permitidos
 
 auditoria_bp = Blueprint("auditoria", __name__)
 
-ENTIDADES_VALIDAS = {"material", "cliente", "projeto", "lista_desenho", "usuario", "configuracao"}
-
 
 def _serializar(dados):
     if dados is None:

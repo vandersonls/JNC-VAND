@@ -3,9 +3,12 @@
 __pycache__/
 *.pyc
 .idea/
+*.iml
 uploads/*
 exports/*
 !uploads/.gitkeep
 !exports/.gitkeep
 *.log
 .env
+dump/
+*.ipynb
