@@ -679,6 +679,27 @@ def _carregar_projeto_para_relatorio(projeto_id):
     return {"projeto": projeto, "config": config}
 
 
+def _carregar_versao_itens(projeto, versao_id_param, tipo):
+    """Carrega a versão (a informada ou, por padrão, a última salva) e seus
+    itens para relatórios de Lista PQ ou Lista de Compras. tipo é sempre um
+    literal fixo no código ('pq' ou 'compras'), nunca vindo do usuário."""
+    versao_id = versao_id_param or projeto[f"{tipo}_versao_atual_id"]
+    if not versao_id:
+        return None, []
+    versao = db.query_one(
+        f"""SELECT v.*, u.nome AS criado_por_nome FROM lista_{tipo}_versoes v
+            LEFT JOIN usuarios u ON u.id = v.criado_por WHERE v.id = %s""",
+        (versao_id,),
+    )
+    itens = db.query_all(
+        f"""SELECT i.*, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
+            FROM lista_{tipo}_itens i JOIN materiais m ON m.id = i.material_id
+            WHERE i.versao_id = %s ORDER BY m.codigo""",
+        (versao_id,),
+    )
+    return versao, itens
+
+
 # =========================================================
 # RELATÓRIO — LISTA PQ
 # =========================================================
@@ -689,13 +710,7 @@ def relatorio_lista_pq_excel(projeto_id):
     if not ctx:
         return jsonify({"erro": "Projeto não encontrado"}), 404
     projeto, config = ctx["projeto"], ctx["config"]
-    versao_id = request.args.get("versao_id", type=int) or projeto["pq_versao_atual_id"]
-    versao = db.query_one("SELECT v.*, u.nome AS criado_por_nome FROM lista_pq_versoes v LEFT JOIN usuarios u ON u.id = v.criado_por WHERE v.id = %s", (versao_id,)) if versao_id else None
-    itens = db.query_all(
-        """SELECT i.*, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
-           FROM lista_pq_itens i JOIN materiais m ON m.id = i.material_id
-           WHERE i.versao_id = %s ORDER BY m.codigo""", (versao_id,),
-    ) if versao_id else []
+    versao, itens = _carregar_versao_itens(projeto, request.args.get("versao_id", type=int), "pq")
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -752,13 +767,7 @@ def relatorio_lista_pq_pdf(projeto_id):
     if not ctx:
         return jsonify({"erro": "Projeto não encontrado"}), 404
     projeto, config = ctx["projeto"], ctx["config"]
-    versao_id = request.args.get("versao_id", type=int) or projeto["pq_versao_atual_id"]
-    versao = db.query_one("SELECT v.*, u.nome AS criado_por_nome FROM lista_pq_versoes v LEFT JOIN usuarios u ON u.id = v.criado_por WHERE v.id = %s", (versao_id,)) if versao_id else None
-    itens = db.query_all(
-        """SELECT i.*, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
-           FROM lista_pq_itens i JOIN materiais m ON m.id = i.material_id
-           WHERE i.versao_id = %s ORDER BY m.codigo""", (versao_id,),
-    ) if versao_id else []
+    versao, itens = _carregar_versao_itens(projeto, request.args.get("versao_id", type=int), "pq")
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.2 * cm, bottomMargin=1.2 * cm,
@@ -798,13 +807,7 @@ def relatorio_lista_compras_excel(projeto_id):
     if not ctx:
         return jsonify({"erro": "Projeto não encontrado"}), 404
     projeto, config = ctx["projeto"], ctx["config"]
-    versao_id = request.args.get("versao_id", type=int) or projeto["compras_versao_atual_id"]
-    versao = db.query_one("SELECT v.*, u.nome AS criado_por_nome FROM lista_compras_versoes v LEFT JOIN usuarios u ON u.id = v.criado_por WHERE v.id = %s", (versao_id,)) if versao_id else None
-    itens = db.query_all(
-        """SELECT i.*, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
-           FROM lista_compras_itens i JOIN materiais m ON m.id = i.material_id
-           WHERE i.versao_id = %s ORDER BY m.codigo""", (versao_id,),
-    ) if versao_id else []
+    versao, itens = _carregar_versao_itens(projeto, request.args.get("versao_id", type=int), "compras")
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -859,13 +862,7 @@ def relatorio_lista_compras_pdf(projeto_id):
     if not ctx:
         return jsonify({"erro": "Projeto não encontrado"}), 404
     projeto, config = ctx["projeto"], ctx["config"]
-    versao_id = request.args.get("versao_id", type=int) or projeto["compras_versao_atual_id"]
-    versao = db.query_one("SELECT v.*, u.nome AS criado_por_nome FROM lista_compras_versoes v LEFT JOIN usuarios u ON u.id = v.criado_por WHERE v.id = %s", (versao_id,)) if versao_id else None
-    itens = db.query_all(
-        """SELECT i.*, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
-           FROM lista_compras_itens i JOIN materiais m ON m.id = i.material_id
-           WHERE i.versao_id = %s ORDER BY m.codigo""", (versao_id,),
-    ) if versao_id else []
+    versao, itens = _carregar_versao_itens(projeto, request.args.get("versao_id", type=int), "compras")
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.2 * cm, bottomMargin=1.2 * cm,

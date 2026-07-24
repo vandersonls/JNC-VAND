@@ -1260,6 +1260,24 @@ function formatarQuantidade(valor, unidade) {
   return Math.round(numero).toLocaleString("pt-BR");
 }
 
+// ---------- ÁRVORE DE VERSÕES (compartilhado entre Lista PQ e Lista de Compras) ----------
+// PQ e Compras têm shape de dados diferente (origens em lista plana vs. PQ→origens
+// aninhado), então só a mecânica de expandir/renderizar o container é compartilhada;
+// a montagem de cada nó (renderNoPQ/renderNoCompras) continua separada.
+function _renderArvore(containerId, mensagemVazia, versoes, estado, renderNoFn) {
+  estado.versoes = versoes;
+  const cont = document.getElementById(containerId);
+  cont.innerHTML = versoes.length
+    ? versoes.map(renderNoFn).join("")
+    : `<div class="arvore-vazio">${mensagemVazia}</div>`;
+}
+
+function _toggleArvore(estado, versaoId, renderArvoreFn) {
+  if (estado.expandidas.has(versaoId)) estado.expandidas.delete(versaoId);
+  else estado.expandidas.add(versaoId);
+  renderArvoreFn(estado.versoes);
+}
+
 // ---------- LISTA PQ ----------
 const pqArvoreState = { versoes: [], expandidas: new Set() };
 
@@ -1273,11 +1291,7 @@ async function carregarListaPQ() {
 }
 
 function renderArvorePQ(versoes) {
-  pqArvoreState.versoes = versoes;
-  const cont = document.getElementById("arvore-pq");
-  cont.innerHTML = versoes.length
-    ? versoes.map(renderNoPQ).join("")
-    : `<div class="arvore-vazio">Nenhuma versão da Lista PQ salva ainda.</div>`;
+  _renderArvore("arvore-pq", "Nenhuma versão da Lista PQ salva ainda.", versoes, pqArvoreState, renderNoPQ);
 }
 
 function renderNoPQ(v) {
@@ -1312,9 +1326,7 @@ function renderNoPQ(v) {
 }
 
 function toggleArvorePQ(versaoId) {
-  if (pqArvoreState.expandidas.has(versaoId)) pqArvoreState.expandidas.delete(versaoId);
-  else pqArvoreState.expandidas.add(versaoId);
-  renderArvorePQ(pqArvoreState.versoes);
+  _toggleArvore(pqArvoreState, versaoId, renderArvorePQ);
 }
 
 async function verVersaoPQ(versaoId) {
@@ -1443,11 +1455,7 @@ async function carregarListaCompras() {
 }
 
 function renderArvoreCompras(versoes) {
-  comprasArvoreState.versoes = versoes;
-  const cont = document.getElementById("arvore-compras");
-  cont.innerHTML = versoes.length
-    ? versoes.map(renderNoCompras).join("")
-    : `<div class="arvore-vazio">Nenhuma versão da Lista de Compras salva ainda.</div>`;
+  _renderArvore("arvore-compras", "Nenhuma versão da Lista de Compras salva ainda.", versoes, comprasArvoreState, renderNoCompras);
 }
 
 function renderNoCompras(v) {
@@ -1491,9 +1499,7 @@ function renderNoCompras(v) {
 }
 
 function toggleArvoreCompras(versaoId) {
-  if (comprasArvoreState.expandidas.has(versaoId)) comprasArvoreState.expandidas.delete(versaoId);
-  else comprasArvoreState.expandidas.add(versaoId);
-  renderArvoreCompras(comprasArvoreState.versoes);
+  _toggleArvore(comprasArvoreState, versaoId, renderArvoreCompras);
 }
 
 async function verVersaoCompras(versaoId) {

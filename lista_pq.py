@@ -75,13 +75,30 @@ def base_lista_pq(projeto_id):
     return jsonify(linhas)
 
 
-def _carregar_origens(versao_id):
-    return db.query_all(
-        """SELECT lista_desenho_id, numero_desenho, titulo, versao_numero
-           FROM lista_pq_origens WHERE pq_versao_id = %s
-           ORDER BY numero_desenho""",
-        (versao_id,),
+def _carregar_origens_em_lote(versao_ids):
+    """Retorna {pq_versao_id: [origens]} para vários IDs de versão de uma vez
+    (1 consulta), em vez de 1 consulta por versão (N+1)."""
+    versao_ids = [v for v in versao_ids if v]
+    if not versao_ids:
+        return {}
+    placeholders = ", ".join(["%s"] * len(versao_ids))
+    rows = db.query_all(
+        f"""SELECT pq_versao_id, lista_desenho_id, numero_desenho, titulo, versao_numero
+            FROM lista_pq_origens WHERE pq_versao_id IN ({placeholders})
+            ORDER BY numero_desenho""",
+        tuple(versao_ids),
     )
+    agrupado = {}
+    for r in rows:
+        agrupado.setdefault(r["pq_versao_id"], []).append({
+            "lista_desenho_id": r["lista_desenho_id"], "numero_desenho": r["numero_desenho"],
+            "titulo": r["titulo"], "versao_numero": r["versao_numero"],
+        })
+    return agrupado
+
+
+def _carregar_origens(versao_id):
+    return _carregar_origens_em_lote([versao_id]).get(versao_id, [])
 
 
 @lista_pq_bp.get("/api/projetos/<int:projeto_id>/lista-pq/versoes")
@@ -95,8 +112,9 @@ def listar_versoes_pq(projeto_id):
            WHERE v.projeto_id = %s ORDER BY v.versao DESC""",
         (projeto_id,),
     )
+    origens_por_versao = _carregar_origens_em_lote([r["id"] for r in rows])
     for row in rows:
-        row["origens"] = _carregar_origens(row["id"])
+        row["origens"] = origens_por_versao.get(row["id"], [])
     return jsonify(rows)
 
 

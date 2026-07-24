@@ -78,21 +78,41 @@ def base_lista_compras(projeto_id):
     return jsonify(linhas)
 
 
+def _carregar_origens_pq_em_lote(pq_versao_ids):
+    """Retorna {pq_versao_id: {id, versao, criado_em, origens:[...]}} para
+    vários IDs de uma vez (2 consultas no total), em vez de 2 consultas por
+    linha (N+1) - usado ao listar várias versões da Lista de Compras."""
+    pq_versao_ids = [v for v in pq_versao_ids if v]
+    if not pq_versao_ids:
+        return {}
+    placeholders = ", ".join(["%s"] * len(pq_versao_ids))
+    versoes = db.query_all(
+        f"SELECT id, versao, criado_em FROM lista_pq_versoes WHERE id IN ({placeholders})",
+        tuple(pq_versao_ids),
+    )
+    origens_rows = db.query_all(
+        f"""SELECT pq_versao_id, lista_desenho_id, numero_desenho, titulo, versao_numero
+            FROM lista_pq_origens WHERE pq_versao_id IN ({placeholders})
+            ORDER BY numero_desenho""",
+        tuple(pq_versao_ids),
+    )
+    origens_por_versao = {}
+    for r in origens_rows:
+        origens_por_versao.setdefault(r["pq_versao_id"], []).append({
+            "lista_desenho_id": r["lista_desenho_id"], "numero_desenho": r["numero_desenho"],
+            "titulo": r["titulo"], "versao_numero": r["versao_numero"],
+        })
+    resultado = {}
+    for v in versoes:
+        v["origens"] = origens_por_versao.get(v["id"], [])
+        resultado[v["id"]] = v
+    return resultado
+
+
 def _carregar_origem_pq(pq_versao_id):
     if not pq_versao_id:
         return None
-    versao_pq = db.query_one(
-        "SELECT id, versao, criado_em FROM lista_pq_versoes WHERE id = %s", (pq_versao_id,)
-    )
-    if not versao_pq:
-        return None
-    versao_pq["origens"] = db.query_all(
-        """SELECT lista_desenho_id, numero_desenho, titulo, versao_numero
-           FROM lista_pq_origens WHERE pq_versao_id = %s
-           ORDER BY numero_desenho""",
-        (pq_versao_id,),
-    )
-    return versao_pq
+    return _carregar_origens_pq_em_lote([pq_versao_id]).get(pq_versao_id)
 
 
 @lista_compras_bp.get("/api/projetos/<int:projeto_id>/lista-compras/versoes")
@@ -106,8 +126,9 @@ def listar_versoes_compras(projeto_id):
            WHERE v.projeto_id = %s ORDER BY v.versao DESC""",
         (projeto_id,),
     )
+    origem_pq_por_versao = _carregar_origens_pq_em_lote([r["pq_versao_id"] for r in rows])
     for row in rows:
-        row["origem_pq"] = _carregar_origem_pq(row["pq_versao_id"])
+        row["origem_pq"] = origem_pq_por_versao.get(row["pq_versao_id"])
     return jsonify(rows)
 
 
