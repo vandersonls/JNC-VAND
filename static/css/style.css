@@ -135,12 +135,16 @@ body {
 .subtab.ativo { display: block; }
 .subtab-pd { display: none; }
 .subtab-pd.ativo { display: block; }
+.subnav-pd-linha { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 24px 0 10px; }
+.subnav-pd-linha .subtitulo-arvore { margin: 0; }
+.subnav-pd { display: flex; border: 1px solid var(--azul); border-radius: 8px; overflow: hidden; }
 .subnav-item-pd {
-  background: none; border: none; padding: 10px 16px; font-size: 13px; cursor: pointer; color: var(--cinza);
-  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  background: var(--branco); border: none; border-right: 1px solid var(--azul); padding: 8px 18px;
+  font-size: 13px; cursor: pointer; color: var(--azul); min-width: 150px; text-align: center;
 }
-.subnav-item-pd:hover { color: var(--azul); }
-.subnav-item-pd.ativo { color: var(--azul); border-bottom-color: var(--azul); font-weight: 600; }
+.subnav-item-pd:last-child { border-right: none; }
+.subnav-item-pd:hover { background: #f0f4f9; }
+.subnav-item-pd.ativo { background: var(--azul); color: white; font-weight: 600; }
 .info-versao { color: var(--cinza); font-size: 13px; margin: 4px 0 14px; }
 .info-versao b { color: #1c1f26; }
 
