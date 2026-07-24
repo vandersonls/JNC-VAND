@@ -244,6 +244,10 @@ h2 { margin-top: 0; color: var(--azul); }
   display: inline-block; margin-left: 6px; font-size: 10px; text-transform: uppercase; font-weight: 700;
   color: #8a6100; background: #ffe6a3; padding: 1px 6px; border-radius: 20px;
 }
+.badge-rascunho {
+  display: inline-block; margin-left: 6px; font-size: 10px; text-transform: uppercase; font-weight: 700;
+  color: #8a6100; background: #ffe6a3; padding: 1px 6px; border-radius: 20px;
+}
 
 .linha-filtros-coluna th { padding: 6px 10px; background: #f7f8fa; }
 .linha-filtros-coluna:hover td, .linha-filtros-coluna:hover th { background: #f7f8fa; }

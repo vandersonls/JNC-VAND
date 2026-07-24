@@ -5,6 +5,7 @@ import db
 from auth import perfis_permitidos
 from auditoria import registrar
 from areas import areas_permitidas, area_permitida, projeto_permitido, projeto_da_lista, projeto_da_versao_desenho
+from versionamento import salvar_versao, obter_rascunho
 
 projetos_bp = Blueprint("projetos", __name__)
 
@@ -123,7 +124,9 @@ def listar_listas(projeto_id):
     if not projeto_permitido(projeto_id):
         return jsonify({"erro": "Sem permissão para acessar este projeto"}), 403
     rows = db.query_all(
-        """SELECT ld.*, v.versao AS versao_atual, v.criado_em AS versao_criado_em
+        """SELECT ld.*, v.versao AS versao_atual, v.criado_em AS versao_criado_em,
+                  EXISTS(SELECT 1 FROM lista_desenho_versoes r
+                         WHERE r.lista_desenho_id = ld.id AND r.status = 'rascunho') AS tem_rascunho
            FROM listas_desenho ld
            LEFT JOIN lista_desenho_versoes v ON v.id = ld.versao_atual_id
            WHERE ld.projeto_id = %s
@@ -157,7 +160,12 @@ def obter_lista(lista_id):
     if lista["versao_atual_id"]:
         versao = db.query_one("SELECT * FROM lista_desenho_versoes WHERE id = %s", (lista["versao_atual_id"],))
         itens = _carregar_itens(lista["versao_atual_id"])
-    return jsonify({"lista": lista, "versao": versao, "itens": itens})
+    rascunho = obter_rascunho("lista_desenho_versoes", "lista_desenho_id", lista_id)
+    itens_rascunho = _carregar_itens(rascunho["id"]) if rascunho else []
+    return jsonify({
+        "lista": lista, "versao": versao, "itens": itens,
+        "rascunho": rascunho, "itens_rascunho": itens_rascunho,
+    })
 
 
 @projetos_bp.get("/api/listas/<int:lista_id>/versoes")
@@ -212,6 +220,7 @@ def criar_lista(projeto_id):
         return jsonify({"erro": "Número do desenho é obrigatório"}), 400
     if not projeto_permitido(projeto_id):
         return jsonify({"erro": "Sem permissão para criar listas neste projeto"}), 403
+    status = "rascunho" if data.get("status") == "rascunho" else "salvo"
 
     lista_id = db.execute(
         """INSERT INTO listas_desenho (projeto_id, numero_desenho, titulo, numero_cliente, numero_fornecedor,
@@ -225,31 +234,34 @@ def criar_lista(projeto_id):
             data.get("aprovador_nome", ""), data.get("aprovador_sigla", ""),
         ),
     )
-    versao_id = db.execute(
-        """INSERT INTO lista_desenho_versoes (lista_desenho_id, versao, status, observacoes, criado_por)
-           VALUES (%s, 1, 'salvo', %s, %s)""",
-        (lista_id, data.get("observacoes", ""), current_user.id),
+    versao_id, numero_versao = salvar_versao(
+        "lista_desenho_versoes", "lista_desenho_id", lista_id, status,
+        data.get("observacoes", ""), current_user.id,
     )
     _salvar_itens(versao_id, data.get("itens"))
-    db.execute("UPDATE listas_desenho SET versao_atual_id = %s WHERE id = %s", (versao_id, lista_id))
+    if status == "salvo":
+        db.execute("UPDATE listas_desenho SET versao_atual_id = %s WHERE id = %s", (versao_id, lista_id))
     registrar(
         "criar", "lista_desenho", lista_id,
-        f"Criou a lista por desenho {numero_desenho} (v1) no projeto #{projeto_id}",
+        f"Criou a lista por desenho {numero_desenho} (v{numero_versao}{'' if status == 'salvo' else ', rascunho'}) no projeto #{projeto_id}",
         depois=data,
     )
-    return jsonify({"id": lista_id, "versao_id": versao_id}), 201
+    return jsonify({"id": lista_id, "versao_id": versao_id, "versao": numero_versao, "status": status}), 201
 
 
 @projetos_bp.put("/api/listas/<int:lista_id>")
 @perfis_permitidos("master", "administrador")
 def editar_lista(lista_id):
-    """Salva uma edição: mantém a versão anterior intacta e cria uma nova versão."""
+    """Salva uma edição. Emitida (status='salvo'), mantém a versão anterior
+    intacta e cria uma nova versão. Rascunho: reaproveita o rascunho em
+    aberto (se houver) em vez de acumular um a cada pausa no trabalho."""
     data = request.get_json(force=True) or {}
     lista = db.query_one("SELECT * FROM listas_desenho WHERE id = %s", (lista_id,))
     if not lista:
         return jsonify({"erro": "Lista não encontrada"}), 404
     if not projeto_permitido(lista["projeto_id"]):
         return jsonify({"erro": "Sem permissão para editar esta lista"}), 403
+    status = "rascunho" if data.get("status") == "rascunho" else "salvo"
 
     campos_cabecalho = (
         "titulo", "numero_desenho", "numero_cliente", "numero_fornecedor",
@@ -272,26 +284,21 @@ def editar_lista(lista_id):
             ),
         )
 
-    ultima = db.query_one(
-        "SELECT MAX(versao) AS max_versao FROM lista_desenho_versoes WHERE lista_desenho_id = %s",
-        (lista_id,),
+    versao_id, numero_versao = salvar_versao(
+        "lista_desenho_versoes", "lista_desenho_id", lista_id, status,
+        data.get("observacoes", ""), current_user.id,
     )
-    proxima_versao = (ultima["max_versao"] or 0) + 1
-
-    versao_id = db.execute(
-        """INSERT INTO lista_desenho_versoes (lista_desenho_id, versao, status, observacoes, criado_por)
-           VALUES (%s, %s, 'salvo', %s, %s)""",
-        (lista_id, proxima_versao, data.get("observacoes", ""), current_user.id),
-    )
+    db.execute("DELETE FROM lista_desenho_itens WHERE versao_id = %s", (versao_id,))
     _salvar_itens(versao_id, data.get("itens"))
-    db.execute("UPDATE listas_desenho SET versao_atual_id = %s WHERE id = %s", (versao_id, lista_id))
+    if status == "salvo":
+        db.execute("UPDATE listas_desenho SET versao_atual_id = %s WHERE id = %s", (versao_id, lista_id))
 
     registrar(
-        "editar", "lista_desenho", lista_id,
-        f"Salvou nova versão (v{proxima_versao}) da lista {lista['numero_desenho']}, mantendo as anteriores",
+        "editar" if status == "salvo" else "rascunho", "lista_desenho", lista_id,
+        f"{'Emitiu' if status == 'salvo' else 'Salvou o rascunho d'}a versão v{numero_versao} da lista {lista['numero_desenho']}",
         depois=data,
     )
-    return jsonify({"id": lista_id, "versao_id": versao_id, "versao": proxima_versao})
+    return jsonify({"id": lista_id, "versao_id": versao_id, "versao": numero_versao, "status": status})
 
 
 @projetos_bp.delete("/api/listas/<int:lista_id>")

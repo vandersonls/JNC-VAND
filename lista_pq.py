@@ -5,6 +5,7 @@ import db
 from auth import perfis_permitidos
 from auditoria import registrar
 from areas import projeto_permitido
+from versionamento import salvar_versao, obter_rascunho
 
 lista_pq_bp = Blueprint("lista_pq", __name__)
 
@@ -130,27 +131,38 @@ def obter_versao_pq(versao_id):
     return jsonify({"versao": versao, "itens": _carregar_itens(versao_id)})
 
 
+@lista_pq_bp.get("/api/projetos/<int:projeto_id>/lista-pq/rascunho")
+@login_required
+def obter_rascunho_pq(projeto_id):
+    """Rascunho em aberto da Lista PQ do projeto (se houver), para retomar o
+    trabalho de onde parou em vez de recomeçar do zero."""
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para acessar este projeto"}), 403
+    versao = obter_rascunho("lista_pq_versoes", "projeto_id", projeto_id)
+    if not versao:
+        return jsonify({"versao": None, "itens": [], "origens": []})
+    return jsonify({"versao": versao, "itens": _carregar_itens(versao["id"]), "origens": _carregar_origens(versao["id"])})
+
+
 @lista_pq_bp.post("/api/projetos/<int:projeto_id>/lista-pq")
 @perfis_permitidos("master", "administrador")
 def salvar_lista_pq(projeto_id):
-    """Sempre cria uma NOVA versão (a anterior nunca é alterada)."""
+    """Emitida (status='salvo'): cria uma NOVA versão (a anterior nunca é
+    alterada). Rascunho: reaproveita o rascunho em aberto, se houver, em vez
+    de acumular um a cada pausa no trabalho."""
     if not projeto_permitido(projeto_id):
         return jsonify({"erro": "Sem permissão para salvar neste projeto"}), 403
     data = request.get_json(force=True) or {}
     itens = data.get("itens") or []
     if not itens:
         return jsonify({"erro": "A Lista PQ precisa ter pelo menos um item"}), 400
+    status = "rascunho" if data.get("status") == "rascunho" else "salvo"
 
-    ultima = db.query_one(
-        "SELECT MAX(versao) AS max_versao FROM lista_pq_versoes WHERE projeto_id = %s", (projeto_id,)
+    versao_id, numero_versao = salvar_versao(
+        "lista_pq_versoes", "projeto_id", projeto_id, status,
+        data.get("observacoes", ""), current_user.id,
     )
-    proxima_versao = (ultima["max_versao"] or 0) + 1
-
-    versao_id = db.execute(
-        """INSERT INTO lista_pq_versoes (projeto_id, versao, status, observacoes, criado_por)
-           VALUES (%s, %s, 'salvo', %s, %s)""",
-        (projeto_id, proxima_versao, data.get("observacoes", ""), current_user.id),
-    )
+    db.execute("DELETE FROM lista_pq_itens WHERE versao_id = %s", (versao_id,))
     for item in itens:
         quantidade_base = float(item.get("quantidade_base", 0))
         percentual = float(item.get("percentual", 0))
@@ -162,7 +174,8 @@ def salvar_lista_pq(projeto_id):
                VALUES (%s, %s, %s, %s, %s, %s)""",
             (versao_id, item["material_id"], quantidade_base, percentual, quantidade_atualizada, item.get("observacao", "")),
         )
-    db.execute("UPDATE projetos SET pq_versao_atual_id = %s WHERE id = %s", (versao_id, projeto_id))
+    if status == "salvo":
+        db.execute("UPDATE projetos SET pq_versao_atual_id = %s WHERE id = %s", (versao_id, projeto_id))
 
     lista_ids = data.get("lista_ids") or []
     filtro_listas = ""
@@ -179,6 +192,7 @@ def salvar_lista_pq(projeto_id):
             WHERE ld.projeto_id = %s {filtro_listas}""",
         tuple(params),
     )
+    db.execute("DELETE FROM lista_pq_origens WHERE pq_versao_id = %s", (versao_id,))
     for origem in origens:
         db.execute(
             """INSERT INTO lista_pq_origens
@@ -189,8 +203,8 @@ def salvar_lista_pq(projeto_id):
         )
 
     registrar(
-        "criar", "lista_pq", projeto_id,
-        f"Salvou a Lista PQ v{proxima_versao} do projeto #{projeto_id}",
+        "criar" if status == "salvo" else "rascunho", "lista_pq", projeto_id,
+        f"{'Emitiu' if status == 'salvo' else 'Salvou o rascunho d'}a Lista PQ v{numero_versao} do projeto #{projeto_id}",
         depois=data,
     )
-    return jsonify({"versao_id": versao_id, "versao": proxima_versao}), 201
+    return jsonify({"versao_id": versao_id, "versao": numero_versao, "status": status}), 201

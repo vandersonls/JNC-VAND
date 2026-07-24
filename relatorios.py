@@ -494,17 +494,7 @@ def relatorio_pdf(lista_id):
     elementos.append(Spacer(1, 4))
     elementos.append(tabela_rodape)
 
-    def marca_dagua(canvas, _doc):
-        if not rascunho:
-            return
-        canvas.saveState()
-        canvas.setFont("Helvetica-Bold", 70)
-        canvas.setFillColor(colors.Color(0.85, 0.2, 0.2, alpha=0.15))
-        canvas.translate(doc.pagesize[0] / 2, doc.pagesize[1] / 2)
-        canvas.rotate(35)
-        canvas.drawCentredString(0, 0, "PRELIMINAR")
-        canvas.restoreState()
-
+    marca_dagua = _marca_dagua_preliminar(doc, rascunho)
     doc.build(elementos, onFirstPage=marca_dagua, onLaterPages=marca_dagua)
     buf.seek(0)
     nome_arquivo = f"lista_{lista['numero_desenho']}_rev{versao['versao'] if versao else 0}.pdf"
@@ -679,6 +669,22 @@ def _carregar_projeto_para_relatorio(projeto_id):
     return {"projeto": projeto, "config": config}
 
 
+def _marca_dagua_preliminar(doc, ativa):
+    """Callback onFirstPage/onLaterPages que carimba 'PRELIMINAR' na diagonal
+    quando a versão exibida ainda é um rascunho (não emitida)."""
+    def desenhar(canvas, _doc):
+        if not ativa:
+            return
+        canvas.saveState()
+        canvas.setFont("Helvetica-Bold", 70)
+        canvas.setFillColor(colors.Color(0.85, 0.2, 0.2, alpha=0.15))
+        canvas.translate(doc.pagesize[0] / 2, doc.pagesize[1] / 2)
+        canvas.rotate(35)
+        canvas.drawCentredString(0, 0, "PRELIMINAR")
+        canvas.restoreState()
+    return desenhar
+
+
 def _carregar_versao_itens(projeto, versao_id_param, tipo):
     """Carrega a versão (a informada ou, por padrão, a última salva) e seus
     itens para relatórios de Lista PQ ou Lista de Compras. tipo é sempre um
@@ -768,6 +774,7 @@ def relatorio_lista_pq_pdf(projeto_id):
         return jsonify({"erro": "Projeto não encontrado"}), 404
     projeto, config = ctx["projeto"], ctx["config"]
     versao, itens = _carregar_versao_itens(projeto, request.args.get("versao_id", type=int), "pq")
+    rascunho = bool(versao and versao["status"] == "rascunho")
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.2 * cm, bottomMargin=1.2 * cm,
@@ -792,7 +799,8 @@ def relatorio_lista_pq_pdf(projeto_id):
         alinhar_direita={0, 5, 6, 7, 8},
     )
     elementos.append(tabela)
-    doc.build(elementos)
+    marca_dagua = _marca_dagua_preliminar(doc, rascunho)
+    doc.build(elementos, onFirstPage=marca_dagua, onLaterPages=marca_dagua)
     buf.seek(0)
     return send_file(buf, as_attachment=True, download_name=f"lista_pq_{projeto['codigo']}.pdf", mimetype="application/pdf")
 
@@ -863,6 +871,7 @@ def relatorio_lista_compras_pdf(projeto_id):
         return jsonify({"erro": "Projeto não encontrado"}), 404
     projeto, config = ctx["projeto"], ctx["config"]
     versao, itens = _carregar_versao_itens(projeto, request.args.get("versao_id", type=int), "compras")
+    rascunho = bool(versao and versao["status"] == "rascunho")
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.2 * cm, bottomMargin=1.2 * cm,
@@ -887,6 +896,7 @@ def relatorio_lista_compras_pdf(projeto_id):
         alinhar_direita={0, 5, 6},
     )
     elementos.append(tabela)
-    doc.build(elementos)
+    marca_dagua = _marca_dagua_preliminar(doc, rascunho)
+    doc.build(elementos, onFirstPage=marca_dagua, onLaterPages=marca_dagua)
     buf.seek(0)
     return send_file(buf, as_attachment=True, download_name=f"lista_compras_{projeto['codigo']}.pdf", mimetype="application/pdf")

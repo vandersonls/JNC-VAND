@@ -851,7 +851,7 @@ function renderNoLista(l) {
         ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleListaArvore(${l.id})">
           <span class="arvore-titulo">${esc(l.numero_cliente || "-")} / ${esc(l.numero_fornecedor || "-")}${l.titulo ? " — " + esc(l.titulo) : ""}</span>
-          <span class="arvore-sub">${l.versao_atual ? "v" + l.versao_atual : "sem versão"}</span>
+          <span class="arvore-sub">${l.versao_atual ? "v" + l.versao_atual : "sem versão emitida"}${l.tem_rascunho ? '<span class="badge-rascunho">Rascunho em aberto</span>' : ""}</span>
         </span>
         <span class="arvore-acoes">
           <button class="link-acao" onclick="abrirEditorLista(${l.id})">Abrir</button>
@@ -874,7 +874,7 @@ function renderFilhosVersoes(listaId, versoes) {
       <span class="arvore-toggle invisivel"></span>
       ${ICONE_ARQUIVO}
       <span class="arvore-label" onclick="verVersao(${listaId}, ${v.id})">
-        <span class="arvore-titulo">v${v.versao}</span>
+        <span class="arvore-titulo">v${v.versao}${v.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}</span>
         <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${esc(v.criado_por_nome || "-")}</span>
       </span>
       <span class="arvore-acoes">
@@ -931,13 +931,16 @@ function esc(texto) { return escapeHtml(texto); }
 async function abrirEditorLista(listaId) {
   if (!state.materiais.length) state.materiais = await api("/api/materiais");
   const dados = await api(`/api/listas/${listaId}`);
-  const itensIniciais = dados.itens.map((i) => ({
+  const temRascunho = !!dados.rascunho;
+  const itensBase = temRascunho ? dados.itens_rascunho : dados.itens;
+  const itensIniciais = itensBase.map((i) => ({
     material_id: i.material_id, codigo: i.codigo, descricao: i.descricao,
     fabricante: i.fabricante, bitola: i.bitola, unidade: i.unidade,
     quantidade: Math.round(Number(i.quantidade)) || 0, observacao: i.observacao || "",
   }));
   window._itensEditor = itensIniciais;
 
+  if (temRascunho) toast(`Continuando o rascunho salvo em ${new Date(dados.rascunho.criado_em).toLocaleString("pt-BR")}`);
   renderCabecalhoLista(listaId, dados.lista);
 }
 
@@ -1180,7 +1183,8 @@ function renderReviewLista(listaId, lista) {
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
       <button class="btn-secundario" id="btn-voltar-editor-desenho">Voltar</button>
-      <button class="btn-primario somente-admin" id="btn-salvar-editor-desenho">Salvar nova versão</button>
+      <button class="btn-secundario somente-admin" id="btn-salvar-rascunho-desenho">Salvar rascunho</button>
+      <button class="btn-primario somente-admin" id="btn-emitir-desenho">Emitir versão</button>
     </div>
   `, "modal-grande");
   aplicarPermissoes();
@@ -1191,10 +1195,11 @@ function renderReviewLista(listaId, lista) {
     });
   });
   document.getElementById("btn-voltar-editor-desenho").addEventListener("click", () => renderEditorLista(listaId, { ...lista, ...window._editorCabecalho }));
-  document.getElementById("btn-salvar-editor-desenho").addEventListener("click", () => salvarEditorLista(listaId));
+  document.getElementById("btn-salvar-rascunho-desenho").addEventListener("click", () => salvarEditorLista(listaId, "rascunho"));
+  document.getElementById("btn-emitir-desenho").addEventListener("click", () => salvarEditorLista(listaId, "salvo"));
 }
 
-async function salvarEditorLista(listaId) {
+async function salvarEditorLista(listaId, status) {
   const itens = (window._itensEditor || []).filter((i) => i.material_id);
   const cabecalho = window._editorCabecalho || {};
   const payload = {
@@ -1208,16 +1213,17 @@ async function salvarEditorLista(listaId) {
     verificador_sigla: cabecalho.verificador_sigla,
     aprovador_nome: cabecalho.aprovador_nome,
     aprovador_sigla: cabecalho.aprovador_sigla,
+    status,
     itens: itens.map((i) => ({ material_id: Number(i.material_id), quantidade: Math.round(Number(i.quantidade)) || 0, observacao: i.observacao || "" })),
   };
+  const mensagem = status === "rascunho" ? "Rascunho salvo" : "Versão emitida com sucesso";
   try {
     if (listaId) {
       await api(`/api/listas/${listaId}`, { method: "PUT", body: JSON.stringify(payload) });
-      toast("Nova versão salva com sucesso");
     } else {
       await api(`/api/projetos/${state.projetoAtual.id}/listas`, { method: "POST", body: JSON.stringify(payload) });
-      toast("Lista criada com sucesso");
     }
+    toast(mensagem);
     fecharModal();
     carregarListas(state.projetoAtual.id);
   } catch (err) { toast(err.message, "erro"); }
@@ -1232,7 +1238,7 @@ async function verVersao(listaId, versaoId) {
     lista.aprovador_nome ? `Aprovado por: ${esc(lista.aprovador_nome)}${lista.aprovador_sigla ? ` (${esc(lista.aprovador_sigla)})` : ""}` : "",
   ].filter(Boolean).join(" &nbsp;|&nbsp; ");
   abrirModal(`
-    <h3>Lista por Desenho — ${esc(lista.numero_desenho || "-")} (Versão ${dados.versao.versao})</h3>
+    <h3>Lista por Desenho — ${esc(lista.numero_desenho || "-")} (Versão ${dados.versao.versao})${dados.versao.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}</h3>
     <div class="info-versao">
       Título: <b>${esc(lista.titulo || "-")}</b> &nbsp;|&nbsp; Nº Cliente: <b>${esc(lista.numero_cliente || "-")}</b> &nbsp;|&nbsp; Nº Fornecedor: <b>${esc(lista.numero_fornecedor || "-")}</b><br>
       ${assinaturas ? assinaturas + "<br>" : ""}
@@ -1296,12 +1302,15 @@ function _toggleArvore(estado, versaoId, renderArvoreFn) {
 const pqArvoreState = { versoes: [], expandidas: new Set() };
 
 async function carregarListaPQ() {
-  const [dados, versoes] = await Promise.all([
+  const [dados, versoes, rascunho] = await Promise.all([
     api(`/api/projetos/${state.projetoAtual.id}/lista-pq`),
     api(`/api/projetos/${state.projetoAtual.id}/lista-pq/versoes`),
+    api(`/api/projetos/${state.projetoAtual.id}/lista-pq/rascunho`),
   ]);
   renderTabelaPQ(dados.versao, dados.itens);
   renderArvorePQ(versoes);
+  window._pqRascunho = rascunho.versao ? rascunho : null;
+  document.getElementById("btn-continuar-rascunho-pq").classList.toggle("oculto", !window._pqRascunho);
 }
 
 function renderArvorePQ(versoes) {
@@ -1328,7 +1337,7 @@ function renderNoPQ(v) {
         <button class="arvore-toggle ${aberta ? "aberto" : ""}" onclick="toggleArvorePQ(${v.id})" aria-label="Expandir">${ICONE_SETA}</button>
         ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleArvorePQ(${v.id})">
-          <span class="arvore-titulo">v${v.versao}</span>
+          <span class="arvore-titulo">v${v.versao}${v.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}</span>
           <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${esc(v.criado_por_nome || "-")}</span>
         </span>
         <span class="arvore-acoes">
@@ -1346,7 +1355,7 @@ function toggleArvorePQ(versaoId) {
 async function verVersaoPQ(versaoId) {
   const dados = await api(`/api/lista-pq/versoes/${versaoId}`);
   mostrarItensVersaoGenerico(
-    `Lista PQ — versão ${dados.versao.versao}`, dados.itens,
+    `Lista PQ — versão ${dados.versao.versao}${dados.versao.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}`, dados.itens,
     ["codigo", "descricao", "fabricante", "bitola", "quantidade_base", "percentual", "quantidade_atualizada", "unidade"],
     ["Código", "Descrição", "Fabricante", "Bitola", "Qtd. Base", "%", "Qtd. Atualizada", "Unidade"],
   );
@@ -1390,6 +1399,21 @@ document.getElementById("btn-revisar-pq").addEventListener("click", async () => 
   renderModalRevisaoPQ();
 });
 
+// Retoma um rascunho da Lista PQ já em aberto, com os itens/percentuais
+// exatamente como estavam no último "Salvar rascunho" - pula a seleção de
+// listas e o recálculo da base, que já foram feitos antes da pausa.
+document.getElementById("btn-continuar-rascunho-pq").addEventListener("click", () => {
+  const r = window._pqRascunho;
+  if (!r) return;
+  window._pqListaIdsSelecionados = (r.origens || []).map((o) => o.lista_desenho_id);
+  window._pqDraft = r.itens.map((i) => ({
+    material_id: i.material_id, codigo: i.codigo, descricao: i.descricao, fabricante: i.fabricante,
+    bitola: i.bitola, unidade: i.unidade, quantidade_base: Number(i.quantidade_base),
+    percentual: Number(i.percentual), observacao: i.observacao || "",
+  }));
+  renderModalRevisaoPQ();
+});
+
 function renderModalRevisaoPQ() {
   const linhas = window._pqDraft.map((item, idx) => `
     <tr>
@@ -1420,7 +1444,8 @@ function renderModalRevisaoPQ() {
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
-      <button class="btn-primario" id="btn-salvar-versao-pq">Salvar nova versão</button>
+      <button class="btn-secundario" id="btn-salvar-rascunho-pq">Salvar rascunho</button>
+      <button class="btn-primario" id="btn-emitir-pq">Emitir versão</button>
     </div>
   `, "modal-grande");
 
@@ -1437,19 +1462,20 @@ function renderModalRevisaoPQ() {
     window._pqDraft.forEach((item) => { item.percentual = valor; });
     renderModalRevisaoPQ();
   });
-  document.getElementById("btn-salvar-versao-pq").addEventListener("click", salvarVersaoPQ);
+  document.getElementById("btn-salvar-rascunho-pq").addEventListener("click", () => salvarVersaoPQ("rascunho"));
+  document.getElementById("btn-emitir-pq").addEventListener("click", () => salvarVersaoPQ("salvo"));
 }
 
-async function salvarVersaoPQ() {
+async function salvarVersaoPQ(status) {
   const itens = window._pqDraft.map((item) => ({
     material_id: item.material_id, quantidade_base: item.quantidade_base, percentual: item.percentual,
     quantidade_atualizada: calcularQtdAtualizada(item), observacao: item.observacao || "",
   }));
   try {
     const lista_ids = window._pqListaIdsSelecionados || [];
-    await api(`/api/projetos/${state.projetoAtual.id}/lista-pq`, { method: "POST", body: JSON.stringify({ itens, lista_ids }) });
+    await api(`/api/projetos/${state.projetoAtual.id}/lista-pq`, { method: "POST", body: JSON.stringify({ itens, lista_ids, status }) });
     fecharModal();
-    toast("Nova versão da Lista PQ salva com sucesso");
+    toast(status === "rascunho" ? "Rascunho da Lista PQ salvo" : "Nova versão da Lista PQ emitida com sucesso");
     document.getElementById("btn-revisar-pq").classList.add("oculto");
     document.getElementById("btn-criar-pq").classList.remove("oculto");
     carregarListaPQ();
@@ -1460,12 +1486,15 @@ async function salvarVersaoPQ() {
 const comprasArvoreState = { versoes: [], expandidas: new Set() };
 
 async function carregarListaCompras() {
-  const [dados, versoes] = await Promise.all([
+  const [dados, versoes, rascunho] = await Promise.all([
     api(`/api/projetos/${state.projetoAtual.id}/lista-compras`),
     api(`/api/projetos/${state.projetoAtual.id}/lista-compras/versoes`),
+    api(`/api/projetos/${state.projetoAtual.id}/lista-compras/rascunho`),
   ]);
   renderTabelaCompras(dados.versao, dados.itens);
   renderArvoreCompras(versoes);
+  window._comprasRascunho = rascunho.versao ? rascunho : null;
+  document.getElementById("btn-continuar-rascunho-compras").classList.toggle("oculto", !window._comprasRascunho);
 }
 
 function renderArvoreCompras(versoes) {
@@ -1501,7 +1530,7 @@ function renderNoCompras(v) {
         <button class="arvore-toggle ${aberta ? "aberto" : ""}" onclick="toggleArvoreCompras(${v.id})" aria-label="Expandir">${ICONE_SETA}</button>
         ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleArvoreCompras(${v.id})">
-          <span class="arvore-titulo">v${v.versao}</span>
+          <span class="arvore-titulo">v${v.versao}${v.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}</span>
           <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${esc(v.criado_por_nome || "-")}</span>
         </span>
         <span class="arvore-acoes">
@@ -1519,7 +1548,7 @@ function toggleArvoreCompras(versaoId) {
 async function verVersaoCompras(versaoId) {
   const dados = await api(`/api/lista-compras/versoes/${versaoId}`);
   mostrarItensVersaoGenerico(
-    `Lista de Compras — versão ${dados.versao.versao}`, dados.itens,
+    `Lista de Compras — versão ${dados.versao.versao}${dados.versao.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}`, dados.itens,
     ["codigo", "descricao", "fabricante", "bitola", "quantidade", "unidade"],
     ["Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"],
   );
@@ -1550,6 +1579,18 @@ document.getElementById("btn-revisar-compras").addEventListener("click", async (
   renderModalRevisaoCompras();
 });
 
+// Retoma um rascunho da Lista de Compras já em aberto, com as quantidades
+// exatamente como estavam no último "Salvar rascunho".
+document.getElementById("btn-continuar-rascunho-compras").addEventListener("click", () => {
+  const r = window._comprasRascunho;
+  if (!r) return;
+  window._comprasDraft = r.itens.map((i) => ({
+    material_id: i.material_id, codigo: i.codigo, descricao: i.descricao, fabricante: i.fabricante,
+    bitola: i.bitola, unidade: i.unidade, quantidade: Number(i.quantidade), observacao: i.observacao || "",
+  }));
+  renderModalRevisaoCompras();
+});
+
 function renderModalRevisaoCompras() {
   const linhas = window._comprasDraft.map((item, idx) => `
     <tr>
@@ -1570,7 +1611,8 @@ function renderModalRevisaoCompras() {
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
-      <button class="btn-primario" id="btn-salvar-versao-compras">Salvar nova versão</button>
+      <button class="btn-secundario" id="btn-salvar-rascunho-compras">Salvar rascunho</button>
+      <button class="btn-primario" id="btn-emitir-compras">Emitir versão</button>
     </div>
   `, "modal-grande");
 
@@ -1579,17 +1621,18 @@ function renderModalRevisaoCompras() {
       window._comprasDraft[Number(input.dataset.idx)].quantidade = Math.round(Number(input.value)) || 0;
     });
   });
-  document.getElementById("btn-salvar-versao-compras").addEventListener("click", salvarVersaoCompras);
+  document.getElementById("btn-salvar-rascunho-compras").addEventListener("click", () => salvarVersaoCompras("rascunho"));
+  document.getElementById("btn-emitir-compras").addEventListener("click", () => salvarVersaoCompras("salvo"));
 }
 
-async function salvarVersaoCompras() {
+async function salvarVersaoCompras(status) {
   const itens = window._comprasDraft.map((item) => ({
     material_id: item.material_id, quantidade: Math.round(Number(item.quantidade)) || 0, observacao: item.observacao || "",
   }));
   try {
-    await api(`/api/projetos/${state.projetoAtual.id}/lista-compras`, { method: "POST", body: JSON.stringify({ itens }) });
+    await api(`/api/projetos/${state.projetoAtual.id}/lista-compras`, { method: "POST", body: JSON.stringify({ itens, status }) });
     fecharModal();
-    toast("Nova versão da Lista de Compras salva com sucesso");
+    toast(status === "rascunho" ? "Rascunho da Lista de Compras salvo" : "Nova versão da Lista de Compras emitida com sucesso");
     document.getElementById("btn-revisar-compras").classList.add("oculto");
     document.getElementById("btn-criar-compras").classList.remove("oculto");
     carregarListaCompras();
