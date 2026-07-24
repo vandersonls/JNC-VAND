@@ -739,7 +739,12 @@ async function abrirProjeto(id) {
   await carregarListas(id);
 }
 
+document.querySelectorAll(".subnav-item-pd").forEach((btn) => {
+  btn.addEventListener("click", () => ativarSubtabPD(btn.dataset.subtabPd));
+});
+
 function ativarSubtabPD(nome) {
+  document.querySelectorAll(".subnav-item-pd").forEach((b) => b.classList.toggle("ativo", b.dataset.subtabPd === nome));
   document.querySelectorAll(".subtab-pd").forEach((t) => t.classList.remove("ativo"));
   document.getElementById(`subtab-${nome}`).classList.add("ativo");
   if (nome === "pd-pq") {
@@ -852,8 +857,6 @@ function renderNoLista(l) {
           <button class="link-acao" onclick="abrirEditorLista(${l.id})">Abrir</button>
           <a class="link-acao" href="/api/listas/${l.id}/relatorio/excel" target="_blank">Excel</a>
           <a class="link-acao" href="/api/listas/${l.id}/relatorio/pdf" target="_blank">PDF</a>
-          <button class="link-acao" onclick="ativarSubtabPD('pd-pq')">Lista PQ</button>
-          <button class="link-acao" onclick="ativarSubtabPD('pd-compras')">Lista de Compras</button>
           <button class="link-acao somente-admin" onclick="excluirLista(${l.id})">Excluir</button>
         </span>
       </div>

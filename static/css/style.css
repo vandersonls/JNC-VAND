@@ -135,6 +135,12 @@ body {
 .subtab.ativo { display: block; }
 .subtab-pd { display: none; }
 .subtab-pd.ativo { display: block; }
+.subnav-item-pd {
+  background: none; border: none; padding: 10px 16px; font-size: 13px; cursor: pointer; color: var(--cinza);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.subnav-item-pd:hover { color: var(--azul); }
+.subnav-item-pd.ativo { color: var(--azul); border-bottom-color: var(--azul); font-weight: 600; }
 .info-versao { color: var(--cinza); font-size: 13px; margin: 4px 0 14px; }
 .info-versao b { color: #1c1f26; }
 
