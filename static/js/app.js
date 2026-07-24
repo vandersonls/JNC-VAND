@@ -1225,8 +1225,19 @@ async function salvarEditorLista(listaId) {
 
 async function verVersao(listaId, versaoId) {
   const dados = await api(`/api/versoes/${versaoId}`);
+  const lista = dados.lista || {};
+  const assinaturas = [
+    lista.elaborador_nome ? `Elaborado por: ${esc(lista.elaborador_nome)}${lista.elaborador_sigla ? ` (${esc(lista.elaborador_sigla)})` : ""}` : "",
+    lista.verificador_nome ? `Verificado por: ${esc(lista.verificador_nome)}${lista.verificador_sigla ? ` (${esc(lista.verificador_sigla)})` : ""}` : "",
+    lista.aprovador_nome ? `Aprovado por: ${esc(lista.aprovador_nome)}${lista.aprovador_sigla ? ` (${esc(lista.aprovador_sigla)})` : ""}` : "",
+  ].filter(Boolean).join(" &nbsp;|&nbsp; ");
   abrirModal(`
-    <h3>Versão ${dados.versao.versao}</h3>
+    <h3>Lista por Desenho — ${esc(lista.numero_desenho || "-")} (Versão ${dados.versao.versao})</h3>
+    <div class="info-versao">
+      Título: <b>${esc(lista.titulo || "-")}</b> &nbsp;|&nbsp; Nº Cliente: <b>${esc(lista.numero_cliente || "-")}</b> &nbsp;|&nbsp; Nº Fornecedor: <b>${esc(lista.numero_fornecedor || "-")}</b><br>
+      ${assinaturas ? assinaturas + "<br>" : ""}
+      Salva em ${new Date(dados.versao.criado_em).toLocaleString("pt-BR")} por <b>${esc(dados.versao.criado_por_nome || "-")}</b>
+    </div>
     <table class="tabela">
       <thead><tr><th>Código</th><th>Descrição</th><th>Qtd</th><th>Unidade</th></tr></thead>
       <tbody>

@@ -180,13 +180,18 @@ def listar_versoes(lista_id):
 @projetos_bp.get("/api/versoes/<int:versao_id>")
 @login_required
 def obter_versao(versao_id):
-    versao = db.query_one("SELECT * FROM lista_desenho_versoes WHERE id = %s", (versao_id,))
+    versao = db.query_one(
+        """SELECT v.*, u.nome AS criado_por_nome FROM lista_desenho_versoes v
+           LEFT JOIN usuarios u ON u.id = v.criado_por WHERE v.id = %s""",
+        (versao_id,),
+    )
     if not versao:
         return jsonify({"erro": "Versão não encontrada"}), 404
     projeto_id = projeto_da_versao_desenho(versao_id)
     if projeto_id is None or not projeto_permitido(projeto_id):
         return jsonify({"erro": "Sem permissão para acessar esta versão"}), 403
-    return jsonify({"versao": versao, "itens": _carregar_itens(versao_id)})
+    lista = db.query_one("SELECT * FROM listas_desenho WHERE id = %s", (versao["lista_desenho_id"],))
+    return jsonify({"versao": versao, "itens": _carregar_itens(versao_id), "lista": lista})
 
 
 def _salvar_itens(versao_id, itens):
