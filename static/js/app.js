@@ -1254,9 +1254,15 @@ async function verVersao(listaId, versaoId) {
       <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/excel?versao_id=${versaoId}" target="_blank">Relatório Excel</a>
       <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/pdf?versao_id=${versaoId}" target="_blank">Relatório PDF</a>
       <span style="flex:1"></span>
+      ${dados.versao.status === "rascunho" ? `<button class="btn-primario somente-admin" id="btn-editar-rascunho-desenho">Editar rascunho</button>` : ""}
       <button class="btn-secundario" onclick="fecharModal()">Fechar</button>
     </div>
   `, "modal-grande");
+  aplicarPermissoes();
+
+  if (dados.versao.status === "rascunho") {
+    document.getElementById("btn-editar-rascunho-desenho").addEventListener("click", () => abrirEditorLista(listaId));
+  }
 }
 
 const CAMPOS_QUANTIDADE = ["quantidade", "quantidade_base", "quantidade_atualizada"];
