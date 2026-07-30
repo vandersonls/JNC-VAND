@@ -571,15 +571,37 @@ async function carregarClientes(busca = "") {
   state.clientes = await api(url);
   const tbody = document.getElementById("tbody-clientes");
   tbody.innerHTML = state.clientes.map((c) => `
-    <tr>
+    <tr class="linha-clicavel" onclick="verProjetosDoCliente(${c.id})">
       <td>${esc(c.razao_social)}</td><td>${esc(c.nome_fantasia || "")}</td><td>${esc(c.cnpj_cpf || "")}</td>
       <td>${esc(c.contato || "")}</td><td>${esc(c.telefone || "")}</td>
       <td class="somente-admin">
-        <button class="link-acao" onclick="editarCliente(${c.id})">Editar</button>
-        <button class="link-acao" onclick="excluirCliente(${c.id})">Excluir</button>
+        <button class="link-acao" onclick="event.stopPropagation(); editarCliente(${c.id})">Editar</button>
+        <button class="link-acao" onclick="event.stopPropagation(); excluirCliente(${c.id})">Excluir</button>
       </td>
     </tr>`).join("") || `<tr><td colspan="6">Nenhum cliente cadastrado.</td></tr>`;
   aplicarPermissoes();
+}
+
+// Ao clicar num cliente, mostra em quais projetos ele aparece - útil pra
+// achar rápido o histórico de um cliente sem precisar procurar na lista de projetos.
+async function verProjetosDoCliente(clienteId) {
+  const cliente = state.clientes.find((c) => c.id === clienteId);
+  state.projetos = await api("/api/projetos");
+  const doCliente = state.projetos.filter((p) => p.cliente_id === clienteId);
+  abrirModal(`
+    <h3>Projetos de ${esc(cliente ? cliente.razao_social : "")}</h3>
+    <table class="tabela">
+      <thead><tr><th>Código</th><th>Nome</th><th>Status</th><th>Área</th><th></th></tr></thead>
+      <tbody>
+        ${doCliente.map((p) => `
+          <tr>
+            <td>${esc(p.codigo)}</td><td>${esc(p.nome)}</td><td>${esc(p.status)}</td><td>${esc(p.area_nome || "-")}</td>
+            <td><button class="link-acao" onclick="fecharModal(); abrirProjeto(${p.id})">Abrir</button></td>
+          </tr>`).join("") || `<tr><td colspan="5">Este cliente ainda não tem projetos cadastrados.</td></tr>`}
+      </tbody>
+    </table>
+    <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
+  `, "modal-media");
 }
 
 let buscaClientesTimer;
