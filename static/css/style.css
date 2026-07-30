@@ -403,7 +403,17 @@ input[type="number"], select, textarea {
 .arvore-linha-versao .arvore-titulo { font-variant-numeric: tabular-nums; color: #3a4150; }
 .arvore-sub { color: #9aa3b2; font-size: 11.5px; white-space: nowrap; }
 
-.arvore-acoes { display: flex; gap: 14px; flex: 0 0 auto; }
+.arvore-acoes { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.arvore-acoes .link-acao { margin: 0 8px; }
+
+.acao-icone {
+  width: 30px; height: 30px; flex: 0 0 30px; border: none; border-radius: 8px; background: none;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  color: #9aa3b2; transition: background .12s ease, color .12s ease;
+}
+.acao-icone svg { width: 17px; height: 17px; }
+.acao-icone:hover { background: #eef1f6; color: var(--azul); }
+.acao-icone.acao-perigo:hover { background: #fdecec; color: var(--erro); }
 
 .arvore-filhos { margin-left: 9px; padding-left: 20px; border-left: 1px solid #eef0f3; }
 .arvore-filhos.oculto { display: none; }
