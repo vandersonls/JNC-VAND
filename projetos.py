@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_login import login_required, current_user
+from werkzeug.security import check_password_hash
 
 import db
 from auth import perfis_permitidos
@@ -340,8 +341,12 @@ def editar_cabecalho_lista(lista_id):
 
 
 @projetos_bp.delete("/api/listas/<int:lista_id>")
-@perfis_permitidos("master", "administrador")
+@perfis_permitidos("master")
 def excluir_lista(lista_id):
+    data = request.get_json(silent=True) or {}
+    usuario = db.query_one("SELECT senha_hash FROM usuarios WHERE id = %s", (current_user.id,))
+    if not usuario or not check_password_hash(usuario["senha_hash"], data.get("senha") or ""):
+        return jsonify({"erro": "Senha incorreta"}), 403
     projeto_id = projeto_da_lista(lista_id)
     if projeto_id is None or not projeto_permitido(projeto_id):
         return jsonify({"erro": "Sem permissão para excluir esta lista"}), 403

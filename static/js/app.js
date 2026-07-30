@@ -866,7 +866,7 @@ function renderNoLista(l) {
             </div>
           </span>
           <button class="acao-icone somente-admin" onclick="abrirEditorDados(${l.id})" title="Editar dados" aria-label="Editar dados">${ICONE_LAPIS}</button>
-          <button class="acao-icone acao-perigo somente-admin" onclick="excluirLista(${l.id})" title="Excluir" aria-label="Excluir">${ICONE_EXCLUIR}</button>
+          <button class="acao-icone acao-perigo somente-master" onclick="excluirLista(${l.id})" title="Excluir" aria-label="Excluir">${ICONE_EXCLUIR}</button>
         </span>
       </div>
       <div class="arvore-filhos ${aberta ? "" : "oculto"}" id="filhos-lista-${l.id}">
@@ -922,11 +922,42 @@ document.addEventListener("click", (e) => {
   }
 });
 
-async function excluirLista(id) {
-  if (!confirm("Excluir esta lista por desenho e todo seu histórico?")) return;
-  await api(`/api/listas/${id}`, { method: "DELETE" });
-  toast("Lista excluída");
-  carregarListas(state.projetoAtual.id);
+// Confirmação por senha para ações destrutivas restritas a master (ex.:
+// excluir uma pasta/lista por desenho). Diferente da Zona de Risco (que
+// pede para digitar uma palavra), aqui reautentica a própria pessoa.
+function confirmarComSenha(titulo, mensagem, aoConfirmar) {
+  abrirModal(`
+    <h3>${titulo}</h3>
+    <p style="color:var(--cinza);">${mensagem}</p>
+    <p>Digite sua senha para confirmar:</p>
+    ${campoSenhaHtml("confirmar-senha-input", 'autocomplete="current-password"')}
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-perigo" id="btn-confirmar-senha">${titulo}</button>
+    </div>
+  `);
+  const input = document.getElementById("confirmar-senha-input");
+  input.focus();
+  document.getElementById("btn-confirmar-senha").addEventListener("click", async () => {
+    const senha = input.value;
+    if (!senha) { toast("Informe sua senha", "erro"); return; }
+    try {
+      await aoConfirmar(senha);
+      fecharModal();
+    } catch (err) { toast(err.message, "erro"); }
+  });
+}
+
+function excluirLista(id) {
+  confirmarComSenha(
+    "Excluir lista por desenho",
+    "Esta lista por desenho e todo o seu histórico de versões serão removidos. Essa ação não pode ser desfeita.",
+    async (senha) => {
+      await api(`/api/listas/${id}`, { method: "DELETE", body: JSON.stringify({ senha }) });
+      toast("Lista excluída");
+      carregarListas(state.projetoAtual.id);
+    },
+  );
 }
 
 // A lista só é criada no banco quando a primeira versão (com os itens
