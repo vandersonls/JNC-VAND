@@ -887,6 +887,7 @@ function renderFilhosVersoes(listaId, versoes) {
         <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${esc(v.criado_por_nome || "-")}</span>
       </span>
       <span class="arvore-acoes">
+        ${v.status === "rascunho" ? `<button class="link-acao somente-admin" onclick="abrirEditorMateriais(${listaId})">Editar rascunho</button>` : ""}
         <button class="link-acao" onclick="verVersao(${listaId}, ${v.id})">Ver</button>
       </span>
     </div>`).join("");
