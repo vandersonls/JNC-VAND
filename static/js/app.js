@@ -838,7 +838,7 @@ function renderArvoreListas() {
 const ICONE_PASTA = `<svg class="arvore-icone" viewBox="0 0 20 20" fill="none"><path d="M2.5 5.5a1 1 0 0 1 1-1h4l1.5 1.8h7.5a1 1 0 0 1 1 1v8.2a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V5.5Z" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
 const ICONE_ARQUIVO = `<svg class="arvore-icone" viewBox="0 0 20 20" fill="none"><path d="M6 2.5h6l3 3v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M12 2.5V6h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
 const ICONE_SETA = `<svg viewBox="0 0 12 12" fill="none"><path d="M4 2.5 8 6l-4 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-const ICONE_EDITAR_DADOS = `<svg viewBox="0 0 20 20" fill="none"><rect x="3" y="2.3" width="10.5" height="15.4" rx="1.4" fill="currentColor" fill-opacity=".08" stroke="currentColor" stroke-width="1.3"/><path d="M5.7 6.2h5M5.7 9h5M5.7 11.8h2.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M12.6 13.6l3.6-3.6a1.15 1.15 0 0 1 1.6 1.6l-3.6 3.6-2 .5.4-2.1Z" fill="currentColor" fill-opacity=".15" stroke="currentColor" stroke-width="1.15" stroke-linejoin="round"/></svg>`;
+const ICONE_LAPIS = `<svg viewBox="0 0 20 20" fill="none"><path d="M13.4 3.3a1.6 1.6 0 0 1 2.3 0l1 1a1.6 1.6 0 0 1 0 2.3L7.4 15.9l-4 .8.8-4 9.2-9.4Z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M11.9 4.8l3.3 3.3" stroke="currentColor" stroke-width="1.3"/></svg>`;
 const ICONE_IMPRIMIR = `<svg viewBox="0 0 20 20" fill="none"><path d="M6.3 3.3h7.4v4H6.3z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><rect x="3" y="7.3" width="14" height="6.7" rx="1.3" fill="currentColor" fill-opacity=".06" stroke="currentColor" stroke-width="1.25"/><rect x="6.3" y="10.6" width="7.4" height="5.7" fill="currentColor" fill-opacity=".08" stroke="currentColor" stroke-width="1.15"/><circle cx="14.1" cy="9.5" r=".75" fill="currentColor"/></svg>`;
 const ICONE_EXCLUIR = `<svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
 
@@ -857,10 +857,15 @@ function renderNoLista(l) {
           <span class="arvore-sub">${l.versao_atual ? "v" + l.versao_atual : "sem versão emitida"}${l.tem_rascunho ? '<span class="badge-rascunho">Rascunho em aberto</span>' : ""}</span>
         </span>
         <span class="arvore-acoes">
-          <button class="acao-icone somente-admin" onclick="abrirEditorDados(${l.id})" title="Editar dados" aria-label="Editar dados">${ICONE_EDITAR_DADOS}</button>
           <button class="link-acao" onclick="abrirEditorMateriais(${l.id})">Editar materiais</button>
-          <a class="acao-icone" href="/api/listas/${l.id}/relatorio/excel" target="_blank" title="Baixar Excel" aria-label="Baixar Excel">${ICONE_IMPRIMIR}</a>
-          <a class="acao-icone" href="/api/listas/${l.id}/relatorio/pdf" target="_blank" title="Baixar PDF" aria-label="Baixar PDF">${ICONE_IMPRIMIR}</a>
+          <span class="menu-imprimir">
+            <button type="button" class="acao-icone" onclick="toggleMenuImprimir(event, ${l.id})" title="Imprimir" aria-label="Imprimir">${ICONE_IMPRIMIR}</button>
+            <div class="dropdown-imprimir oculto" id="menu-imprimir-${l.id}">
+              <a href="/api/listas/${l.id}/relatorio/excel" target="_blank">Excel</a>
+              <a href="/api/listas/${l.id}/relatorio/pdf" target="_blank">PDF</a>
+            </div>
+          </span>
+          <button class="acao-icone somente-admin" onclick="abrirEditorDados(${l.id})" title="Editar dados" aria-label="Editar dados">${ICONE_LAPIS}</button>
           <button class="acao-icone acao-perigo somente-admin" onclick="excluirLista(${l.id})" title="Excluir" aria-label="Excluir">${ICONE_EXCLUIR}</button>
         </span>
       </div>
@@ -900,6 +905,21 @@ async function toggleListaArvore(listaId) {
   }
   renderArvoreListas();
 }
+
+// Menu de impressão (Excel/PDF) da linha de Lista por Desenho: um ícone só,
+// abre um dropdown com as duas opções. Fecha ao clicar fora ou em outro menu.
+function toggleMenuImprimir(evento, listaId) {
+  evento.stopPropagation();
+  const menu = document.getElementById(`menu-imprimir-${listaId}`);
+  const jaAberto = !menu.classList.contains("oculto");
+  document.querySelectorAll(".dropdown-imprimir").forEach((m) => m.classList.add("oculto"));
+  if (!jaAberto) menu.classList.remove("oculto");
+}
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".menu-imprimir")) {
+    document.querySelectorAll(".dropdown-imprimir").forEach((m) => m.classList.add("oculto"));
+  }
+});
 
 async function excluirLista(id) {
   if (!confirm("Excluir esta lista por desenho e todo seu histórico?")) return;
