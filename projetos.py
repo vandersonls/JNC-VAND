@@ -11,6 +11,12 @@ projetos_bp = Blueprint("projetos", __name__)
 
 CAMPOS_PROJETO = ["codigo", "nome", "cliente_id", "descricao", "status"]
 
+CAMPOS_CABECALHO_LISTA = (
+    "titulo", "numero_desenho", "numero_cliente", "numero_fornecedor",
+    "elaborador_nome", "elaborador_sigla", "verificador_nome", "verificador_sigla",
+    "aprovador_nome", "aprovador_sigla",
+)
+
 
 # =========================================================
 # PROJETOS
@@ -263,12 +269,7 @@ def editar_lista(lista_id):
         return jsonify({"erro": "Sem permissão para editar esta lista"}), 403
     status = "rascunho" if data.get("status") == "rascunho" else "salvo"
 
-    campos_cabecalho = (
-        "titulo", "numero_desenho", "numero_cliente", "numero_fornecedor",
-        "elaborador_nome", "elaborador_sigla", "verificador_nome", "verificador_sigla",
-        "aprovador_nome", "aprovador_sigla",
-    )
-    if any(campo in data for campo in campos_cabecalho):
+    if any(campo in data for campo in CAMPOS_CABECALHO_LISTA):
         db.execute(
             """UPDATE listas_desenho SET titulo=%s, numero_desenho=%s, numero_cliente=%s, numero_fornecedor=%s,
                                           elaborador_nome=%s, elaborador_sigla=%s, verificador_nome=%s, verificador_sigla=%s,
@@ -299,6 +300,43 @@ def editar_lista(lista_id):
         depois=data,
     )
     return jsonify({"id": lista_id, "versao_id": versao_id, "versao": numero_versao, "status": status})
+
+
+@projetos_bp.put("/api/listas/<int:lista_id>/cabecalho")
+@perfis_permitidos("master", "administrador")
+def editar_cabecalho_lista(lista_id):
+    """Atualiza só os dados da pasta (título, cliente/fornecedor, carimbo) -
+    não mexe em versões nem itens, ao contrário de editar_lista."""
+    data = request.get_json(force=True) or {}
+    numero_desenho = (data.get("numero_desenho") or "").strip()
+    if not numero_desenho:
+        return jsonify({"erro": "Número do desenho é obrigatório"}), 400
+    lista = db.query_one("SELECT * FROM listas_desenho WHERE id = %s", (lista_id,))
+    if not lista:
+        return jsonify({"erro": "Lista não encontrada"}), 404
+    if not projeto_permitido(lista["projeto_id"]):
+        return jsonify({"erro": "Sem permissão para editar esta lista"}), 403
+    antes = {campo: lista[campo] for campo in CAMPOS_CABECALHO_LISTA}
+    db.execute(
+        """UPDATE listas_desenho SET titulo=%s, numero_desenho=%s, numero_cliente=%s, numero_fornecedor=%s,
+                                      elaborador_nome=%s, elaborador_sigla=%s, verificador_nome=%s, verificador_sigla=%s,
+                                      aprovador_nome=%s, aprovador_sigla=%s
+           WHERE id=%s""",
+        (
+            data.get("titulo", ""), numero_desenho,
+            data.get("numero_cliente", ""), data.get("numero_fornecedor", ""),
+            data.get("elaborador_nome", ""), data.get("elaborador_sigla", ""),
+            data.get("verificador_nome", ""), data.get("verificador_sigla", ""),
+            data.get("aprovador_nome", ""), data.get("aprovador_sigla", ""),
+            lista_id,
+        ),
+    )
+    registrar(
+        "editar", "lista_desenho", lista_id,
+        f"Editou os dados da pasta da lista {numero_desenho}",
+        antes=antes, depois=data,
+    )
+    return jsonify({"ok": True})
 
 
 @projetos_bp.delete("/api/listas/<int:lista_id>")

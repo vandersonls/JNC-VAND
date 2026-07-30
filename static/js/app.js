@@ -854,7 +854,8 @@ function renderNoLista(l) {
           <span class="arvore-sub">${l.versao_atual ? "v" + l.versao_atual : "sem versão emitida"}${l.tem_rascunho ? '<span class="badge-rascunho">Rascunho em aberto</span>' : ""}</span>
         </span>
         <span class="arvore-acoes">
-          <button class="link-acao" onclick="abrirEditorLista(${l.id})">Abrir</button>
+          <button class="link-acao somente-admin" onclick="abrirEditorDados(${l.id})">Editar dados</button>
+          <button class="link-acao" onclick="abrirEditorMateriais(${l.id})">Editar materiais</button>
           <a class="link-acao" href="/api/listas/${l.id}/relatorio/excel" target="_blank">Excel</a>
           <a class="link-acao" href="/api/listas/${l.id}/relatorio/pdf" target="_blank">PDF</a>
           <button class="link-acao somente-admin" onclick="excluirLista(${l.id})">Excluir</button>
@@ -928,7 +929,15 @@ function escapeHtml(texto) {
 function esc(texto) { return escapeHtml(texto); }
 
 // ---------- EDITOR DA LISTA (com versionamento) ----------
-async function abrirEditorLista(listaId) {
+// Acesso separado do editor de materiais: só os dados da pasta (título,
+// cliente/fornecedor, carimbo), salvos direto via /cabecalho, sem tocar em
+// versões/itens.
+async function abrirEditorDados(listaId) {
+  const dados = await api(`/api/listas/${listaId}`);
+  renderCabecalhoLista(listaId, dados.lista, true);
+}
+
+async function abrirEditorMateriais(listaId) {
   if (!state.materiais.length) state.materiais = await api("/api/materiais");
   const dados = await api(`/api/listas/${listaId}`);
   const temRascunho = !!dados.rascunho;
@@ -941,11 +950,23 @@ async function abrirEditorLista(listaId) {
   window._itensEditor = itensIniciais;
 
   if (temRascunho) toast(`Continuando o rascunho salvo em ${new Date(dados.rascunho.criado_em).toLocaleString("pt-BR")}`);
-  renderCabecalhoLista(listaId, dados.lista);
+  renderEditorLista(listaId, dados.lista);
+}
+
+async function salvarCabecalhoLista(listaId, cabecalho) {
+  try {
+    await api(`/api/listas/${listaId}/cabecalho`, { method: "PUT", body: JSON.stringify(cabecalho) });
+    toast("Dados da pasta salvos");
+    fecharModal();
+    carregarListas(state.projetoAtual.id);
+  } catch (err) { toast(err.message, "erro"); }
 }
 
 // TELA 1: cabeçalho (título, cliente/fornecedor, desenho de referência, carimbo).
-function renderCabecalhoLista(listaId, lista) {
+// somenteDados=true: edição isolada da pasta (botão "Salvar", persiste na hora).
+// somenteDados=false: primeiro passo do fluxo de criação/edição de materiais
+// (botão "Continuar", segue para a Tela 2 sem salvar nada ainda).
+function renderCabecalhoLista(listaId, lista, somenteDados = false) {
   abrirModal(`
     <h3>${lista.numero_desenho ? `Lista por Desenho — ${esc(lista.numero_desenho)}` : "Nova Lista por Desenho"}</h3>
     <div class="form-grid-lista">
@@ -970,7 +991,7 @@ function renderCabecalhoLista(listaId, lista) {
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
-      <button class="btn-primario" id="btn-continuar-cabecalho">Continuar</button>
+      <button class="btn-primario ${somenteDados ? "somente-admin" : ""}" id="btn-continuar-cabecalho">${somenteDados ? "Salvar" : "Continuar"}</button>
     </div>
   `, "modal-media");
   aplicarPermissoes();
@@ -991,7 +1012,11 @@ function renderCabecalhoLista(listaId, lista) {
       aprovador_nome: document.getElementById("cab-aprovador-nome").value.trim(),
       aprovador_sigla: document.getElementById("cab-aprovador-sigla").value.trim(),
     };
-    renderEditorLista(listaId, listaAtualizada);
+    if (somenteDados) {
+      salvarCabecalhoLista(listaId, listaAtualizada);
+    } else {
+      renderEditorLista(listaId, listaAtualizada);
+    }
   });
 }
 
@@ -1261,7 +1286,7 @@ async function verVersao(listaId, versaoId) {
   aplicarPermissoes();
 
   if (dados.versao.status === "rascunho") {
-    document.getElementById("btn-editar-rascunho-desenho").addEventListener("click", () => abrirEditorLista(listaId));
+    document.getElementById("btn-editar-rascunho-desenho").addEventListener("click", () => abrirEditorMateriais(listaId));
   }
 }
 
