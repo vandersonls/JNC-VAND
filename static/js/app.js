@@ -569,39 +569,60 @@ async function executarImportacao(arquivo, areaId, modoDuplicados = "manter") {
 async function carregarClientes(busca = "") {
   const url = busca ? `/api/clientes?q=${encodeURIComponent(busca)}` : "/api/clientes";
   state.clientes = await api(url);
+  renderTabelaClientes();
+}
+
+// Clientes com o dropdown de projetos aberto no momento (sobrevive a
+// re-renders da tabela, ex.: ao editar outro cliente).
+const clientesExpandidos = new Set();
+
+function renderTabelaClientes() {
   const tbody = document.getElementById("tbody-clientes");
-  tbody.innerHTML = state.clientes.map((c) => `
-    <tr class="linha-clicavel" onclick="verProjetosDoCliente(${c.id})">
-      <td>${esc(c.razao_social)}</td><td>${esc(c.nome_fantasia || "")}</td><td>${esc(c.cnpj_cpf || "")}</td>
-      <td>${esc(c.contato || "")}</td><td>${esc(c.telefone || "")}</td>
-      <td class="somente-admin">
-        <button class="link-acao" onclick="event.stopPropagation(); editarCliente(${c.id})">Editar</button>
-        <button class="link-acao" onclick="event.stopPropagation(); excluirCliente(${c.id})">Excluir</button>
-      </td>
-    </tr>`).join("") || `<tr><td colspan="6">Nenhum cliente cadastrado.</td></tr>`;
+  tbody.innerHTML = state.clientes.map((c) => {
+    const aberto = clientesExpandidos.has(c.id);
+    const linhaDropdown = aberto ? `
+      <tr class="linha-dropdown-projetos">
+        <td colspan="6">${htmlProjetosDoCliente(c.id)}</td>
+      </tr>` : "";
+    return `
+      <tr class="linha-clicavel" onclick="toggleProjetosDoCliente(${c.id})">
+        <td><span class="seta-expandir ${aberto ? "aberta" : ""}">${ICONE_SETA}</span>${esc(c.razao_social)}</td>
+        <td>${esc(c.nome_fantasia || "")}</td><td>${esc(c.cnpj_cpf || "")}</td>
+        <td>${esc(c.contato || "")}</td><td>${esc(c.telefone || "")}</td>
+        <td class="somente-admin">
+          <button class="link-acao" onclick="event.stopPropagation(); editarCliente(${c.id})">Editar</button>
+          <button class="link-acao" onclick="event.stopPropagation(); excluirCliente(${c.id})">Excluir</button>
+        </td>
+      </tr>${linhaDropdown}`;
+  }).join("") || `<tr><td colspan="6">Nenhum cliente cadastrado.</td></tr>`;
   aplicarPermissoes();
 }
 
-// Ao clicar num cliente, mostra em quais projetos ele aparece - útil pra
-// achar rápido o histórico de um cliente sem precisar procurar na lista de projetos.
-async function verProjetosDoCliente(clienteId) {
-  const cliente = state.clientes.find((c) => c.id === clienteId);
-  state.projetos = await api("/api/projetos");
+function htmlProjetosDoCliente(clienteId) {
   const doCliente = state.projetos.filter((p) => p.cliente_id === clienteId);
-  abrirModal(`
-    <h3>Projetos de ${esc(cliente ? cliente.razao_social : "")}</h3>
-    <table class="tabela">
-      <thead><tr><th>Código</th><th>Nome</th><th>Status</th><th>Área</th><th></th></tr></thead>
-      <tbody>
-        ${doCliente.map((p) => `
-          <tr>
-            <td>${esc(p.codigo)}</td><td>${esc(p.nome)}</td><td>${esc(p.status)}</td><td>${esc(p.area_nome || "-")}</td>
-            <td><button class="link-acao" onclick="fecharModal(); abrirProjeto(${p.id})">Abrir</button></td>
-          </tr>`).join("") || `<tr><td colspan="5">Este cliente ainda não tem projetos cadastrados.</td></tr>`}
-      </tbody>
-    </table>
-    <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
-  `, "modal-media");
+  if (!doCliente.length) return `<div class="arvore-carregando">Este cliente ainda não tem projetos cadastrados.</div>`;
+  return `
+    <div class="dropdown-projetos-cliente">
+      ${doCliente.map((p) => `
+        <div class="dropdown-projeto-linha">
+          <span><b>${esc(p.codigo)}</b> — ${esc(p.nome)} <span class="arvore-sub">${esc(p.status)} · ${esc(p.area_nome || "-")}</span></span>
+          <button class="link-acao" onclick="event.stopPropagation(); abrirProjeto(${p.id})">Abrir</button>
+        </div>`).join("")}
+    </div>`;
+}
+
+// Ao clicar num cliente, expande/recolhe um dropdown com os projetos dele
+// direto na linha - útil pra achar rápido o histórico de um cliente sem
+// precisar procurar na lista de projetos.
+async function toggleProjetosDoCliente(clienteId) {
+  if (clientesExpandidos.has(clienteId)) {
+    clientesExpandidos.delete(clienteId);
+    renderTabelaClientes();
+    return;
+  }
+  clientesExpandidos.add(clienteId);
+  if (!state.projetos.length) state.projetos = await api("/api/projetos");
+  renderTabelaClientes();
 }
 
 let buscaClientesTimer;

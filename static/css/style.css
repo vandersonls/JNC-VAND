@@ -300,6 +300,21 @@ input[type="number"], select, textarea {
 .tabela td { padding: 10px 14px; border-top: 1px solid var(--borda); font-size: 13px; }
 .tabela tr:hover td { background: #f8fafc; }
 .linha-clicavel { cursor: pointer; }
+
+.seta-expandir {
+  display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px;
+  margin-right: 8px; color: #9aa3b2; transition: transform .15s ease;
+}
+.seta-expandir svg { width: 10px; height: 10px; }
+.seta-expandir.aberta { transform: rotate(90deg); }
+
+.linha-dropdown-projetos td { padding: 0; border-top: none; cursor: default; }
+.linha-dropdown-projetos:hover td { background: none; }
+.dropdown-projetos-cliente { display: flex; flex-direction: column; gap: 6px; padding: 4px 14px 14px 36px; background: #f8fafc; }
+.dropdown-projeto-linha {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 12px; background: var(--branco); border: 1px solid var(--borda); border-radius: 8px; font-size: 13px;
+}
 .tabela td.acoes-linha { display: flex; gap: 6px; }
 .link-acao { color: var(--azul-claro); cursor: pointer; font-size: 12px; margin-right: 10px; background: none; border: none; padding: 0; }
 .link-acao:hover { text-decoration: underline; }
