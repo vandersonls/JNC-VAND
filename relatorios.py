@@ -18,6 +18,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 
 import db
 from areas import projeto_permitido, projeto_da_lista
+from projetos import TIPOS_EMISSAO
 
 relatorios_bp = Blueprint("relatorios", __name__)
 
@@ -150,14 +151,6 @@ def _cabecalho_excel_com_logos(ws, largura_total, empresa_nome, empresa_logo_url
     linha += 2
     return linha
 
-# 'rascunho' e 'salvo' são os únicos status internos hoje; mapeados para os
-# códigos de status de documento usados no selo (padrão de projetos de engenharia).
-STATUS_DOCUMENTO = {
-    "rascunho": ("A", "Preliminar"),
-    "salvo": ("B", "Aprovado"),
-}
-LEGENDA_STATUS = [("A", "Preliminar"), ("B", "Aprovado"), ("C", "Aprovado com Comentários"), ("D", "Cancelado")]
-
 CEL_ESTILO = ParagraphStyle("cel", fontSize=8, leading=10)
 CEL_ESTILO_CABECALHO = ParagraphStyle("cel_cab", fontSize=8, leading=10, textColor=colors.white, fontName="Helvetica-Bold")
 
@@ -209,20 +202,45 @@ def _carregar_contexto(lista_id, versao_id=None):
         (alvo_versao_id,),
     )
     itens = db.query_all(
-        """SELECT i.quantidade, i.observacao, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
+        """SELECT i.material_id, i.quantidade, i.observacao, m.codigo, m.descricao, m.fabricante, m.bitola, m.unidade
            FROM lista_desenho_itens i JOIN materiais m ON m.id = i.material_id
            WHERE i.versao_id = %s ORDER BY m.codigo""",
         (alvo_versao_id,),
     )
     historico = db.query_all(
-        """SELECT v.versao, v.status, v.observacoes, v.criado_em, u.nome AS criado_por_nome
+        """SELECT v.versao, v.status, v.tipo_emissao, v.observacoes, v.criado_em, u.nome AS criado_por_nome
            FROM lista_desenho_versoes v LEFT JOIN usuarios u ON u.id = v.criado_por
            WHERE v.lista_desenho_id = %s ORDER BY v.versao""",
         (lista_id,),
     )
     config = {c["chave"]: c["valor"] for c in db.query_all("SELECT chave, valor FROM configuracoes")}
 
+    qtd_anterior_por_material = _quantidades_versao_anterior(lista_id, versao)
+    for item in itens:
+        item["quantidade_anterior"] = qtd_anterior_por_material.get(item["material_id"], 0)
+
     return {"lista": lista, "versao": versao, "itens": itens, "historico": historico, "config": config}
+
+
+def _quantidades_versao_anterior(lista_id, versao_atual):
+    """Quantidade de cada material na última versão EMITIDA anterior à
+    atual (por número de revisão) - usada na coluna QUANT. ANTERIOR do
+    relatório, pra mostrar de imediato o que mudou de uma revisão pra outra."""
+    if not versao_atual:
+        return {}
+    anterior = db.query_one(
+        """SELECT id FROM lista_desenho_versoes
+           WHERE lista_desenho_id = %s AND status = 'salvo' AND versao < %s
+           ORDER BY versao DESC LIMIT 1""",
+        (lista_id, versao_atual["versao"]),
+    )
+    if not anterior:
+        return {}
+    linhas = db.query_all(
+        "SELECT material_id, quantidade FROM lista_desenho_itens WHERE versao_id = %s",
+        (anterior["id"],),
+    )
+    return {l["material_id"]: l["quantidade"] for l in linhas}
 
 
 def _doc_referencia(lista):
@@ -237,6 +255,7 @@ def _linha_assinaturas(lista):
         ("Elaborado por", "elaborador_nome", "elaborador_sigla"),
         ("Verificado por", "verificador_nome", "verificador_sigla"),
         ("Aprovado por", "aprovador_nome", "aprovador_sigla"),
+        ("Autorizado por", "autorizado_nome", "autorizado_sigla"),
     ):
         nome = lista.get(campo_nome)
         if not nome:
@@ -298,6 +317,19 @@ def _carregar_contexto_projeto(projeto_id):
     return {"projeto": projeto, "desenhos": desenhos, "consolidado": consolidado_lista, "config": config}
 
 
+def _bloco_titulo_lista(lista):
+    """As linhas do bloco de título do carimbo (subtítulo de engenharia,
+    área, disciplina, título do documento) - só as preenchidas."""
+    linhas = [lista.get("subtitulo"), lista.get("area_titulo"), lista.get("disciplina"), lista.get("titulo")]
+    return [l for l in linhas if l]
+
+
+def _assinatura_curta(lista, campo_nome, campo_sigla):
+    """Sigla se houver, senão o nome completo, senão traço - usado nas
+    colunas estreitas (Por/Ver./Apr./Aut.) do histórico de revisões."""
+    return lista.get(campo_sigla) or lista.get(campo_nome) or "-"
+
+
 @relatorios_bp.get("/api/listas/<int:lista_id>/relatorio/excel")
 @login_required
 def relatorio_excel(lista_id):
@@ -310,15 +342,15 @@ def relatorio_excel(lista_id):
     lista, versao, itens, historico = ctx["lista"], ctx["versao"], ctx["itens"], ctx["historico"]
     empresa = ctx["config"].get("nome_empresa", "")
 
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Lista de Materiais"
-    largura_total = 7
-
     fino = Side(style="thin", color="000000")
     borda = Border(left=fino, right=fino, top=fino, bottom=fino)
     centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
     esquerda = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Lista de Materiais"
+    largura_total = 8
 
     def escrever_mesclado(texto, negrito=False, tamanho=11, italico=False, alinhamento=centro, linha_atual=1):
         ws.merge_cells(start_row=linha_atual, start_column=1, end_row=linha_atual, end_column=largura_total)
@@ -327,26 +359,55 @@ def relatorio_excel(lista_id):
         cel.alignment = alinhamento
         return linha_atual + 1
 
-    data_versao = versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
+    def escrever_grade(valores, negrito=False, tamanho=9, linha_atual=1):
+        """Divide a largura total em partes iguais, uma por valor (ex.: as
+        4 caixas Nº Cliente / Nº Projetista / Rev. / Folha do carimbo)."""
+        largura_col = largura_total // len(valores)
+        col = 1
+        for texto in valores:
+            fim = col + largura_col - 1
+            ws.merge_cells(start_row=linha_atual, start_column=col, end_row=linha_atual, end_column=fim)
+            cel = ws.cell(row=linha_atual, column=col, value=texto)
+            cel.font = Font(bold=negrito, size=tamanho)
+            cel.alignment = centro
+            cel.border = borda
+            col = fim + 1
+        return linha_atual + 1
+
     linha = _cabecalho_excel_com_logos(
         ws, largura_total, empresa, ctx["config"].get("logo_url", ""),
         lista["cliente_nome"], lista.get("cliente_logo_url"),
-        lista["projeto_nome"], f"LISTA DE MATERIAIS ELÉTRICOS POR DESENHO — {lista['titulo'] or lista['numero_desenho']}",
-        versao["versao"] if versao else "-", data_versao,
+        lista["projeto_nome"], "",
+        versao["versao"] if versao else "-", versao["criado_em"].strftime("%d/%m/%Y") if versao else "-",
     )
-    linha = escrever_mesclado(
-        f"Doc. Referência: {_doc_referencia(lista)}    |    Nº do Cliente: {lista['numero_cliente'] or '-'}    |    Nº do Fornecedor: {lista['numero_fornecedor'] or '-'}",
+    linha -= 1  # a linha do nome_aba (em branco acima) não é usada - o bloco de título abaixo a substitui
+
+    for texto in _bloco_titulo_lista(lista):
+        cel = ws.cell(row=linha, column=1, value=texto)
+        ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura_total)
+        cel.font = Font(bold=True, size=10)
+        cel.alignment = centro
+        linha += 1
+
+    linha = escrever_grade(
+        [
+            f"Nº Cliente: {lista['numero_cliente'] or '-'}",
+            f"Nº Projetista: {lista['numero_fornecedor'] or '-'}",
+            f"Rev.: {versao['versao'] if versao else '-'}",
+            "Folha: 1",
+        ],
         tamanho=9, linha_atual=linha,
     )
+    linha = escrever_mesclado(f"DESENHO DE REFERÊNCIA: {_doc_referencia(lista)}", tamanho=9, linha_atual=linha)
     assinaturas = _linha_assinaturas(lista)
     if assinaturas:
         linha = escrever_mesclado(assinaturas, tamanho=9, linha_atual=linha)
     linha += 1
 
-    cabecalho = ["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]
-    for col, titulo in enumerate(cabecalho, start=1):
+    cabecalho_tabela = ["Item", "Código", "Descrição", "Referência", "Complemento", "Unidade", "Quant. Atual", "Quant. Anterior"]
+    for col, titulo in enumerate(cabecalho_tabela, start=1):
         cel = ws.cell(row=linha, column=col, value=titulo)
-        cel.font = Font(bold=True, size=10, color="FFFFFF")
+        cel.font = Font(bold=True, size=9, color="FFFFFF")
         cel.fill = openpyxl.styles.PatternFill("solid", fgColor="1f3a5f")
         cel.alignment = centro
         cel.border = borda
@@ -354,7 +415,7 @@ def relatorio_excel(lista_id):
 
     for idx, item in enumerate(itens, start=1):
         valores = [idx, item["codigo"], item["descricao"], item["fabricante"] or "", item["bitola"] or "",
-                   float(item["quantidade"]), item["unidade"]]
+                   item["unidade"], float(item["quantidade"]), float(item["quantidade_anterior"])]
         for col, valor in enumerate(valores, start=1):
             cel = ws.cell(row=linha, column=col, value=valor)
             cel.border = borda
@@ -365,45 +426,11 @@ def relatorio_excel(lista_id):
         ws.cell(row=linha, column=1, value="Nenhum material nesta versão.").alignment = centro
         linha += 1
 
-    linha += 1
-    linha = escrever_mesclado("HISTÓRICO DE REVISÕES", negrito=True, tamanho=10, alinhamento=centro, linha_atual=linha)
-    for col, titulo in enumerate(["Rev.", "Data", "Responsável", "Descrição"], start=1):
-        cel = ws.cell(row=linha, column=col, value=titulo)
-        cel.font = Font(bold=True, size=9)
-        cel.border = borda
-        cel.alignment = centro
-    ws.merge_cells(start_row=linha, start_column=4, end_row=linha, end_column=largura_total)
-    linha += 1
-    for v in historico:
-        ws.cell(row=linha, column=1, value=v["versao"]).border = borda
-        ws.cell(row=linha, column=2, value=v["criado_em"].strftime("%d/%m/%Y")).border = borda
-        ws.cell(row=linha, column=3, value=v["criado_por_nome"] or "-").border = borda
-        cel_desc = ws.cell(row=linha, column=4, value=v["observacoes"] or "-")
-        cel_desc.border = borda
-        cel_desc.alignment = esquerda
-        ws.merge_cells(start_row=linha, start_column=4, end_row=linha, end_column=largura_total)
-        for c in range(1, 4):
-            ws.cell(row=linha, column=c).alignment = centro
-        linha += 1
-
-    linha += 1
-    codigo_atual, nome_atual = STATUS_DOCUMENTO.get(versao["status"], ("-", "-")) if versao else ("-", "-")
-    legenda_txt = "   ".join(
-        f"[{'X' if cod == codigo_atual else ' '}] {cod} - {nome}" for cod, nome in LEGENDA_STATUS
-    )
-    linha = escrever_mesclado(f"STATUS DO DOCUMENTO:   {legenda_txt}", tamanho=9, alinhamento=esquerda, linha_atual=linha)
-
-    linha += 1
-    ws.cell(row=linha, column=1, value=f"Cliente: {lista['cliente_nome'] or '-'}").font = Font(size=9)
-    ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=3)
-    ws.cell(row=linha, column=4, value=f"Empresa: {empresa}").font = Font(size=9)
-    ws.merge_cells(start_row=linha, start_column=4, end_row=linha, end_column=5)
-    ws.cell(row=linha, column=6, value=f"Doc.: {_doc_referencia(lista)}").font = Font(size=9)
-    ws.merge_cells(start_row=linha, start_column=6, end_row=linha, end_column=largura_total)
-
-    larguras = [6, 14, 34, 20, 12, 12, 10]
+    larguras = [6, 14, 38, 24, 18, 10, 12, 12]
     for i, w in enumerate(larguras, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
+
+    _escrever_capa_excel(wb, lista, historico)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -411,6 +438,82 @@ def relatorio_excel(lista_id):
     nome_arquivo = f"lista_{lista['numero_desenho']}_rev{versao['versao'] if versao else 0}.xlsx"
     return send_file(buf, as_attachment=True, download_name=nome_arquivo,
                       mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+def _escrever_capa_excel(wb, lista, historico):
+    """Aba 'Capa': cabeçalho do documento + histórico de revisões (só as
+    versões emitidas - rascunho não é uma revisão de verdade ainda) com a
+    legenda dos tipos de emissão (TE), no padrão de carimbo de engenharia."""
+    ws = wb.create_sheet(title="Capa")
+    largura = 8
+    fino = Side(style="thin", color="000000")
+    borda = Border(left=fino, right=fino, top=fino, bottom=fino)
+    centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    esquerda = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    linha = 1
+    ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura)
+    cel = ws.cell(row=linha, column=1, value=lista["projeto_nome"])
+    cel.font, cel.alignment = Font(bold=True, size=13), centro
+    linha += 1
+    for texto in _bloco_titulo_lista(lista):
+        ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura)
+        cel = ws.cell(row=linha, column=1, value=texto)
+        cel.font, cel.alignment = Font(bold=True, size=10), centro
+        linha += 1
+    linha += 1
+
+    ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura)
+    cel = ws.cell(row=linha, column=1, value="REVISÕES")
+    cel.font, cel.alignment = Font(bold=True, size=11), centro
+    linha += 1
+
+    ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura)
+    ws.cell(row=linha, column=1, value="TE: TIPO DE EMISSÃO").font = Font(bold=True, size=9)
+    linha += 1
+
+    pares = [("A", "B"), ("C", "D"), ("E", "F"), ("G", "H")]
+    ws.row_dimensions[linha].height = 26
+    col = 1
+    for c1, c2 in pares:
+        fim = col + 1
+        ws.merge_cells(start_row=linha, start_column=col, end_row=linha, end_column=fim)
+        texto = f"{c1} - {TIPOS_EMISSAO[c1]}\n{c2} - {TIPOS_EMISSAO[c2]}"
+        cel = ws.cell(row=linha, column=col, value=texto)
+        cel.font, cel.alignment, cel.border = Font(size=8), esquerda, borda
+        col = fim + 1
+    linha += 2
+
+    cabecalho_rev = ["Rev.", "TE", "Descrição", "Por", "Ver.", "Apr.", "Aut.", "Data"]
+    for col, titulo in enumerate(cabecalho_rev, start=1):
+        cel = ws.cell(row=linha, column=col, value=titulo)
+        cel.font = Font(bold=True, size=9, color="FFFFFF")
+        cel.fill = openpyxl.styles.PatternFill("solid", fgColor="1f3a5f")
+        cel.alignment, cel.border = centro, borda
+    linha += 1
+
+    emitidas = [v for v in historico if v["status"] == "salvo"]
+    for v in emitidas:
+        valores = [
+            v["versao"], v["tipo_emissao"] or "-", v["observacoes"] or "-",
+            _assinatura_curta(lista, "elaborador_nome", "elaborador_sigla"),
+            _assinatura_curta(lista, "verificador_nome", "verificador_sigla"),
+            _assinatura_curta(lista, "aprovador_nome", "aprovador_sigla"),
+            _assinatura_curta(lista, "autorizado_nome", "autorizado_sigla"),
+            v["criado_em"].strftime("%d/%m/%Y"),
+        ]
+        for col, valor in enumerate(valores, start=1):
+            cel = ws.cell(row=linha, column=col, value=valor)
+            cel.border = borda
+            cel.alignment = esquerda if col == 3 else centro
+        linha += 1
+    if not emitidas:
+        ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura)
+        ws.cell(row=linha, column=1, value="Nenhuma versão emitida ainda.").alignment = centro
+
+    larguras = [6, 5, 32, 8, 8, 8, 8, 12]
+    for i, w in enumerate(larguras, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
 
 
 @relatorios_bp.get("/api/listas/<int:lista_id>/relatorio/pdf")
@@ -431,68 +534,80 @@ def relatorio_pdf(lista_id):
                              leftMargin=1.2 * cm, rightMargin=1.2 * cm)
 
     ref_estilo = ParagraphStyle("ref", fontSize=9, leading=12, alignment=1, spaceAfter=10)
+    titulo_bloco_estilo = ParagraphStyle("titulo_bloco", fontSize=11, leading=14, alignment=1,
+                                          spaceAfter=2, fontName="Helvetica-Bold")
     secao_estilo = ParagraphStyle("secao", fontSize=10, fontName="Helvetica-Bold", spaceBefore=10, spaceAfter=4)
 
     data_versao = versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
     elementos = _cabecalho_pdf_com_logos(
         empresa, ctx["config"].get("logo_url", ""), lista["cliente_nome"], lista.get("cliente_logo_url"),
-        lista["projeto_nome"], f"LISTA DE MATERIAIS ELÉTRICOS POR DESENHO — {lista['titulo'] or lista['numero_desenho']}",
-        versao["versao"] if versao else "-", data_versao,
+        lista["projeto_nome"], "", versao["versao"] if versao else "-", data_versao,
     )
-    elementos.append(Paragraph(
-        f"Doc. Referência: {_doc_referencia(lista)} &nbsp;&nbsp;|&nbsp;&nbsp; "
-        f"Nº do Cliente: {lista['numero_cliente'] or '-'} &nbsp;&nbsp;|&nbsp;&nbsp; Nº do Fornecedor: {lista['numero_fornecedor'] or '-'}",
-        ref_estilo,
-    ))
+    for texto in _bloco_titulo_lista(lista):
+        elementos.append(Paragraph(texto, titulo_bloco_estilo))
+    elementos.append(Spacer(1, 4))
+
+    dados_info = [[
+        f"Nº Cliente: {lista['numero_cliente'] or '-'}", f"Nº Projetista: {lista['numero_fornecedor'] or '-'}",
+        f"Rev.: {versao['versao'] if versao else '-'}", "Folha: 1",
+    ]]
+    tabela_info = Table(dados_info, colWidths=[6.75 * cm] * 4)
+    tabela_info.setStyle(TableStyle([
+        ("FONTSIZE", (0, 0), (-1, -1), 9), ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.grey), ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    elementos.append(tabela_info)
+    elementos.append(Paragraph(f"DESENHO DE REFERÊNCIA: {_doc_referencia(lista)}", ref_estilo))
     assinaturas = _linha_assinaturas(lista)
     if assinaturas:
         elementos.append(Paragraph(assinaturas.replace("    |    ", " &nbsp;&nbsp;|&nbsp;&nbsp; "), ref_estilo))
 
-    dados_materiais = [["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]]
+    dados_materiais = [["Item", "Código", "Descrição", "Referência", "Complemento", "Unidade", "Qtd. Atual", "Qtd. Anterior"]]
     for idx, item in enumerate(itens, start=1):
         dados_materiais.append([idx, item["codigo"], item["descricao"], item["fabricante"] or "-",
-                                 item["bitola"] or "-", item["quantidade"], item["unidade"]])
+                                 item["bitola"] or "-", item["unidade"], item["quantidade"], item["quantidade_anterior"]])
     if not itens:
-        dados_materiais.append(["-", "-", "Nenhum material nesta versão.", "-", "-", "-", "-"])
+        dados_materiais.append(["-", "-", "Nenhum material nesta versão.", "-", "-", "-", "-", "-"])
 
     tabela_materiais = _tabela_quebravel(
         dados_materiais,
-        col_widths=[1.3 * cm, 2.8 * cm, 8 * cm, 4.5 * cm, 2.8 * cm, 2.8 * cm, 2.3 * cm],
-        alinhar_direita={0, 5, 6},
+        col_widths=[1.2 * cm, 2.5 * cm, 7 * cm, 4.5 * cm, 3.5 * cm, 2 * cm, 2.3 * cm, 2.5 * cm],
+        alinhar_direita={0, 5, 6, 7},
     )
     elementos.append(tabela_materiais)
 
     elementos.append(Paragraph("HISTÓRICO DE REVISÕES", secao_estilo))
-    dados_rev = [["Rev.", "Data", "Responsável", "Descrição"]]
-    for v in historico:
-        dados_rev.append([v["versao"], v["criado_em"].strftime("%d/%m/%Y"), v["criado_por_nome"] or "-", v["observacoes"] or "-"])
+    dados_rev = [["Rev.", "TE", "Descrição", "Por", "Ver.", "Apr.", "Aut.", "Data"]]
+    for v in [v for v in historico if v["status"] == "salvo"]:
+        dados_rev.append([
+            v["versao"], v["tipo_emissao"] or "-", v["observacoes"] or "-",
+            _assinatura_curta(lista, "elaborador_nome", "elaborador_sigla"),
+            _assinatura_curta(lista, "verificador_nome", "verificador_sigla"),
+            _assinatura_curta(lista, "aprovador_nome", "aprovador_sigla"),
+            _assinatura_curta(lista, "autorizado_nome", "autorizado_sigla"),
+            v["criado_em"].strftime("%d/%m/%Y"),
+        ])
+    if len(dados_rev) == 1:
+        dados_rev.append(["-", "-", "Nenhuma versão emitida ainda.", "-", "-", "-", "-", "-"])
     tabela_rev = _tabela_quebravel(
-        dados_rev, col_widths=[1.5 * cm, 2.5 * cm, 4 * cm, 16.5 * cm], alinhar_direita={0, 1},
+        dados_rev, col_widths=[1.3 * cm, 1.2 * cm, 12 * cm, 1.8 * cm, 1.8 * cm, 1.8 * cm, 1.8 * cm, 2.3 * cm],
+        alinhar_direita={0, 1, 7},
     )
     elementos.append(tabela_rev)
 
-    codigo_atual = STATUS_DOCUMENTO.get(versao["status"], ("-", "-"))[0] if versao else "-"
-    dados_status = [[("[X] " if cod == codigo_atual else "[ ] ") + f"{cod} - {nome}" for cod, nome in LEGENDA_STATUS]]
-    tabela_status = Table(dados_status, colWidths=[6 * cm] * 4)
-    tabela_status.setStyle(TableStyle([
+    dados_legenda = [[f"{cod} - {nome}" for cod, nome in list(TIPOS_EMISSAO.items())[i:i + 4]] for i in (0, 4)]
+    tabela_legenda = Table(dados_legenda, colWidths=[6 * cm] * 4)
+    tabela_legenda.setStyle(TableStyle([
         ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("BOX", (0, 0), (-1, -1), 0.5, colors.grey),
         ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     elementos.append(Spacer(1, 8))
-    elementos.append(tabela_status)
-
-    dados_rodape = [[f"Cliente: {lista['cliente_nome'] or '-'}", f"Empresa: {empresa}", f"Documento: {_doc_referencia(lista)}"]]
-    tabela_rodape = Table(dados_rodape, colWidths=[9 * cm, 9 * cm, 9 * cm])
-    tabela_rodape.setStyle(TableStyle([
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-    ]))
-    elementos.append(Spacer(1, 4))
-    elementos.append(tabela_rodape)
+    elementos.append(Paragraph("TE: TIPO DE EMISSÃO", secao_estilo))
+    elementos.append(tabela_legenda)
 
     marca_dagua = _marca_dagua_preliminar(doc, rascunho)
     doc.build(elementos, onFirstPage=marca_dagua, onLaterPages=marca_dagua)

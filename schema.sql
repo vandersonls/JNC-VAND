@@ -176,6 +176,9 @@ CREATE TABLE IF NOT EXISTS listas_desenho (
     projeto_id INT NOT NULL,
     numero_desenho VARCHAR(100) NOT NULL,
     titulo VARCHAR(200),
+    subtitulo VARCHAR(200),
+    area_titulo VARCHAR(200),
+    disciplina VARCHAR(100),
     numero_cliente VARCHAR(100),
     numero_fornecedor VARCHAR(100),
     elaborador_nome VARCHAR(150),
@@ -184,6 +187,8 @@ CREATE TABLE IF NOT EXISTS listas_desenho (
     verificador_sigla VARCHAR(20),
     aprovador_nome VARCHAR(150),
     aprovador_sigla VARCHAR(20),
+    autorizado_nome VARCHAR(150),
+    autorizado_sigla VARCHAR(20),
     versao_atual_id INT NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_lista_projeto FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
@@ -232,6 +237,34 @@ SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
 SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN aprovador_sigla VARCHAR(20) AFTER aprovador_nome', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
+-- Bloco de título em 4 linhas (subtítulo de engenharia / área / disciplina
+-- / título) e assinatura de autorização, pra bater com o carimbo padrão
+-- de documentos de engenharia usado como modelo de impressão.
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'subtitulo');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN subtitulo VARCHAR(200) AFTER titulo', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'area_titulo');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN area_titulo VARCHAR(200) AFTER subtitulo', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'disciplina');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN disciplina VARCHAR(100) AFTER area_titulo', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'autorizado_nome');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN autorizado_nome VARCHAR(150) AFTER aprovador_sigla', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'autorizado_sigla');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN autorizado_sigla VARCHAR(20) AFTER autorizado_nome', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 -- =========================================================
 -- VERSÕES DA LISTA POR DESENHO (histórico imutável)
 -- =========================================================
@@ -240,6 +273,7 @@ CREATE TABLE IF NOT EXISTS lista_desenho_versoes (
     lista_desenho_id INT NOT NULL,
     versao INT NOT NULL,
     status ENUM('rascunho', 'salvo') NOT NULL DEFAULT 'salvo',
+    tipo_emissao ENUM('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H') NULL,
     observacoes TEXT,
     criado_por INT,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -247,6 +281,11 @@ CREATE TABLE IF NOT EXISTS lista_desenho_versoes (
     CONSTRAINT fk_versao_usuario FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
     UNIQUE KEY uq_lista_versao (lista_desenho_id, versao)
 ) ENGINE=InnoDB;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lista_desenho_versoes' AND COLUMN_NAME = 'tipo_emissao');
+SET @sql = IF(@col_exists = 0, "ALTER TABLE lista_desenho_versoes ADD COLUMN tipo_emissao ENUM('A','B','C','D','E','F','G','H') NULL AFTER status", 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 ALTER TABLE listas_desenho
     ADD CONSTRAINT fk_lista_versao_atual FOREIGN KEY (versao_atual_id) REFERENCES lista_desenho_versoes(id) ON DELETE SET NULL;

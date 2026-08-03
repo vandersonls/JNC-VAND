@@ -13,10 +13,41 @@ projetos_bp = Blueprint("projetos", __name__)
 CAMPOS_PROJETO = ["codigo", "nome", "cliente_id", "descricao", "status"]
 
 CAMPOS_CABECALHO_LISTA = (
-    "titulo", "numero_desenho", "numero_cliente", "numero_fornecedor",
+    "titulo", "subtitulo", "area_titulo", "disciplina",
+    "numero_desenho", "numero_cliente", "numero_fornecedor",
     "elaborador_nome", "elaborador_sigla", "verificador_nome", "verificador_sigla",
-    "aprovador_nome", "aprovador_sigla",
+    "aprovador_nome", "aprovador_sigla", "autorizado_nome", "autorizado_sigla",
 )
+
+# Tipos de emissão (TE) do carimbo padrão de documentos de engenharia -
+# escolhido ao emitir uma versão, usado no histórico de revisões do relatório.
+TIPOS_EMISSAO = {
+    "A": "PRELIMINAR",
+    "B": "PARA APROVAÇÃO",
+    "C": "PARA CONHECIMENTO",
+    "D": "PARA COTAÇÃO",
+    "E": "PARA CONSTRUÇÃO",
+    "F": "CONFORME COMPRADO",
+    "G": "CONFORME CONSTRUÍDO",
+    "H": "CANCELADO",
+}
+
+
+def _sql_update_cabecalho():
+    return ", ".join(f"{campo}=%s" for campo in CAMPOS_CABECALHO_LISTA)
+
+
+def _valores_cabecalho(data, numero_desenho, lista=None):
+    """Monta os valores do cabeçalho na ordem de CAMPOS_CABECALHO_LISTA.
+    Sem `lista` (criação): campo ausente vira string vazia. Com `lista`
+    (edição): campo ausente do payload mantém o valor já salvo."""
+    def valor(campo):
+        if campo == "numero_desenho":
+            return numero_desenho
+        if campo in data:
+            return data[campo]
+        return lista[campo] if lista is not None else ""
+    return tuple(valor(campo) for campo in CAMPOS_CABECALHO_LISTA)
 
 
 # =========================================================
@@ -218,6 +249,18 @@ def _salvar_itens(versao_id, itens):
         )
 
 
+def _extra_campos_emissao(status, data):
+    """Ao emitir (status='salvo'), o tipo de emissão (TE, A-H) é obrigatório
+    - alimenta o histórico de revisões do relatório. Rascunho não exige.
+    Retorna (extra_campos, mensagem_de_erro | None)."""
+    if status != "salvo":
+        return {}, None
+    tipo_emissao = (data.get("tipo_emissao") or "").strip().upper()
+    if tipo_emissao not in TIPOS_EMISSAO:
+        return None, "Selecione o tipo de emissão (TE) para emitir a versão"
+    return {"tipo_emissao": tipo_emissao}, None
+
+
 @projetos_bp.post("/api/projetos/<int:projeto_id>/listas")
 @perfis_permitidos("master", "administrador")
 def criar_lista(projeto_id):
@@ -228,22 +271,19 @@ def criar_lista(projeto_id):
     if not projeto_permitido(projeto_id):
         return jsonify({"erro": "Sem permissão para criar listas neste projeto"}), 403
     status = "rascunho" if data.get("status") == "rascunho" else "salvo"
+    extra_campos, erro = _extra_campos_emissao(status, data)
+    if erro:
+        return jsonify({"erro": erro}), 400
 
+    colunas_cabecalho = ", ".join(CAMPOS_CABECALHO_LISTA)
+    placeholders_cabecalho = ", ".join(["%s"] * len(CAMPOS_CABECALHO_LISTA))
     lista_id = db.execute(
-        """INSERT INTO listas_desenho (projeto_id, numero_desenho, titulo, numero_cliente, numero_fornecedor,
-                                        elaborador_nome, elaborador_sigla, verificador_nome, verificador_sigla,
-                                        aprovador_nome, aprovador_sigla)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-        (
-            projeto_id, numero_desenho, data.get("titulo", ""), data.get("numero_cliente", ""), data.get("numero_fornecedor", ""),
-            data.get("elaborador_nome", ""), data.get("elaborador_sigla", ""),
-            data.get("verificador_nome", ""), data.get("verificador_sigla", ""),
-            data.get("aprovador_nome", ""), data.get("aprovador_sigla", ""),
-        ),
+        f"INSERT INTO listas_desenho (projeto_id, {colunas_cabecalho}) VALUES (%s, {placeholders_cabecalho})",
+        (projeto_id, *_valores_cabecalho(data, numero_desenho)),
     )
     versao_id, numero_versao = salvar_versao(
         "lista_desenho_versoes", "lista_desenho_id", lista_id, status,
-        data.get("observacoes", ""), current_user.id,
+        data.get("observacoes", ""), current_user.id, extra_campos=extra_campos,
     )
     _salvar_itens(versao_id, data.get("itens"))
     if status == "salvo":
@@ -269,26 +309,20 @@ def editar_lista(lista_id):
     if not projeto_permitido(lista["projeto_id"]):
         return jsonify({"erro": "Sem permissão para editar esta lista"}), 403
     status = "rascunho" if data.get("status") == "rascunho" else "salvo"
+    extra_campos, erro = _extra_campos_emissao(status, data)
+    if erro:
+        return jsonify({"erro": erro}), 400
 
     if any(campo in data for campo in CAMPOS_CABECALHO_LISTA):
+        numero_desenho = data.get("numero_desenho", lista["numero_desenho"])
         db.execute(
-            """UPDATE listas_desenho SET titulo=%s, numero_desenho=%s, numero_cliente=%s, numero_fornecedor=%s,
-                                          elaborador_nome=%s, elaborador_sigla=%s, verificador_nome=%s, verificador_sigla=%s,
-                                          aprovador_nome=%s, aprovador_sigla=%s
-               WHERE id=%s""",
-            (
-                data.get("titulo", lista["titulo"]), data.get("numero_desenho", lista["numero_desenho"]),
-                data.get("numero_cliente", lista["numero_cliente"]), data.get("numero_fornecedor", lista["numero_fornecedor"]),
-                data.get("elaborador_nome", lista["elaborador_nome"]), data.get("elaborador_sigla", lista["elaborador_sigla"]),
-                data.get("verificador_nome", lista["verificador_nome"]), data.get("verificador_sigla", lista["verificador_sigla"]),
-                data.get("aprovador_nome", lista["aprovador_nome"]), data.get("aprovador_sigla", lista["aprovador_sigla"]),
-                lista_id,
-            ),
+            f"UPDATE listas_desenho SET {_sql_update_cabecalho()} WHERE id=%s",
+            (*_valores_cabecalho(data, numero_desenho, lista=lista), lista_id),
         )
 
     versao_id, numero_versao = salvar_versao(
         "lista_desenho_versoes", "lista_desenho_id", lista_id, status,
-        data.get("observacoes", ""), current_user.id,
+        data.get("observacoes", ""), current_user.id, extra_campos=extra_campos,
     )
     db.execute("DELETE FROM lista_desenho_itens WHERE versao_id = %s", (versao_id,))
     _salvar_itens(versao_id, data.get("itens"))
@@ -319,18 +353,8 @@ def editar_cabecalho_lista(lista_id):
         return jsonify({"erro": "Sem permissão para editar esta lista"}), 403
     antes = {campo: lista[campo] for campo in CAMPOS_CABECALHO_LISTA}
     db.execute(
-        """UPDATE listas_desenho SET titulo=%s, numero_desenho=%s, numero_cliente=%s, numero_fornecedor=%s,
-                                      elaborador_nome=%s, elaborador_sigla=%s, verificador_nome=%s, verificador_sigla=%s,
-                                      aprovador_nome=%s, aprovador_sigla=%s
-           WHERE id=%s""",
-        (
-            data.get("titulo", ""), numero_desenho,
-            data.get("numero_cliente", ""), data.get("numero_fornecedor", ""),
-            data.get("elaborador_nome", ""), data.get("elaborador_sigla", ""),
-            data.get("verificador_nome", ""), data.get("verificador_sigla", ""),
-            data.get("aprovador_nome", ""), data.get("aprovador_sigla", ""),
-            lista_id,
-        ),
+        f"UPDATE listas_desenho SET {_sql_update_cabecalho()} WHERE id=%s",
+        (*_valores_cabecalho(data, numero_desenho), lista_id),
     )
     registrar(
         "editar", "lista_desenho", lista_id,

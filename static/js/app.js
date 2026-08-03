@@ -1068,10 +1068,13 @@ function renderCabecalhoLista(listaId, lista, somenteDados = false) {
   abrirModal(`
     <h3>${lista.numero_desenho ? `Lista por Desenho — ${esc(lista.numero_desenho)}` : "Nova Lista por Desenho"}</h3>
     <div class="form-grid-lista">
-      <div class="campo-linha"><label>Título do Documento</label><input id="cab-titulo" value="${esc(lista.titulo || "")}"></div>
+      <div class="campo-linha"><label>Subtítulo (linha 1 do carimbo)</label><input id="cab-subtitulo" value="${esc(lista.subtitulo || "")}" placeholder="Ex.: ENGENHARIA DETALHADA - UTM"></div>
+      <div class="campo-linha"><label>Área (linha 2 do carimbo)</label><input id="cab-area-titulo" value="${esc(lista.area_titulo || "")}" placeholder="Ex.: ÁREA 3110 - BRITAGEM PRIMÁRIA"></div>
+      <div class="campo-linha"><label>Disciplina (linha 3 do carimbo)</label><input id="cab-disciplina" value="${esc(lista.disciplina || "")}" placeholder="Ex.: ELÉTRICA"></div>
+      <div class="campo-linha"><label>Título do Documento (linha 4 do carimbo)</label><input id="cab-titulo" value="${esc(lista.titulo || "")}"></div>
       <div class="campo-linha campo-dupla">
         <div><label>Número do Cliente</label><input id="cab-numero-cliente" value="${esc(lista.numero_cliente || "")}"></div>
-        <div><label>Número do Fornecedor</label><input id="cab-numero-fornecedor" value="${esc(lista.numero_fornecedor || "")}"></div>
+        <div><label>Número do Projetista</label><input id="cab-numero-fornecedor" value="${esc(lista.numero_fornecedor || "")}"></div>
       </div>
       <div class="campo-linha"><label>Número do Desenho de Referência</label><input id="cab-numero-desenho" value="${esc(lista.numero_desenho || "")}"></div>
       <div class="campo-linha campo-dupla">
@@ -1085,6 +1088,10 @@ function renderCabecalhoLista(listaId, lista, somenteDados = false) {
       <div class="campo-linha campo-dupla">
         <div><label>Nome do Aprovador</label><input id="cab-aprovador-nome" value="${esc(lista.aprovador_nome || "")}"></div>
         <div><label>Sigla</label><input id="cab-aprovador-sigla" value="${esc(lista.aprovador_sigla || "")}"></div>
+      </div>
+      <div class="campo-linha campo-dupla">
+        <div><label>Nome do Autorizado</label><input id="cab-autorizado-nome" value="${esc(lista.autorizado_nome || "")}"></div>
+        <div><label>Sigla</label><input id="cab-autorizado-sigla" value="${esc(lista.autorizado_sigla || "")}"></div>
       </div>
     </div>
     <div class="modal-acoes">
@@ -1100,6 +1107,9 @@ function renderCabecalhoLista(listaId, lista, somenteDados = false) {
     const listaAtualizada = {
       ...lista,
       numero_desenho,
+      subtitulo: document.getElementById("cab-subtitulo").value.trim(),
+      area_titulo: document.getElementById("cab-area-titulo").value.trim(),
+      disciplina: document.getElementById("cab-disciplina").value.trim(),
       titulo: document.getElementById("cab-titulo").value.trim(),
       numero_cliente: document.getElementById("cab-numero-cliente").value.trim(),
       numero_fornecedor: document.getElementById("cab-numero-fornecedor").value.trim(),
@@ -1109,6 +1119,8 @@ function renderCabecalhoLista(listaId, lista, somenteDados = false) {
       verificador_sigla: document.getElementById("cab-verificador-sigla").value.trim(),
       aprovador_nome: document.getElementById("cab-aprovador-nome").value.trim(),
       aprovador_sigla: document.getElementById("cab-aprovador-sigla").value.trim(),
+      autorizado_nome: document.getElementById("cab-autorizado-nome").value.trim(),
+      autorizado_sigla: document.getElementById("cab-autorizado-sigla").value.trim(),
     };
     if (somenteDados) {
       salvarCabecalhoLista(listaId, listaAtualizada);
@@ -1249,6 +1261,9 @@ function renderEditorLista(listaId, lista) {
     if (!window._itensEditor.length) { toast("Adicione ao menos um material", "erro"); return; }
     window._editorCabecalho = {
       numero_desenho: lista.numero_desenho,
+      subtitulo: lista.subtitulo || "",
+      area_titulo: lista.area_titulo || "",
+      disciplina: lista.disciplina || "",
       titulo: lista.titulo || "",
       numero_cliente: lista.numero_cliente || "",
       numero_fornecedor: lista.numero_fornecedor || "",
@@ -1258,6 +1273,8 @@ function renderEditorLista(listaId, lista) {
       verificador_sigla: lista.verificador_sigla || "",
       aprovador_nome: lista.aprovador_nome || "",
       aprovador_sigla: lista.aprovador_sigla || "",
+      autorizado_nome: lista.autorizado_nome || "",
+      autorizado_sigla: lista.autorizado_sigla || "",
     };
     renderReviewLista(listaId, lista);
   });
@@ -1287,6 +1304,12 @@ function renderEditorLista(listaId, lista) {
   }
 }
 
+// TE do carimbo padrão de engenharia - só exigido ao emitir (não no rascunho).
+const TIPOS_EMISSAO = {
+  A: "PRELIMINAR", B: "PARA APROVAÇÃO", C: "PARA CONHECIMENTO", D: "PARA COTAÇÃO",
+  E: "PARA CONSTRUÇÃO", F: "CONFORME COMPRADO", G: "CONFORME CONSTRUÍDO", H: "CANCELADO",
+};
+
 function renderReviewLista(listaId, lista) {
   const linhas = window._itensEditor.map((item, idx) => `
     <tr>
@@ -1297,6 +1320,13 @@ function renderReviewLista(listaId, lista) {
 
   abrirModal(`
     <h3>Revisar Lista por Desenho — ${esc(window._editorCabecalho.numero_desenho)}</h3>
+    <div class="campo-linha somente-admin" style="max-width:340px;">
+      <label>Tipo de Emissão (TE) — obrigatório para emitir</label>
+      <select id="rev-tipo-emissao" style="width:100%">
+        <option value="">-- Selecione --</option>
+        ${Object.entries(TIPOS_EMISSAO).map(([cod, desc]) => `<option value="${cod}">${cod} - ${desc}</option>`).join("")}
+      </select>
+    </div>
     <div style="max-height:420px; overflow-y:auto; margin:12px 0;">
       <table class="tabela">
         <thead><tr><th>Código</th><th>Descrição</th><th>Fabricante</th><th>Bitola</th><th>Qtd</th><th>Unidade</th></tr></thead>
@@ -1319,14 +1349,21 @@ function renderReviewLista(listaId, lista) {
   });
   document.getElementById("btn-voltar-editor-desenho").addEventListener("click", () => renderEditorLista(listaId, { ...lista, ...window._editorCabecalho }));
   document.getElementById("btn-salvar-rascunho-desenho").addEventListener("click", () => salvarEditorLista(listaId, "rascunho"));
-  document.getElementById("btn-emitir-desenho").addEventListener("click", () => salvarEditorLista(listaId, "salvo"));
+  document.getElementById("btn-emitir-desenho").addEventListener("click", () => {
+    const tipoEmissao = document.getElementById("rev-tipo-emissao").value;
+    if (!tipoEmissao) { toast("Selecione o tipo de emissão (TE) para emitir a versão", "erro"); return; }
+    salvarEditorLista(listaId, "salvo", tipoEmissao);
+  });
 }
 
-async function salvarEditorLista(listaId, status) {
+async function salvarEditorLista(listaId, status, tipoEmissao) {
   const itens = (window._itensEditor || []).filter((i) => i.material_id);
   const cabecalho = window._editorCabecalho || {};
   const payload = {
     numero_desenho: cabecalho.numero_desenho,
+    subtitulo: cabecalho.subtitulo,
+    area_titulo: cabecalho.area_titulo,
+    disciplina: cabecalho.disciplina,
     titulo: cabecalho.titulo,
     numero_cliente: cabecalho.numero_cliente,
     numero_fornecedor: cabecalho.numero_fornecedor,
@@ -1336,7 +1373,10 @@ async function salvarEditorLista(listaId, status) {
     verificador_sigla: cabecalho.verificador_sigla,
     aprovador_nome: cabecalho.aprovador_nome,
     aprovador_sigla: cabecalho.aprovador_sigla,
+    autorizado_nome: cabecalho.autorizado_nome,
+    autorizado_sigla: cabecalho.autorizado_sigla,
     status,
+    tipo_emissao: tipoEmissao,
     itens: itens.map((i) => ({ material_id: Number(i.material_id), quantidade: Math.round(Number(i.quantidade)) || 0, observacao: i.observacao || "" })),
   };
   const mensagem = status === "rascunho" ? "Rascunho salvo" : "Versão emitida com sucesso";
