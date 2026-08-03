@@ -155,18 +155,23 @@ CEL_ESTILO = ParagraphStyle("cel", fontSize=8, leading=10)
 CEL_ESTILO_CABECALHO = ParagraphStyle("cel_cab", fontSize=8, leading=10, textColor=colors.white, fontName="Helvetica-Bold")
 
 
-def _tabela_quebravel(dados, col_widths, alinhar_direita=None):
+def _tabela_quebravel(dados, col_widths, alinhar_direita=None, cor_cabecalho=None, cor_texto_cabecalho=None):
     """Monta uma Table do reportlab em que toda célula é um Paragraph,
     para que o texto quebre linha dentro da largura da coluna em vez de
     transbordar/sobrepor o texto vizinho."""
     alinhar_direita = alinhar_direita or set()
+    cor_cabecalho = cor_cabecalho or colors.HexColor("#1f3a5f")
+    estilo_cabecalho = (
+        CEL_ESTILO_CABECALHO if cor_texto_cabecalho is None
+        else ParagraphStyle("cel_cab_custom", fontSize=8, leading=10, textColor=cor_texto_cabecalho, fontName="Helvetica-Bold")
+    )
     linhas = []
     for i, linha in enumerate(dados):
-        estilo = CEL_ESTILO_CABECALHO if i == 0 else CEL_ESTILO
+        estilo = estilo_cabecalho if i == 0 else CEL_ESTILO
         linhas.append([Paragraph(str(v), estilo) for v in linha])
     tabela = Table(linhas, colWidths=col_widths, repeatRows=1)
     estilo_cmds = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f3a5f")),
+        ("BACKGROUND", (0, 0), (-1, 0), cor_cabecalho),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f4f7")]),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -330,6 +335,35 @@ def _assinatura_curta(lista, campo_nome, campo_sigla):
     return lista.get(campo_sigla) or lista.get(campo_nome) or "-"
 
 
+# Fonte e tamanhos usados no carimbo padrão de documentos de engenharia
+# (modelo em anexo do cliente) - bem mais compactos que o resto do sistema.
+FONTE_DOC = "Arial"
+
+
+def _aplicar_borda_caixa(ws, fino, linha, col1, col2):
+    """Aplica uma borda fina ao redor de um intervalo mesclado numa única
+    linha. Só dar `cell.border = borda` na célula-âncora de uma mescla NÃO
+    desenha as bordas das outras células do intervalo - o Excel monta o
+    contorno a partir da borda de cada célula individual, mesmo mescladas."""
+    for col in range(col1, col2 + 1):
+        ws.cell(row=linha, column=col).border = Border(
+            left=fino if col == col1 else Side(style=None),
+            right=fino if col == col2 else Side(style=None),
+            top=fino, bottom=fino,
+        )
+
+
+def _configurar_pagina_impressao(ws):
+    """Sem isso, ao imprimir/exportar a planilha pro PDF pelo Excel, uma
+    tabela larga (8 colunas) quebra no meio ao atravessar a largura de uma
+    página - o encolhimento automático mantém tudo numa página só de largura."""
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_area = f"A1:{get_column_letter(ws.max_column)}{ws.max_row}"
+
+
 @relatorios_bp.get("/api/listas/<int:lista_id>/relatorio/excel")
 @login_required
 def relatorio_excel(lista_id):
@@ -352,14 +386,15 @@ def relatorio_excel(lista_id):
     ws.title = "Lista de Materiais"
     largura_total = 8
 
-    def escrever_mesclado(texto, negrito=False, tamanho=11, italico=False, alinhamento=centro, linha_atual=1):
+    def escrever_mesclado(texto, negrito=True, tamanho=10, alinhamento=esquerda, linha_atual=1):
         ws.merge_cells(start_row=linha_atual, start_column=1, end_row=linha_atual, end_column=largura_total)
         cel = ws.cell(row=linha_atual, column=1, value=texto)
-        cel.font = Font(bold=negrito, size=tamanho, italic=italico)
+        cel.font = Font(name=FONTE_DOC, bold=negrito, size=tamanho)
         cel.alignment = alinhamento
+        _aplicar_borda_caixa(ws, fino, linha_atual, 1, largura_total)
         return linha_atual + 1
 
-    def escrever_grade(valores, negrito=False, tamanho=9, linha_atual=1):
+    def escrever_grade(valores, negrito=True, tamanho=9, linha_atual=1):
         """Divide a largura total em partes iguais, uma por valor (ex.: as
         4 caixas Nº Cliente / Nº Projetista / Rev. / Folha do carimbo)."""
         largura_col = largura_total // len(valores)
@@ -368,26 +403,38 @@ def relatorio_excel(lista_id):
             fim = col + largura_col - 1
             ws.merge_cells(start_row=linha_atual, start_column=col, end_row=linha_atual, end_column=fim)
             cel = ws.cell(row=linha_atual, column=col, value=texto)
-            cel.font = Font(bold=negrito, size=tamanho)
+            cel.font = Font(name=FONTE_DOC, bold=negrito, size=tamanho)
             cel.alignment = centro
-            cel.border = borda
             col = fim + 1
+        _aplicar_borda_caixa(ws, fino, linha_atual, 1, largura_total)
         return linha_atual + 1
 
-    linha = _cabecalho_excel_com_logos(
-        ws, largura_total, empresa, ctx["config"].get("logo_url", ""),
-        lista["cliente_nome"], lista.get("cliente_logo_url"),
-        lista["projeto_nome"], "",
-        versao["versao"] if versao else "-", versao["criado_em"].strftime("%d/%m/%Y") if versao else "-",
-    )
-    linha -= 1  # a linha do nome_aba (em branco acima) não é usada - o bloco de título abaixo a substitui
+    # EMPRESA / CLIENTE (compacto, com logo se configurado) - identifica quem
+    # emitiu e para quem, mas sem o exagero visual de um relatório de app.
+    ws.row_dimensions[1].height = 30
+    for offset, (nome, url, rotulo) in enumerate([
+        (empresa, ctx["config"].get("logo_url", ""), "EMPRESA"), (lista["cliente_nome"], lista.get("cliente_logo_url"), "CLIENTE"),
+    ]):
+        col_ini = 1 + offset * (largura_total // 2)
+        col_fim = col_ini + (largura_total // 2) - 1
+        ws.merge_cells(start_row=1, start_column=col_ini, end_row=1, end_column=col_fim)
+        cel = ws.cell(row=1, column=col_ini, value=f"{rotulo}: {nome or '-'}")
+        cel.font, cel.alignment = Font(name=FONTE_DOC, bold=True, size=10), centro
+        img_bytes = _baixar_imagem(url)
+        if img_bytes:
+            try:
+                img = ExcelImage(io.BytesIO(img_bytes))
+                img.width, img.height = 26, 26
+                ws.add_image(img, f"{get_column_letter(col_ini)}1")
+            except Exception:
+                pass
+    _aplicar_borda_caixa(ws, fino, 1, 1, largura_total // 2)
+    _aplicar_borda_caixa(ws, fino, 1, largura_total // 2 + 1, largura_total)
+    linha = 2
 
+    linha = escrever_mesclado(lista["projeto_nome"], negrito=True, tamanho=12, alinhamento=centro, linha_atual=linha)
     for texto in _bloco_titulo_lista(lista):
-        cel = ws.cell(row=linha, column=1, value=texto)
-        ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura_total)
-        cel.font = Font(bold=True, size=10)
-        cel.alignment = centro
-        linha += 1
+        linha = escrever_mesclado(texto, negrito=True, tamanho=10, linha_atual=linha)
 
     linha = escrever_grade(
         [
@@ -398,17 +445,15 @@ def relatorio_excel(lista_id):
         ],
         tamanho=9, linha_atual=linha,
     )
-    linha = escrever_mesclado(f"DESENHO DE REFERÊNCIA: {_doc_referencia(lista)}", tamanho=9, linha_atual=linha)
-    assinaturas = _linha_assinaturas(lista)
-    if assinaturas:
-        linha = escrever_mesclado(assinaturas, tamanho=9, linha_atual=linha)
+    linha = escrever_mesclado(f"DESENHO DE REFERÊNCIA: {_doc_referencia(lista)}", tamanho=10, linha_atual=linha)
     linha += 1
 
-    cabecalho_tabela = ["Item", "Código", "Descrição", "Referência", "Complemento", "Unidade", "Quant. Atual", "Quant. Anterior"]
+    cabecalho_tabela = ["Item", "Código", "Descrição", "Referência", "Complemento", "Unidade", "Quant.\nAtual", "Quant.\nAnterior"]
+    ws.row_dimensions[linha].height = 28
     for col, titulo in enumerate(cabecalho_tabela, start=1):
         cel = ws.cell(row=linha, column=col, value=titulo)
-        cel.font = Font(bold=True, size=9, color="FFFFFF")
-        cel.fill = openpyxl.styles.PatternFill("solid", fgColor="1f3a5f")
+        cel.font = Font(name=FONTE_DOC, bold=True, size=8)
+        cel.fill = openpyxl.styles.PatternFill("solid", fgColor="D9D9D9")
         cel.alignment = centro
         cel.border = borda
     linha += 1
@@ -418,6 +463,7 @@ def relatorio_excel(lista_id):
                    item["unidade"], float(item["quantidade"]), float(item["quantidade_anterior"])]
         for col, valor in enumerate(valores, start=1):
             cel = ws.cell(row=linha, column=col, value=valor)
+            cel.font = Font(name=FONTE_DOC, size=8)
             cel.border = borda
             cel.alignment = centro if col != 3 else esquerda
         linha += 1
@@ -429,6 +475,7 @@ def relatorio_excel(lista_id):
     larguras = [6, 14, 38, 24, 18, 10, 12, 12]
     for i, w in enumerate(larguras, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
+    _configurar_pagina_impressao(ws)
 
     _escrever_capa_excel(wb, lista, historico)
 
@@ -451,44 +498,43 @@ def _escrever_capa_excel(wb, lista, historico):
     centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
     esquerda = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
-    linha = 1
-    ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura)
-    cel = ws.cell(row=linha, column=1, value=lista["projeto_nome"])
-    cel.font, cel.alignment = Font(bold=True, size=13), centro
-    linha += 1
+    def escrever_mesclado(texto, tamanho=10, alinhamento=esquerda, linha_atual=1, com_borda=True):
+        ws.merge_cells(start_row=linha_atual, start_column=1, end_row=linha_atual, end_column=largura)
+        cel = ws.cell(row=linha_atual, column=1, value=texto)
+        cel.font = Font(name=FONTE_DOC, bold=True, size=tamanho)
+        cel.alignment = alinhamento
+        if com_borda:
+            _aplicar_borda_caixa(ws, fino, linha_atual, 1, largura)
+        return linha_atual + 1
+
+    linha = escrever_mesclado(lista["projeto_nome"], tamanho=12, alinhamento=centro, linha_atual=1)
     for texto in _bloco_titulo_lista(lista):
-        ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura)
-        cel = ws.cell(row=linha, column=1, value=texto)
-        cel.font, cel.alignment = Font(bold=True, size=10), centro
+        linha = escrever_mesclado(texto, tamanho=10, linha_atual=linha)
+    linha += 1
+
+    linha = escrever_mesclado("REVISÕES", tamanho=11, alinhamento=centro, linha_atual=linha, com_borda=False)
+    linha = escrever_mesclado("TE: TIPO DE EMISSÃO", tamanho=9, linha_atual=linha, com_borda=False)
+
+    # Duas colunas (metade esquerda/direita da largura) x 4 linhas - uma
+    # caixa por código. Uma grade de 4 caixas iguais não dava certo aqui
+    # porque as larguras das 8 colunas reais são as da tabela de revisões
+    # (bem desiguais entre si), então texto ficava cortado nas caixas estreitas.
+    codigos = list(TIPOS_EMISSAO.items())
+    metade = largura // 2
+    for esquerda_par, direita_par in zip(codigos[:4], codigos[4:]):
+        for col_ini, col_fim, (cod, nome) in ((1, metade, esquerda_par), (metade + 1, largura, direita_par)):
+            ws.merge_cells(start_row=linha, start_column=col_ini, end_row=linha, end_column=col_fim)
+            cel = ws.cell(row=linha, column=col_ini, value=f"{cod} - {nome}")
+            cel.font, cel.alignment = Font(name=FONTE_DOC, size=8), esquerda
+            _aplicar_borda_caixa(ws, fino, linha, col_ini, col_fim)
         linha += 1
     linha += 1
-
-    ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura)
-    cel = ws.cell(row=linha, column=1, value="REVISÕES")
-    cel.font, cel.alignment = Font(bold=True, size=11), centro
-    linha += 1
-
-    ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura)
-    ws.cell(row=linha, column=1, value="TE: TIPO DE EMISSÃO").font = Font(bold=True, size=9)
-    linha += 1
-
-    pares = [("A", "B"), ("C", "D"), ("E", "F"), ("G", "H")]
-    ws.row_dimensions[linha].height = 26
-    col = 1
-    for c1, c2 in pares:
-        fim = col + 1
-        ws.merge_cells(start_row=linha, start_column=col, end_row=linha, end_column=fim)
-        texto = f"{c1} - {TIPOS_EMISSAO[c1]}\n{c2} - {TIPOS_EMISSAO[c2]}"
-        cel = ws.cell(row=linha, column=col, value=texto)
-        cel.font, cel.alignment, cel.border = Font(size=8), esquerda, borda
-        col = fim + 1
-    linha += 2
 
     cabecalho_rev = ["Rev.", "TE", "Descrição", "Por", "Ver.", "Apr.", "Aut.", "Data"]
     for col, titulo in enumerate(cabecalho_rev, start=1):
         cel = ws.cell(row=linha, column=col, value=titulo)
-        cel.font = Font(bold=True, size=9, color="FFFFFF")
-        cel.fill = openpyxl.styles.PatternFill("solid", fgColor="1f3a5f")
+        cel.font = Font(name=FONTE_DOC, bold=True, size=9)
+        cel.fill = openpyxl.styles.PatternFill("solid", fgColor="D9D9D9")
         cel.alignment, cel.border = centro, borda
     linha += 1
 
@@ -504,6 +550,7 @@ def _escrever_capa_excel(wb, lista, historico):
         ]
         for col, valor in enumerate(valores, start=1):
             cel = ws.cell(row=linha, column=col, value=valor)
+            cel.font = Font(name=FONTE_DOC, size=8)
             cel.border = borda
             cel.alignment = esquerda if col == 3 else centro
         linha += 1
@@ -514,6 +561,7 @@ def _escrever_capa_excel(wb, lista, historico):
     larguras = [6, 5, 32, 8, 8, 8, 8, 12]
     for i, w in enumerate(larguras, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
+    _configurar_pagina_impressao(ws)
 
 
 @relatorios_bp.get("/api/listas/<int:lista_id>/relatorio/pdf")
@@ -533,16 +581,19 @@ def relatorio_pdf(lista_id):
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.2 * cm, bottomMargin=1.2 * cm,
                              leftMargin=1.2 * cm, rightMargin=1.2 * cm)
 
-    ref_estilo = ParagraphStyle("ref", fontSize=9, leading=12, alignment=1, spaceAfter=10)
-    titulo_bloco_estilo = ParagraphStyle("titulo_bloco", fontSize=11, leading=14, alignment=1,
-                                          spaceAfter=2, fontName="Helvetica-Bold")
+    ref_estilo = ParagraphStyle("ref", fontSize=9, leading=12, alignment=0, spaceAfter=6)
+    titulo_bloco_estilo = ParagraphStyle("titulo_bloco", fontSize=10, leading=13, alignment=0,
+                                          spaceAfter=1, fontName="Helvetica-Bold")
     secao_estilo = ParagraphStyle("secao", fontSize=10, fontName="Helvetica-Bold", spaceBefore=10, spaceAfter=4)
 
     data_versao = versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
+    # Só a caixa empresa/cliente + nome do projeto - as linhas de aba/revisão
+    # do helper compartilhado não se aplicam aqui (o bloco de título e a
+    # grade Rev./Folha abaixo cobrem essa informação sem repetição).
     elementos = _cabecalho_pdf_com_logos(
         empresa, ctx["config"].get("logo_url", ""), lista["cliente_nome"], lista.get("cliente_logo_url"),
         lista["projeto_nome"], "", versao["versao"] if versao else "-", data_versao,
-    )
+    )[:2]
     for texto in _bloco_titulo_lista(lista):
         elementos.append(Paragraph(texto, titulo_bloco_estilo))
     elementos.append(Spacer(1, 4))
@@ -560,9 +611,6 @@ def relatorio_pdf(lista_id):
     ]))
     elementos.append(tabela_info)
     elementos.append(Paragraph(f"DESENHO DE REFERÊNCIA: {_doc_referencia(lista)}", ref_estilo))
-    assinaturas = _linha_assinaturas(lista)
-    if assinaturas:
-        elementos.append(Paragraph(assinaturas.replace("    |    ", " &nbsp;&nbsp;|&nbsp;&nbsp; "), ref_estilo))
 
     dados_materiais = [["Item", "Código", "Descrição", "Referência", "Complemento", "Unidade", "Qtd. Atual", "Qtd. Anterior"]]
     for idx, item in enumerate(itens, start=1):
@@ -575,6 +623,7 @@ def relatorio_pdf(lista_id):
         dados_materiais,
         col_widths=[1.2 * cm, 2.5 * cm, 7 * cm, 4.5 * cm, 3.5 * cm, 2 * cm, 2.3 * cm, 2.5 * cm],
         alinhar_direita={0, 5, 6, 7},
+        cor_cabecalho=colors.HexColor("#D9D9D9"), cor_texto_cabecalho=colors.black,
     )
     elementos.append(tabela_materiais)
 
@@ -594,6 +643,7 @@ def relatorio_pdf(lista_id):
     tabela_rev = _tabela_quebravel(
         dados_rev, col_widths=[1.3 * cm, 1.2 * cm, 12 * cm, 1.8 * cm, 1.8 * cm, 1.8 * cm, 1.8 * cm, 2.3 * cm],
         alinhar_direita={0, 1, 7},
+        cor_cabecalho=colors.HexColor("#D9D9D9"), cor_texto_cabecalho=colors.black,
     )
     elementos.append(tabela_rev)
 
