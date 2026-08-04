@@ -1,0 +1,12 @@
+.venv/
+.venv1/
+__pycache__/
+*.pyc
+.idea/
+.git/
+.claude/
+uploads/*
+exports/*
+dump/
+*.log
+.env

@@ -1,5 +1,0 @@
-# Adiciona o LibreOffice (binário `soffice`) ao build do Railway - usado por
-# relatorios.py pra converter o molde de impressão da Lista por Desenho
-# (Excel preenchido) em PDF idêntico ao original, sem recriar o layout.
-[phases.setup]
-nixPkgs = ["libreoffice-fresh"]
