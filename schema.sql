@@ -181,6 +181,8 @@ CREATE TABLE IF NOT EXISTS listas_desenho (
     disciplina VARCHAR(100),
     numero_cliente VARCHAR(100),
     numero_fornecedor VARCHAR(100),
+    rev_manual INT NULL,
+    data_emissao_manual DATE NULL,
     elaborador_nome VARCHAR(150),
     elaborador_sigla VARCHAR(20),
     verificador_nome VARCHAR(150),
@@ -204,6 +206,19 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'numero_fornecedor');
 SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN numero_fornecedor VARCHAR(100) AFTER numero_cliente', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- Rev. e Data de emissão preenchidos manualmente no cabeçalho (o operador
+-- confere com a última revisão registrada) - por enquanto não substituem o
+-- número de versão automático do sistema, só o que aparece impresso.
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'rev_manual');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN rev_manual INT NULL AFTER numero_fornecedor', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho' AND COLUMN_NAME = 'data_emissao_manual');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE listas_desenho ADD COLUMN data_emissao_manual DATE NULL AFTER rev_manual', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- Campos de carimbo/aprovação (elaborador, verificador, aprovador - nome e sigla)

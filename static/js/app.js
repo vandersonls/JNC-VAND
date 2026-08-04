@@ -1026,6 +1026,14 @@ function escapeHtml(texto) {
 // Alias curto (função declarada = hoisted, seguro em qualquer ponto do arquivo)
 function esc(texto) { return escapeHtml(texto); }
 
+// Normaliza uma data vinda da API (ISO ou formato HTTP) pro formato que o
+// <input type="date"> exige (YYYY-MM-DD), sem quebrar se vier vazia/inválida.
+function paraDataInput(valor) {
+  if (!valor) return "";
+  const d = new Date(valor);
+  return isNaN(d) ? "" : d.toISOString().slice(0, 10);
+}
+
 // ---------- EDITOR DA LISTA (com versionamento) ----------
 // Acesso separado do editor de materiais: só os dados da pasta (título,
 // cliente/fornecedor, carimbo), salvos direto via /cabecalho, sem tocar em
@@ -1078,6 +1086,10 @@ function renderCabecalhoLista(listaId, lista, somenteDados = false) {
       </div>
       <div class="campo-linha"><label>Número do Desenho de Referência</label><input id="cab-numero-desenho" value="${esc(lista.numero_desenho || "")}"></div>
       <div class="campo-linha campo-dupla">
+        <div><label>Rev.</label><input id="cab-rev-manual" type="number" step="1" min="0" value="${esc(lista.rev_manual ?? "")}" placeholder="Conferir com a última revisão da lista"></div>
+        <div><label>Data de Emissão</label><input id="cab-data-emissao" type="date" value="${paraDataInput(lista.data_emissao_manual)}"></div>
+      </div>
+      <div class="campo-linha campo-dupla">
         <div><label>Nome do Elaborador</label><input id="cab-elaborador-nome" value="${esc(lista.elaborador_nome || "")}"></div>
         <div><label>Sigla</label><input id="cab-elaborador-sigla" value="${esc(lista.elaborador_sigla || "")}"></div>
       </div>
@@ -1113,6 +1125,8 @@ function renderCabecalhoLista(listaId, lista, somenteDados = false) {
       titulo: document.getElementById("cab-titulo").value.trim(),
       numero_cliente: document.getElementById("cab-numero-cliente").value.trim(),
       numero_fornecedor: document.getElementById("cab-numero-fornecedor").value.trim(),
+      rev_manual: document.getElementById("cab-rev-manual").value.trim(),
+      data_emissao_manual: document.getElementById("cab-data-emissao").value,
       elaborador_nome: document.getElementById("cab-elaborador-nome").value.trim(),
       elaborador_sigla: document.getElementById("cab-elaborador-sigla").value.trim(),
       verificador_nome: document.getElementById("cab-verificador-nome").value.trim(),
@@ -1267,6 +1281,8 @@ function renderEditorLista(listaId, lista) {
       titulo: lista.titulo || "",
       numero_cliente: lista.numero_cliente || "",
       numero_fornecedor: lista.numero_fornecedor || "",
+      rev_manual: lista.rev_manual ?? "",
+      data_emissao_manual: paraDataInput(lista.data_emissao_manual),
       elaborador_nome: lista.elaborador_nome || "",
       elaborador_sigla: lista.elaborador_sigla || "",
       verificador_nome: lista.verificador_nome || "",
@@ -1367,6 +1383,8 @@ async function salvarEditorLista(listaId, status, tipoEmissao) {
     titulo: cabecalho.titulo,
     numero_cliente: cabecalho.numero_cliente,
     numero_fornecedor: cabecalho.numero_fornecedor,
+    rev_manual: cabecalho.rev_manual,
+    data_emissao_manual: cabecalho.data_emissao_manual,
     elaborador_nome: cabecalho.elaborador_nome,
     elaborador_sigla: cabecalho.elaborador_sigla,
     verificador_nome: cabecalho.verificador_nome,

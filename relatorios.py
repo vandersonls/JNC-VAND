@@ -335,6 +335,25 @@ def _assinatura_curta(lista, campo_nome, campo_sigla):
     return lista.get(campo_sigla) or lista.get(campo_nome) or "-"
 
 
+def _rev_exibicao(lista, versao):
+    """Rev. preenchida à mão no cabeçalho tem prioridade (o operador confere
+    com a última revisão registrada); sem isso, cai no número de versão
+    automático do sistema."""
+    if lista.get("rev_manual") is not None:
+        return lista["rev_manual"]
+    return versao["versao"] if versao else "-"
+
+
+def _data_emissao_exibicao(lista, versao):
+    """Mesma lógica da Rev.: data preenchida à mão tem prioridade (permite
+    retroagir a data de documentos migrados), senão usa a data real de
+    criação da versão no sistema."""
+    manual = lista.get("data_emissao_manual")
+    if manual:
+        return manual.strftime("%d/%m/%Y") if hasattr(manual, "strftime") else str(manual)
+    return versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
+
+
 # Fonte e tamanhos usados no carimbo padrão de documentos de engenharia
 # (modelo em anexo do cliente) - bem mais compactos que o resto do sistema.
 FONTE_DOC = "Arial"
@@ -395,11 +414,14 @@ def relatorio_excel(lista_id):
         return linha_atual + 1
 
     def escrever_grade(valores, negrito=True, tamanho=9, linha_atual=1):
-        """Divide a largura total em partes iguais, uma por valor (ex.: as
-        4 caixas Nº Cliente / Nº Projetista / Rev. / Folha do carimbo)."""
-        largura_col = largura_total // len(valores)
+        """Divide a largura total o mais igualmente possível entre as caixas
+        (ex.: Nº Cliente / Nº Projetista / Rev. / Data / Folha do carimbo) -
+        as primeiras caixas absorvem a largura que não divide exatamente."""
+        n = len(valores)
+        base, sobra = divmod(largura_total, n)
         col = 1
-        for texto in valores:
+        for i, texto in enumerate(valores):
+            largura_col = base + (1 if i < sobra else 0)
             fim = col + largura_col - 1
             ws.merge_cells(start_row=linha_atual, start_column=col, end_row=linha_atual, end_column=fim)
             cel = ws.cell(row=linha_atual, column=col, value=texto)
@@ -440,7 +462,8 @@ def relatorio_excel(lista_id):
         [
             f"Nº Cliente: {lista['numero_cliente'] or '-'}",
             f"Nº Projetista: {lista['numero_fornecedor'] or '-'}",
-            f"Rev.: {versao['versao'] if versao else '-'}",
+            f"Rev.: {_rev_exibicao(lista, versao)}",
+            f"Data: {_data_emissao_exibicao(lista, versao)}",
             "Folha: 1",
         ],
         tamanho=9, linha_atual=linha,
@@ -600,9 +623,9 @@ def relatorio_pdf(lista_id):
 
     dados_info = [[
         f"Nº Cliente: {lista['numero_cliente'] or '-'}", f"Nº Projetista: {lista['numero_fornecedor'] or '-'}",
-        f"Rev.: {versao['versao'] if versao else '-'}", "Folha: 1",
+        f"Rev.: {_rev_exibicao(lista, versao)}", f"Data: {_data_emissao_exibicao(lista, versao)}", "Folha: 1",
     ]]
-    tabela_info = Table(dados_info, colWidths=[6.75 * cm] * 4)
+    tabela_info = Table(dados_info, colWidths=[5.4 * cm] * 5)
     tabela_info.setStyle(TableStyle([
         ("FONTSIZE", (0, 0), (-1, -1), 9), ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),

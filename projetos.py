@@ -15,9 +15,15 @@ CAMPOS_PROJETO = ["codigo", "nome", "cliente_id", "descricao", "status"]
 CAMPOS_CABECALHO_LISTA = (
     "titulo", "subtitulo", "area_titulo", "disciplina",
     "numero_desenho", "numero_cliente", "numero_fornecedor",
+    "rev_manual", "data_emissao_manual",
     "elaborador_nome", "elaborador_sigla", "verificador_nome", "verificador_sigla",
     "aprovador_nome", "aprovador_sigla", "autorizado_nome", "autorizado_sigla",
 )
+
+# Rev. e Data de emissão são preenchidos à mão (o operador confere com a
+# última revisão registrada) - por isso viram NULL quando vazios, em vez de
+# string vazia como os demais campos de texto (INT/DATE não aceitam "").
+CAMPOS_CABECALHO_NULOS_SE_VAZIO = {"rev_manual", "data_emissao_manual"}
 
 # Tipos de emissão (TE) do carimbo padrão de documentos de engenharia -
 # escolhido ao emitir uma versão, usado no histórico de revisões do relatório.
@@ -43,10 +49,16 @@ def _valores_cabecalho(data, numero_desenho, lista=None):
     (edição): campo ausente do payload mantém o valor já salvo."""
     def valor(campo):
         if campo == "numero_desenho":
-            return numero_desenho
-        if campo in data:
-            return data[campo]
-        return lista[campo] if lista is not None else ""
+            bruto = numero_desenho
+        elif campo in data:
+            bruto = data[campo]
+        else:
+            bruto = lista[campo] if lista is not None else ""
+        if campo in CAMPOS_CABECALHO_NULOS_SE_VAZIO and bruto in ("", None):
+            return None
+        if campo == "rev_manual" and bruto not in ("", None):
+            return int(bruto)
+        return bruto
     return tuple(valor(campo) for campo in CAMPOS_CABECALHO_LISTA)
 
 
