@@ -1,7 +1,12 @@
 import io
 import ipaddress
+import os
+import re
 import socket
+import subprocess
+import tempfile
 import urllib.request
+from copy import copy
 from urllib.parse import urlparse
 
 import openpyxl
@@ -18,7 +23,6 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 
 import db
 from areas import projeto_permitido, projeto_da_lista
-from projetos import TIPOS_EMISSAO
 
 relatorios_bp = Blueprint("relatorios", __name__)
 
@@ -252,24 +256,6 @@ def _doc_referencia(lista):
     return f"{lista['projeto_codigo']}-{lista['numero_desenho']}"
 
 
-def _linha_assinaturas(lista):
-    """Monta a linha 'Elaborado por / Verificado por / Aprovado por' do carimbo,
-    omitindo qualquer papel que não tenha nome preenchido."""
-    partes = []
-    for rotulo, campo_nome, campo_sigla in (
-        ("Elaborado por", "elaborador_nome", "elaborador_sigla"),
-        ("Verificado por", "verificador_nome", "verificador_sigla"),
-        ("Aprovado por", "aprovador_nome", "aprovador_sigla"),
-        ("Autorizado por", "autorizado_nome", "autorizado_sigla"),
-    ):
-        nome = lista.get(campo_nome)
-        if not nome:
-            continue
-        sigla = lista.get(campo_sigla)
-        partes.append(f"{rotulo}: {nome}{f' ({sigla})' if sigla else ''}")
-    return "    |    ".join(partes)
-
-
 def _carregar_contexto_projeto(projeto_id):
     """Reúne, para cada Lista por Desenho do projeto, sempre a sua última versão salva."""
     if not projeto_permitido(projeto_id):
@@ -322,13 +308,6 @@ def _carregar_contexto_projeto(projeto_id):
     return {"projeto": projeto, "desenhos": desenhos, "consolidado": consolidado_lista, "config": config}
 
 
-def _bloco_titulo_lista(lista):
-    """As linhas do bloco de título do carimbo (subtítulo de engenharia,
-    área, disciplina, título do documento) - só as preenchidas."""
-    linhas = [lista.get("subtitulo"), lista.get("area_titulo"), lista.get("disciplina"), lista.get("titulo")]
-    return [l for l in linhas if l]
-
-
 def _assinatura_curta(lista, campo_nome, campo_sigla):
     """Sigla se houver, senão o nome completo, senão traço - usado nas
     colunas estreitas (Por/Ver./Apr./Aut.) do histórico de revisões."""
@@ -356,31 +335,134 @@ def _data_emissao_exibicao(lista, versao):
 
 # Fonte e tamanhos usados no carimbo padrão de documentos de engenharia
 # (modelo em anexo do cliente) - bem mais compactos que o resto do sistema.
-FONTE_DOC = "Arial"
+# =========================================================
+# LISTA POR DESENHO - preenchimento do molde exato do cliente
+# =========================================================
+# O arquivo relatorio_templates/lista_por_desenho.xlsx é o modelo enviado
+# pelo cliente e NÃO pode ser alterado (símbolos, logos, fontes, bordas,
+# layout). Só escrevemos valores nas células de dados - toda a formatação
+# é a que já vem no próprio arquivo.
+TEMPLATE_LISTA_DESENHO = os.path.join(os.path.dirname(__file__), "relatorio_templates", "lista_por_desenho.xlsx")
+
+# aba 1 = "MMITT-ED-LM-..." (itens), aba 0 = "Capa " - mesmas coordenadas de
+# cabeçalho nas duas, exceto onde a largura da aba muda a coluna do bloco
+# Nº Cliente/Nº Projetista/Projeto (W na aba de itens, V na Capa).
+_CAMPOS_CABECALHO_ITENS = {
+    "projeto": "W2", "subtitulo": "B4", "area": "B5", "disciplina": "B6", "titulo": "B7",
+    "numero_cliente": "W4", "numero_projetista": "W7", "rev": "AG7",
+}
+_CAMPOS_CABECALHO_CAPA = {
+    "projeto": "V2", "subtitulo": "B4", "area": "B5", "disciplina": "B6", "titulo": "B7",
+    "numero_cliente": "V4", "numero_projetista": "V7", "rev": "AG7",
+}
+
+# (nome_campo, coluna_inicial, coluna_final) de cada linha de item na tabela
+# de materiais - a mescla de cada campo já vem pronta no molde até a linha 42.
+_ITEM_COLUNAS = [
+    ("item", 2, 2), ("codigo", 3, 4), ("descricao", 5, 15), ("referencia", 16, 22),
+    ("complemento", 23, 27), ("unidade", 28, 29), ("quant_atual", 30, 32), ("quant_anterior", 33, 34),
+]
+_ITEM_LINHA_INICIAL = 11
+_ITEM_LINHA_FINAL_MOLDE = 42
+_ITEM_LINHA_ESTILO = 20  # linha "do meio" usada como fonte de estilo ao precisar de mais linhas que o molde
+
+_REV_COLUNAS = [
+    ("rev", 2, 3), ("te", 4, 5), ("descricao", 6, 18), ("por", 19, 21),
+    ("ver", 22, 24), ("apr", 25, 27), ("aut", 28, 30), ("data", 31, 36),
+]
+_REV_LINHA_INICIAL = 14
+_REV_LINHA_FINAL_MOLDE = 31
+_REV_LINHA_ESTILO = 20
 
 
-def _aplicar_borda_caixa(ws, fino, linha, col1, col2):
-    """Aplica uma borda fina ao redor de um intervalo mesclado numa única
-    linha. Só dar `cell.border = borda` na célula-âncora de uma mescla NÃO
-    desenha as bordas das outras células do intervalo - o Excel monta o
-    contorno a partir da borda de cada célula individual, mesmo mescladas."""
-    for col in range(col1, col2 + 1):
-        ws.cell(row=linha, column=col).border = Border(
-            left=fino if col == col1 else Side(style=None),
-            right=fino if col == col2 else Side(style=None),
-            top=fino, bottom=fino,
-        )
+def _titulo_aba_valido(texto):
+    """Nome de aba do Excel não aceita : \\ / ? * [ ] nem mais de 31 caracteres."""
+    texto = re.sub(r'[:\\/?*\[\]]', "-", texto or "")
+    return texto[:31] or "Lista"
 
 
-def _configurar_pagina_impressao(ws):
-    """Sem isso, ao imprimir/exportar a planilha pro PDF pelo Excel, uma
-    tabela larga (8 colunas) quebra no meio ao atravessar a largura de uma
-    página - o encolhimento automático mantém tudo numa página só de largura."""
-    ws.page_setup.orientation = "landscape"
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.print_area = f"A1:{get_column_letter(ws.max_column)}{ws.max_row}"
+def _duplicar_linha_estilo(ws, linha_origem, linha_destino, colunas):
+    """Copia formatação (fonte/borda/preenchimento/alinhamento) e mesclagens
+    de uma linha do molde pra uma linha nova - usado quando a lista tem mais
+    itens/revisões do que as linhas já prontas no arquivo do cliente."""
+    ws.row_dimensions[linha_destino].height = ws.row_dimensions[linha_origem].height
+    for _, col_ini, col_fim in colunas:
+        for col in range(col_ini, col_fim + 1):
+            origem = ws.cell(row=linha_origem, column=col)
+            destino = ws.cell(row=linha_destino, column=col)
+            destino.font = copy(origem.font)
+            destino.border = copy(origem.border)
+            destino.fill = copy(origem.fill)
+            destino.alignment = copy(origem.alignment)
+            destino.number_format = origem.number_format
+        if col_fim > col_ini:
+            ws.merge_cells(start_row=linha_destino, start_column=col_ini, end_row=linha_destino, end_column=col_fim)
+
+
+def _escrever_linha_grade(ws, linha, colunas, valores):
+    for nome, col_ini, _ in colunas:
+        if nome in valores:
+            ws.cell(row=linha, column=col_ini, value=valores[nome])
+
+
+def _preencher_cabecalho_molde(ws, campos, lista, versao):
+    ws[campos["projeto"]] = lista["projeto_nome"]
+    ws[campos["subtitulo"]] = lista.get("subtitulo") or ""
+    ws[campos["area"]] = lista.get("area_titulo") or ""
+    ws[campos["disciplina"]] = lista.get("disciplina") or ""
+    ws[campos["titulo"]] = lista.get("titulo") or ""
+    ws[campos["numero_cliente"]] = lista.get("numero_cliente") or ""
+    ws[campos["numero_projetista"]] = lista.get("numero_fornecedor") or ""
+    ws[campos["rev"]] = _rev_exibicao(lista, versao)
+
+
+def _preencher_itens_molde(ws, itens):
+    linha = _ITEM_LINHA_INICIAL
+    for idx, item in enumerate(itens, start=1):
+        if linha > _ITEM_LINHA_FINAL_MOLDE:
+            _duplicar_linha_estilo(ws, _ITEM_LINHA_ESTILO, linha, _ITEM_COLUNAS)
+        _escrever_linha_grade(ws, linha, _ITEM_COLUNAS, {
+            "item": idx, "codigo": item["codigo"], "descricao": item["descricao"],
+            "referencia": item["fabricante"] or "", "complemento": item["bitola"] or "",
+            "unidade": item["unidade"], "quant_atual": float(item["quantidade"]),
+            "quant_anterior": float(item["quantidade_anterior"]),
+        })
+        linha += 1
+
+
+def _preencher_revisoes_molde(ws, lista, versao, historico):
+    linha = _REV_LINHA_INICIAL
+    for v in (h for h in historico if h["status"] == "salvo"):
+        if linha > _REV_LINHA_FINAL_MOLDE:
+            _duplicar_linha_estilo(ws, _REV_LINHA_ESTILO, linha, _REV_COLUNAS)
+        eh_atual = versao is not None and v["versao"] == versao["versao"]
+        data_txt = _data_emissao_exibicao(lista, versao) if eh_atual else v["criado_em"].strftime("%d/%m/%Y")
+        _escrever_linha_grade(ws, linha, _REV_COLUNAS, {
+            "rev": v["versao"], "te": v["tipo_emissao"] or "-", "descricao": v["observacoes"] or "-",
+            "por": _assinatura_curta(lista, "elaborador_nome", "elaborador_sigla"),
+            "ver": _assinatura_curta(lista, "verificador_nome", "verificador_sigla"),
+            "apr": _assinatura_curta(lista, "aprovador_nome", "aprovador_sigla"),
+            "aut": _assinatura_curta(lista, "autorizado_nome", "autorizado_sigla"),
+            "data": data_txt,
+        })
+        linha += 1
+
+
+def _preencher_molde_lista(lista, versao, itens, historico):
+    """Abre o molde do cliente e devolve o Workbook com os dados da lista
+    preenchidos nas células certas - sem tocar em nenhuma formatação."""
+    wb = openpyxl.load_workbook(TEMPLATE_LISTA_DESENHO)
+    ws_capa, ws_itens = wb.worksheets[0], wb.worksheets[1]
+
+    _preencher_cabecalho_molde(ws_itens, _CAMPOS_CABECALHO_ITENS, lista, versao)
+    _preencher_cabecalho_molde(ws_capa, _CAMPOS_CABECALHO_CAPA, lista, versao)
+    ws_itens["B9"] = f"DESENHO DE REFERÊNCIA : {lista['numero_desenho']}"
+
+    _preencher_itens_molde(ws_itens, itens)
+    _preencher_revisoes_molde(ws_capa, lista, versao, historico)
+
+    ws_itens.title = _titulo_aba_valido(lista["numero_desenho"])
+    return wb
 
 
 @relatorios_bp.get("/api/listas/<int:lista_id>/relatorio/excel")
@@ -393,115 +475,8 @@ def relatorio_excel(lista_id):
     if not ctx:
         return jsonify({"erro": "Lista não encontrada"}), 404
     lista, versao, itens, historico = ctx["lista"], ctx["versao"], ctx["itens"], ctx["historico"]
-    empresa = ctx["config"].get("nome_empresa", "")
 
-    fino = Side(style="thin", color="000000")
-    borda = Border(left=fino, right=fino, top=fino, bottom=fino)
-    centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    esquerda = Alignment(horizontal="left", vertical="center", wrap_text=True)
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Lista de Materiais"
-    largura_total = 8
-
-    def escrever_mesclado(texto, negrito=True, tamanho=10, alinhamento=esquerda, linha_atual=1):
-        ws.merge_cells(start_row=linha_atual, start_column=1, end_row=linha_atual, end_column=largura_total)
-        cel = ws.cell(row=linha_atual, column=1, value=texto)
-        cel.font = Font(name=FONTE_DOC, bold=negrito, size=tamanho)
-        cel.alignment = alinhamento
-        _aplicar_borda_caixa(ws, fino, linha_atual, 1, largura_total)
-        return linha_atual + 1
-
-    def escrever_grade(valores, negrito=True, tamanho=9, linha_atual=1):
-        """Divide a largura total o mais igualmente possível entre as caixas
-        (ex.: Nº Cliente / Nº Projetista / Rev. / Data / Folha do carimbo) -
-        as primeiras caixas absorvem a largura que não divide exatamente."""
-        n = len(valores)
-        base, sobra = divmod(largura_total, n)
-        col = 1
-        for i, texto in enumerate(valores):
-            largura_col = base + (1 if i < sobra else 0)
-            fim = col + largura_col - 1
-            ws.merge_cells(start_row=linha_atual, start_column=col, end_row=linha_atual, end_column=fim)
-            cel = ws.cell(row=linha_atual, column=col, value=texto)
-            cel.font = Font(name=FONTE_DOC, bold=negrito, size=tamanho)
-            cel.alignment = centro
-            col = fim + 1
-        _aplicar_borda_caixa(ws, fino, linha_atual, 1, largura_total)
-        return linha_atual + 1
-
-    # EMPRESA / CLIENTE (compacto, com logo se configurado) - identifica quem
-    # emitiu e para quem, mas sem o exagero visual de um relatório de app.
-    ws.row_dimensions[1].height = 30
-    for offset, (nome, url, rotulo) in enumerate([
-        (empresa, ctx["config"].get("logo_url", ""), "EMPRESA"), (lista["cliente_nome"], lista.get("cliente_logo_url"), "CLIENTE"),
-    ]):
-        col_ini = 1 + offset * (largura_total // 2)
-        col_fim = col_ini + (largura_total // 2) - 1
-        ws.merge_cells(start_row=1, start_column=col_ini, end_row=1, end_column=col_fim)
-        cel = ws.cell(row=1, column=col_ini, value=f"{rotulo}: {nome or '-'}")
-        cel.font, cel.alignment = Font(name=FONTE_DOC, bold=True, size=10), centro
-        img_bytes = _baixar_imagem(url)
-        if img_bytes:
-            try:
-                img = ExcelImage(io.BytesIO(img_bytes))
-                img.width, img.height = 26, 26
-                ws.add_image(img, f"{get_column_letter(col_ini)}1")
-            except Exception:
-                pass
-    _aplicar_borda_caixa(ws, fino, 1, 1, largura_total // 2)
-    _aplicar_borda_caixa(ws, fino, 1, largura_total // 2 + 1, largura_total)
-    linha = 2
-
-    linha = escrever_mesclado(lista["projeto_nome"], negrito=True, tamanho=12, alinhamento=centro, linha_atual=linha)
-    for texto in _bloco_titulo_lista(lista):
-        linha = escrever_mesclado(texto, negrito=True, tamanho=10, linha_atual=linha)
-
-    linha = escrever_grade(
-        [
-            f"Nº Cliente: {lista['numero_cliente'] or '-'}",
-            f"Nº Projetista: {lista['numero_fornecedor'] or '-'}",
-            f"Rev.: {_rev_exibicao(lista, versao)}",
-            f"Data: {_data_emissao_exibicao(lista, versao)}",
-            "Folha: 1",
-        ],
-        tamanho=9, linha_atual=linha,
-    )
-    linha = escrever_mesclado(f"DESENHO DE REFERÊNCIA: {_doc_referencia(lista)}", tamanho=10, linha_atual=linha)
-    linha += 1
-
-    cabecalho_tabela = ["Item", "Código", "Descrição", "Referência", "Complemento", "Unidade", "Quant.\nAtual", "Quant.\nAnterior"]
-    ws.row_dimensions[linha].height = 28
-    for col, titulo in enumerate(cabecalho_tabela, start=1):
-        cel = ws.cell(row=linha, column=col, value=titulo)
-        cel.font = Font(name=FONTE_DOC, bold=True, size=8)
-        cel.fill = openpyxl.styles.PatternFill("solid", fgColor="D9D9D9")
-        cel.alignment = centro
-        cel.border = borda
-    linha += 1
-
-    for idx, item in enumerate(itens, start=1):
-        valores = [idx, item["codigo"], item["descricao"], item["fabricante"] or "", item["bitola"] or "",
-                   item["unidade"], float(item["quantidade"]), float(item["quantidade_anterior"])]
-        for col, valor in enumerate(valores, start=1):
-            cel = ws.cell(row=linha, column=col, value=valor)
-            cel.font = Font(name=FONTE_DOC, size=8)
-            cel.border = borda
-            cel.alignment = centro if col != 3 else esquerda
-        linha += 1
-    if not itens:
-        ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura_total)
-        ws.cell(row=linha, column=1, value="Nenhum material nesta versão.").alignment = centro
-        linha += 1
-
-    larguras = [6, 14, 38, 24, 18, 10, 12, 12]
-    for i, w in enumerate(larguras, start=1):
-        ws.column_dimensions[get_column_letter(i)].width = w
-    _configurar_pagina_impressao(ws)
-
-    _escrever_capa_excel(wb, lista, historico)
-
+    wb = _preencher_molde_lista(lista, versao, itens, historico)
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -510,86 +485,12 @@ def relatorio_excel(lista_id):
                       mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-def _escrever_capa_excel(wb, lista, historico):
-    """Aba 'Capa': cabeçalho do documento + histórico de revisões (só as
-    versões emitidas - rascunho não é uma revisão de verdade ainda) com a
-    legenda dos tipos de emissão (TE), no padrão de carimbo de engenharia."""
-    ws = wb.create_sheet(title="Capa")
-    largura = 8
-    fino = Side(style="thin", color="000000")
-    borda = Border(left=fino, right=fino, top=fino, bottom=fino)
-    centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    esquerda = Alignment(horizontal="left", vertical="center", wrap_text=True)
-
-    def escrever_mesclado(texto, tamanho=10, alinhamento=esquerda, linha_atual=1, com_borda=True):
-        ws.merge_cells(start_row=linha_atual, start_column=1, end_row=linha_atual, end_column=largura)
-        cel = ws.cell(row=linha_atual, column=1, value=texto)
-        cel.font = Font(name=FONTE_DOC, bold=True, size=tamanho)
-        cel.alignment = alinhamento
-        if com_borda:
-            _aplicar_borda_caixa(ws, fino, linha_atual, 1, largura)
-        return linha_atual + 1
-
-    linha = escrever_mesclado(lista["projeto_nome"], tamanho=12, alinhamento=centro, linha_atual=1)
-    for texto in _bloco_titulo_lista(lista):
-        linha = escrever_mesclado(texto, tamanho=10, linha_atual=linha)
-    linha += 1
-
-    linha = escrever_mesclado("REVISÕES", tamanho=11, alinhamento=centro, linha_atual=linha, com_borda=False)
-    linha = escrever_mesclado("TE: TIPO DE EMISSÃO", tamanho=9, linha_atual=linha, com_borda=False)
-
-    # Duas colunas (metade esquerda/direita da largura) x 4 linhas - uma
-    # caixa por código. Uma grade de 4 caixas iguais não dava certo aqui
-    # porque as larguras das 8 colunas reais são as da tabela de revisões
-    # (bem desiguais entre si), então texto ficava cortado nas caixas estreitas.
-    codigos = list(TIPOS_EMISSAO.items())
-    metade = largura // 2
-    for esquerda_par, direita_par in zip(codigos[:4], codigos[4:]):
-        for col_ini, col_fim, (cod, nome) in ((1, metade, esquerda_par), (metade + 1, largura, direita_par)):
-            ws.merge_cells(start_row=linha, start_column=col_ini, end_row=linha, end_column=col_fim)
-            cel = ws.cell(row=linha, column=col_ini, value=f"{cod} - {nome}")
-            cel.font, cel.alignment = Font(name=FONTE_DOC, size=8), esquerda
-            _aplicar_borda_caixa(ws, fino, linha, col_ini, col_fim)
-        linha += 1
-    linha += 1
-
-    cabecalho_rev = ["Rev.", "TE", "Descrição", "Por", "Ver.", "Apr.", "Aut.", "Data"]
-    for col, titulo in enumerate(cabecalho_rev, start=1):
-        cel = ws.cell(row=linha, column=col, value=titulo)
-        cel.font = Font(name=FONTE_DOC, bold=True, size=9)
-        cel.fill = openpyxl.styles.PatternFill("solid", fgColor="D9D9D9")
-        cel.alignment, cel.border = centro, borda
-    linha += 1
-
-    emitidas = [v for v in historico if v["status"] == "salvo"]
-    for v in emitidas:
-        valores = [
-            v["versao"], v["tipo_emissao"] or "-", v["observacoes"] or "-",
-            _assinatura_curta(lista, "elaborador_nome", "elaborador_sigla"),
-            _assinatura_curta(lista, "verificador_nome", "verificador_sigla"),
-            _assinatura_curta(lista, "aprovador_nome", "aprovador_sigla"),
-            _assinatura_curta(lista, "autorizado_nome", "autorizado_sigla"),
-            v["criado_em"].strftime("%d/%m/%Y"),
-        ]
-        for col, valor in enumerate(valores, start=1):
-            cel = ws.cell(row=linha, column=col, value=valor)
-            cel.font = Font(name=FONTE_DOC, size=8)
-            cel.border = borda
-            cel.alignment = esquerda if col == 3 else centro
-        linha += 1
-    if not emitidas:
-        ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura)
-        ws.cell(row=linha, column=1, value="Nenhuma versão emitida ainda.").alignment = centro
-
-    larguras = [6, 5, 32, 8, 8, 8, 8, 12]
-    for i, w in enumerate(larguras, start=1):
-        ws.column_dimensions[get_column_letter(i)].width = w
-    _configurar_pagina_impressao(ws)
-
-
 @relatorios_bp.get("/api/listas/<int:lista_id>/relatorio/pdf")
 @login_required
 def relatorio_pdf(lista_id):
+    """PDF do molde exato: preenche a mesma planilha do cliente usada no
+    /excel e converte pra PDF via LibreOffice (headless) - assim o PDF sai
+    com a formatação original do arquivo, não uma recriação aproximada."""
     pid = projeto_da_lista(lista_id)
     if pid is None or not projeto_permitido(pid):
         return jsonify({"erro": "Sem permissão para este relatório"}), 403
@@ -597,93 +498,30 @@ def relatorio_pdf(lista_id):
     if not ctx:
         return jsonify({"erro": "Lista não encontrada"}), 404
     lista, versao, itens, historico = ctx["lista"], ctx["versao"], ctx["itens"], ctx["historico"]
-    empresa = ctx["config"].get("nome_empresa", "")
-    rascunho = bool(versao and versao["status"] == "rascunho")
 
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.2 * cm, bottomMargin=1.2 * cm,
-                             leftMargin=1.2 * cm, rightMargin=1.2 * cm)
+    wb = _preencher_molde_lista(lista, versao, itens, historico)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        caminho_xlsx = os.path.join(tmpdir, "lista.xlsx")
+        wb.save(caminho_xlsx)
+        try:
+            resultado = subprocess.run(
+                [
+                    "soffice", "--headless", "--norestore",
+                    f"-env:UserInstallation=file://{tmpdir}/loprofile",  # perfil isolado por requisição, evita conflito entre conversões concorrentes
+                    "--convert-to", "pdf", "--outdir", tmpdir, caminho_xlsx,
+                ],
+                capture_output=True, timeout=60,
+            )
+        except FileNotFoundError:
+            return jsonify({"erro": "Conversão para PDF indisponível: LibreOffice não está instalado neste ambiente."}), 500
+        except subprocess.TimeoutExpired:
+            return jsonify({"erro": "A conversão para PDF demorou demais e foi cancelada."}), 500
+        caminho_pdf = os.path.join(tmpdir, "lista.pdf")
+        if resultado.returncode != 0 or not os.path.exists(caminho_pdf):
+            return jsonify({"erro": "Falha ao converter o relatório para PDF."}), 500
+        with open(caminho_pdf, "rb") as f:
+            buf = io.BytesIO(f.read())
 
-    ref_estilo = ParagraphStyle("ref", fontSize=9, leading=12, alignment=0, spaceAfter=6)
-    titulo_bloco_estilo = ParagraphStyle("titulo_bloco", fontSize=10, leading=13, alignment=0,
-                                          spaceAfter=1, fontName="Helvetica-Bold")
-    secao_estilo = ParagraphStyle("secao", fontSize=10, fontName="Helvetica-Bold", spaceBefore=10, spaceAfter=4)
-
-    data_versao = versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
-    # Só a caixa empresa/cliente + nome do projeto - as linhas de aba/revisão
-    # do helper compartilhado não se aplicam aqui (o bloco de título e a
-    # grade Rev./Folha abaixo cobrem essa informação sem repetição).
-    elementos = _cabecalho_pdf_com_logos(
-        empresa, ctx["config"].get("logo_url", ""), lista["cliente_nome"], lista.get("cliente_logo_url"),
-        lista["projeto_nome"], "", versao["versao"] if versao else "-", data_versao,
-    )[:2]
-    for texto in _bloco_titulo_lista(lista):
-        elementos.append(Paragraph(texto, titulo_bloco_estilo))
-    elementos.append(Spacer(1, 4))
-
-    dados_info = [[
-        f"Nº Cliente: {lista['numero_cliente'] or '-'}", f"Nº Projetista: {lista['numero_fornecedor'] or '-'}",
-        f"Rev.: {_rev_exibicao(lista, versao)}", f"Data: {_data_emissao_exibicao(lista, versao)}", "Folha: 1",
-    ]]
-    tabela_info = Table(dados_info, colWidths=[5.4 * cm] * 5)
-    tabela_info.setStyle(TableStyle([
-        ("FONTSIZE", (0, 0), (-1, -1), 9), ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.grey), ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
-    elementos.append(tabela_info)
-    elementos.append(Paragraph(f"DESENHO DE REFERÊNCIA: {_doc_referencia(lista)}", ref_estilo))
-
-    dados_materiais = [["Item", "Código", "Descrição", "Referência", "Complemento", "Unidade", "Qtd. Atual", "Qtd. Anterior"]]
-    for idx, item in enumerate(itens, start=1):
-        dados_materiais.append([idx, item["codigo"], item["descricao"], item["fabricante"] or "-",
-                                 item["bitola"] or "-", item["unidade"], item["quantidade"], item["quantidade_anterior"]])
-    if not itens:
-        dados_materiais.append(["-", "-", "Nenhum material nesta versão.", "-", "-", "-", "-", "-"])
-
-    tabela_materiais = _tabela_quebravel(
-        dados_materiais,
-        col_widths=[1.2 * cm, 2.5 * cm, 7 * cm, 4.5 * cm, 3.5 * cm, 2 * cm, 2.3 * cm, 2.5 * cm],
-        alinhar_direita={0, 5, 6, 7},
-        cor_cabecalho=colors.HexColor("#D9D9D9"), cor_texto_cabecalho=colors.black,
-    )
-    elementos.append(tabela_materiais)
-
-    elementos.append(Paragraph("HISTÓRICO DE REVISÕES", secao_estilo))
-    dados_rev = [["Rev.", "TE", "Descrição", "Por", "Ver.", "Apr.", "Aut.", "Data"]]
-    for v in [v for v in historico if v["status"] == "salvo"]:
-        dados_rev.append([
-            v["versao"], v["tipo_emissao"] or "-", v["observacoes"] or "-",
-            _assinatura_curta(lista, "elaborador_nome", "elaborador_sigla"),
-            _assinatura_curta(lista, "verificador_nome", "verificador_sigla"),
-            _assinatura_curta(lista, "aprovador_nome", "aprovador_sigla"),
-            _assinatura_curta(lista, "autorizado_nome", "autorizado_sigla"),
-            v["criado_em"].strftime("%d/%m/%Y"),
-        ])
-    if len(dados_rev) == 1:
-        dados_rev.append(["-", "-", "Nenhuma versão emitida ainda.", "-", "-", "-", "-", "-"])
-    tabela_rev = _tabela_quebravel(
-        dados_rev, col_widths=[1.3 * cm, 1.2 * cm, 12 * cm, 1.8 * cm, 1.8 * cm, 1.8 * cm, 1.8 * cm, 2.3 * cm],
-        alinhar_direita={0, 1, 7},
-        cor_cabecalho=colors.HexColor("#D9D9D9"), cor_texto_cabecalho=colors.black,
-    )
-    elementos.append(tabela_rev)
-
-    dados_legenda = [[f"{cod} - {nome}" for cod, nome in list(TIPOS_EMISSAO.items())[i:i + 4]] for i in (0, 4)]
-    tabela_legenda = Table(dados_legenda, colWidths=[6 * cm] * 4)
-    tabela_legenda.setStyle(TableStyle([
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    elementos.append(Spacer(1, 8))
-    elementos.append(Paragraph("TE: TIPO DE EMISSÃO", secao_estilo))
-    elementos.append(tabela_legenda)
-
-    marca_dagua = _marca_dagua_preliminar(doc, rascunho)
-    doc.build(elementos, onFirstPage=marca_dagua, onLaterPages=marca_dagua)
     buf.seek(0)
     nome_arquivo = f"lista_{lista['numero_desenho']}_rev{versao['versao'] if versao else 0}.pdf"
     return send_file(buf, as_attachment=True, download_name=nome_arquivo, mimetype="application/pdf")
