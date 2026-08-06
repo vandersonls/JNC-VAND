@@ -403,15 +403,31 @@ def _escrever_linha_grade(ws, linha, colunas, valores):
             ws.cell(row=linha, column=col_ini, value=valores[nome])
 
 
+def _definir_com_quebra(ws, coord, valor, tamanho_min=None, limite_caracteres=40):
+    """Escreve o valor mantendo o resto do estilo da célula, mas ligando
+    quebra de linha automática - o molde vem sem isso, então texto mais
+    longo que o esperado (ex.: nome de projeto grande) vazava pra fora da
+    caixa em vez de quebrar dentro dela. Se mesmo quebrando o texto for
+    comprido demais, reduz um pouco a fonte em vez de deixar cortado."""
+    cel = ws[coord]
+    cel.value = valor
+    alin = cel.alignment
+    cel.alignment = Alignment(horizontal=alin.horizontal, vertical=alin.vertical, wrap_text=True)
+    if tamanho_min is not None and valor and len(str(valor)) > limite_caracteres:
+        fonte = cel.font
+        novo_tamanho = max(tamanho_min, fonte.size - 2)
+        cel.font = Font(name=fonte.name, size=novo_tamanho, bold=fonte.bold, italic=fonte.italic, color=fonte.color)
+
+
 def _preencher_cabecalho_molde(ws, campos, lista, versao):
-    ws[campos["projeto"]] = lista["projeto_nome"]
-    ws[campos["subtitulo"]] = lista.get("subtitulo") or ""
-    ws[campos["area"]] = lista.get("area_titulo") or ""
-    ws[campos["disciplina"]] = lista.get("disciplina") or ""
-    ws[campos["titulo"]] = lista.get("titulo") or ""
-    ws[campos["numero_cliente"]] = lista.get("numero_cliente") or ""
-    ws[campos["numero_projetista"]] = lista.get("numero_fornecedor") or ""
-    ws[campos["rev"]] = _rev_exibicao(lista, versao)
+    _definir_com_quebra(ws, campos["projeto"], lista["projeto_nome"], tamanho_min=9)
+    _definir_com_quebra(ws, campos["subtitulo"], lista.get("subtitulo") or "")
+    _definir_com_quebra(ws, campos["area"], lista.get("area_titulo") or "")
+    _definir_com_quebra(ws, campos["disciplina"], lista.get("disciplina") or "")
+    _definir_com_quebra(ws, campos["titulo"], lista.get("titulo") or "")
+    _definir_com_quebra(ws, campos["numero_cliente"], lista.get("numero_cliente") or "")
+    _definir_com_quebra(ws, campos["numero_projetista"], lista.get("numero_fornecedor") or "")
+    _definir_com_quebra(ws, campos["rev"], _rev_exibicao(lista, versao))
 
 
 def _preencher_itens_molde(ws, itens):
@@ -475,7 +491,7 @@ def _preencher_molde_lista(lista, versao, itens, historico):
 
     _preencher_cabecalho_molde(ws_itens, _CAMPOS_CABECALHO_ITENS, lista, versao)
     _preencher_cabecalho_molde(ws_capa, _CAMPOS_CABECALHO_CAPA, lista, versao)
-    ws_itens["B9"] = f"DESENHO DE REFERÊNCIA : {lista['numero_desenho']}"
+    _definir_com_quebra(ws_itens, "B9", f"DESENHO DE REFERÊNCIA : {lista['numero_desenho']}")
 
     ultima_linha_itens = _preencher_itens_molde(ws_itens, itens)
     ultima_linha_rev = _preencher_revisoes_molde(ws_capa, lista, versao, historico)
