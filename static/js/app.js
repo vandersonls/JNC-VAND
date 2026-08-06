@@ -60,18 +60,33 @@ function aplicarPermissoes() {
   });
 }
 
-function abrirModal(html, extraClass = "") {
+// Por padrão o modal é "estático": clicar fora não fecha, só o botão
+// Cancelar/Fechar ou Esc - evita perder um formulário em andamento por um
+// clique sem querer (mesma convenção de Bootstrap/Material/Radix pra
+// modais com dados editáveis). Só telas puramente informativas (ex.:
+// "Ver versão", resultado de importação) passam fecharAoClicarFora=true.
+let _modalFechaAoClicarFora = false;
+
+function abrirModal(html, extraClass = "", { fecharAoClicarFora = false } = {}) {
   const modal = document.getElementById("modal-conteudo");
   modal.className = `modal ${extraClass}`.trim();
   modal.classList.remove("modal-maximizado");
   document.getElementById("modal-corpo").innerHTML = html;
   document.getElementById("modal-overlay").classList.remove("oculto");
+  _modalFechaAoClicarFora = fecharAoClicarFora;
 }
 function fecharModal() {
   document.getElementById("modal-overlay").classList.add("oculto");
 }
 document.getElementById("modal-overlay").addEventListener("click", (e) => {
-  if (e.target.id === "modal-overlay") fecharModal();
+  if (e.target.id === "modal-overlay" && _modalFechaAoClicarFora) fecharModal();
+});
+// Esc sempre fecha (é uma tecla de intenção clara, diferente de um clique
+// sem querer fora da caixa) - inclusive em modais com formulário.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !document.getElementById("modal-overlay").classList.contains("oculto")) {
+    fecharModal();
+  }
 });
 
 // Evita perda de trabalho: se o usuário tentar recarregar ou fechar a aba
@@ -560,7 +575,7 @@ async function executarImportacao(arquivo, areaId, modoDuplicados = "manter") {
       <div class="modal-acoes">
         <button class="btn-primario" onclick="fecharModal()">Ok</button>
       </div>
-    `);
+    `, "", { fecharAoClicarFora: true });
     carregarMateriais();
   } catch (err) { toast(err.message, "erro"); }
 }
@@ -1415,7 +1430,7 @@ async function verVersao(listaId, versaoId) {
       ${dados.versao.status === "rascunho" ? `<button class="btn-primario somente-admin" id="btn-editar-rascunho-desenho">Editar rascunho</button>` : ""}
       <button class="btn-secundario" onclick="fecharModal()">Fechar</button>
     </div>
-  `, "modal-grande");
+  `, "modal-grande", { fecharAoClicarFora: true });
   aplicarPermissoes();
 
   if (dados.versao.status === "rascunho") {
@@ -1434,7 +1449,7 @@ function mostrarItensVersaoGenerico(titulo, itens, campos, rotulos) {
       </tbody>
     </table>
     <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
-  `, "modal-grande");
+  `, "modal-grande", { fecharAoClicarFora: true });
 }
 
 // Formata quantidade de acordo com a unidade: unidades de contagem (pç, un,
