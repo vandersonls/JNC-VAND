@@ -60,27 +60,21 @@ function aplicarPermissoes() {
   });
 }
 
-// Por padrão o modal é "estático": clicar fora não fecha, só o botão
-// Cancelar/Fechar ou Esc - evita perder um formulário em andamento por um
-// clique sem querer (mesma convenção de Bootstrap/Material/Radix pra
-// modais com dados editáveis). Só telas puramente informativas (ex.:
-// "Ver versão", resultado de importação) passam fecharAoClicarFora=true.
-let _modalFechaAoClicarFora = false;
 // Fica true assim que algo muda dentro do modal aberto - liga um aviso de
 // confirmação antes de fechar por Cancelar/Fechar/Esc/clique fora, pra não
 // perder alterações em andamento. Fechamentos programáticos após salvar com
 // sucesso continuam chamando fecharModal() direto (sem aviso), só os pontos
 // de saída "manual" (botão Cancelar/Fechar, Esc, clique fora) passam por
-// fecharModalComConfirmacao().
+// fecharModalComConfirmacao(). Clicar fora tenta fechar como qualquer outro
+// botão de saída: fecha na hora se nada mudou, avisa se mudou algo.
 let _modalTemAlteracoes = false;
 
-function abrirModal(html, extraClass = "", { fecharAoClicarFora = false } = {}) {
+function abrirModal(html, extraClass = "") {
   const modal = document.getElementById("modal-conteudo");
   modal.className = `modal ${extraClass}`.trim();
   modal.classList.remove("modal-maximizado");
   document.getElementById("modal-corpo").innerHTML = html;
   document.getElementById("modal-overlay").classList.remove("oculto");
-  _modalFechaAoClicarFora = fecharAoClicarFora;
   _modalTemAlteracoes = false;
 }
 function fecharModal() {
@@ -99,7 +93,7 @@ function fecharModalComConfirmacao() {
 document.getElementById("modal-corpo").addEventListener("input", () => { _modalTemAlteracoes = true; });
 document.getElementById("modal-corpo").addEventListener("change", () => { _modalTemAlteracoes = true; });
 document.getElementById("modal-overlay").addEventListener("click", (e) => {
-  if (e.target.id === "modal-overlay" && _modalFechaAoClicarFora) fecharModalComConfirmacao();
+  if (e.target.id === "modal-overlay") fecharModalComConfirmacao();
 });
 // Esc segue o mesmo aviso - é uma tecla de intenção clara, mas ainda assim
 // não deve descartar um formulário em andamento sem confirmar.
@@ -595,7 +589,7 @@ async function executarImportacao(arquivo, areaId, modoDuplicados = "manter") {
       <div class="modal-acoes">
         <button class="btn-primario" onclick="fecharModalComConfirmacao()">Ok</button>
       </div>
-    `, "", { fecharAoClicarFora: true });
+    `, "");
     carregarMateriais();
   } catch (err) { toast(err.message, "erro"); }
 }
@@ -1452,7 +1446,7 @@ async function verVersao(listaId, versaoId) {
       ${dados.versao.status === "rascunho" ? `<button class="btn-primario somente-admin" id="btn-editar-rascunho-desenho">Editar rascunho</button>` : ""}
       <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Fechar</button>
     </div>
-  `, "modal-grande", { fecharAoClicarFora: true });
+  `, "modal-grande");
   aplicarPermissoes();
 
   if (dados.versao.status === "rascunho") {
@@ -1471,7 +1465,7 @@ function mostrarItensVersaoGenerico(titulo, itens, campos, rotulos) {
       </tbody>
     </table>
     <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModalComConfirmacao()">Fechar</button></div>
-  `, "modal-grande", { fecharAoClicarFora: true });
+  `, "modal-grande");
 }
 
 // Formata quantidade de acordo com a unidade: unidades de contagem (pç, un,
