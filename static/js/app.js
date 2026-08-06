@@ -43,6 +43,29 @@ function toast(msg, tipo = "sucesso") {
   setTimeout(() => el.classList.add("oculto"), 3000);
 }
 
+// Substitui o confirm() nativo do navegador (que mostra o domínio do
+// Railway no título, ex.: "web-production-xxxx.up.railway.app diz") por
+// uma caixa de diálogo própria, com a cara do sistema.
+function confirmarPersonalizado(mensagem) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("confirm-overlay");
+    document.getElementById("confirm-mensagem").textContent = mensagem;
+    overlay.classList.remove("oculto");
+    const btnOk = document.getElementById("confirm-ok");
+    const btnCancelar = document.getElementById("confirm-cancelar");
+    const finalizar = (resultado) => {
+      overlay.classList.add("oculto");
+      btnOk.removeEventListener("click", onOk);
+      btnCancelar.removeEventListener("click", onCancelar);
+      resolve(resultado);
+    };
+    const onOk = () => finalizar(true);
+    const onCancelar = () => finalizar(false);
+    btnOk.addEventListener("click", onOk);
+    btnCancelar.addEventListener("click", onCancelar);
+  });
+}
+
 // Como o app é uma SPA, uma aba deixada aberta continua rodando o JS que
 // tinha quando foi carregada, mesmo depois de um novo deploy no servidor.
 // Isso checa periodicamente se a versão do app.js publicada mudou e, se
@@ -98,8 +121,8 @@ function abrirModal(html, extraClass = "") {
 function fecharModal() {
   document.getElementById("modal-overlay").classList.add("oculto");
 }
-function fecharModalComConfirmacao() {
-  if (_modalTemAlteracoes && !confirm("Você tem alterações não salvas neste formulário. Se sair agora, elas serão perdidas. Deseja continuar?")) {
+async function fecharModalComConfirmacao() {
+  if (_modalTemAlteracoes && !(await confirmarPersonalizado("Você tem alterações não salvas neste formulário. Se sair agora, elas serão perdidas. Deseja continuar?"))) {
     return;
   }
   fecharModal();
@@ -427,7 +450,7 @@ document.getElementById("check-todos-materiais").addEventListener("change", (e) 
 document.getElementById("btn-excluir-selecionados").addEventListener("click", async () => {
   const qtd = materiaisSelecionados.size;
   if (!qtd) return;
-  if (!confirm(`Excluir ${qtd} material(is) selecionado(s)? Esta ação não pode ser desfeita.`)) return;
+  if (!(await confirmarPersonalizado(`Excluir ${qtd} material(is) selecionado(s)? Esta ação não pode ser desfeita.`))) return;
   try {
     await api("/api/materiais/excluir-lote", { method: "POST", body: JSON.stringify({ ids: [...materiaisSelecionados] }) });
     toast(`${qtd} material(is) excluído(s)`);
@@ -492,7 +515,7 @@ function editarMaterial(id) {
 }
 
 async function excluirMaterial(id) {
-  if (!confirm("Excluir este material?")) return;
+  if (!(await confirmarPersonalizado("Excluir este material?"))) return;
   await api(`/api/materiais/${id}`, { method: "DELETE" });
   toast("Material excluído");
   carregarMateriais();
@@ -724,7 +747,7 @@ function editarCliente(id) {
 }
 
 async function excluirCliente(id) {
-  if (!confirm("Excluir este cliente?")) return;
+  if (!(await confirmarPersonalizado("Excluir este cliente?"))) return;
   await api(`/api/clientes/${id}`, { method: "DELETE" });
   toast("Cliente excluído");
   carregarClientes();
@@ -749,7 +772,7 @@ async function carregarProjetos() {
 }
 
 async function excluirProjeto(id) {
-  if (!confirm("Excluir este projeto e todo o seu histórico de listas, PQ e compras?")) return;
+  if (!(await confirmarPersonalizado("Excluir este projeto e todo o seu histórico de listas, PQ e compras?"))) return;
   try {
     await api(`/api/projetos/${id}`, { method: "DELETE" });
     toast("Projeto excluído");
@@ -1930,7 +1953,7 @@ async function salvarUsuario(id) {
 function editarUsuario(u) { modalUsuario(u); }
 
 async function excluirUsuario(id) {
-  if (!confirm("Desativar este usuário?")) return;
+  if (!(await confirmarPersonalizado("Desativar este usuário?"))) return;
   try {
     await api(`/api/usuarios/${id}`, { method: "DELETE" });
     toast("Usuário desativado");
@@ -2070,7 +2093,7 @@ async function salvarArea(id) {
 }
 
 async function excluirArea(id) {
-  if (!confirm("Excluir esta área?")) return;
+  if (!(await confirmarPersonalizado("Excluir esta área?"))) return;
   try {
     await api(`/api/areas/${id}`, { method: "DELETE" });
     toast("Área excluída");
