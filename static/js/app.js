@@ -901,13 +901,7 @@ function renderNoLista(l) {
         </span>
         <span class="arvore-acoes">
           <button class="link-acao" onclick="abrirEditorMateriais(${l.id})">Editar materiais</button>
-          <span class="menu-imprimir">
-            <button type="button" class="acao-icone" onclick="toggleMenuImprimir(event, ${l.id})" title="Imprimir" aria-label="Imprimir">${ICONE_IMPRIMIR}</button>
-            <div class="dropdown-imprimir oculto" id="menu-imprimir-${l.id}">
-              <a href="/api/listas/${l.id}/relatorio/excel" target="_blank">Excel</a>
-              <a href="/api/listas/${l.id}/relatorio/pdf" target="_blank">PDF</a>
-            </div>
-          </span>
+          <a class="acao-icone" href="/api/listas/${l.id}/relatorio/excel" target="_blank" title="Baixar Excel" aria-label="Baixar Excel">${ICONE_IMPRIMIR}</a>
           <button class="acao-icone somente-admin" onclick="abrirEditorDados(${l.id})" title="Editar dados" aria-label="Editar dados">${ICONE_LAPIS}</button>
           <button class="acao-icone acao-perigo somente-master" onclick="excluirLista(${l.id})" title="Excluir" aria-label="Excluir">${ICONE_EXCLUIR}</button>
         </span>
@@ -949,21 +943,6 @@ async function toggleListaArvore(listaId) {
   }
   renderArvoreListas();
 }
-
-// Menu de impressão (Excel/PDF) da linha de Lista por Desenho: um ícone só,
-// abre um dropdown com as duas opções. Fecha ao clicar fora ou em outro menu.
-function toggleMenuImprimir(evento, listaId) {
-  evento.stopPropagation();
-  const menu = document.getElementById(`menu-imprimir-${listaId}`);
-  const jaAberto = !menu.classList.contains("oculto");
-  document.querySelectorAll(".dropdown-imprimir").forEach((m) => m.classList.add("oculto"));
-  if (!jaAberto) menu.classList.remove("oculto");
-}
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".menu-imprimir")) {
-    document.querySelectorAll(".dropdown-imprimir").forEach((m) => m.classList.add("oculto"));
-  }
-});
 
 // Confirmação por senha para ações destrutivas restritas a master (ex.:
 // excluir uma pasta/lista por desenho). Diferente da Zona de Risco (que
@@ -1169,7 +1148,6 @@ function renderEditorLista(listaId, lista) {
     <div class="modal-acoes">
       ${listaId ? `
         <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/excel" target="_blank">Relatório Excel</a>
-        <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/pdf" target="_blank">Relatório PDF</a>
       ` : ""}
       <span style="flex:1"></span>
       <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
@@ -1433,7 +1411,6 @@ async function verVersao(listaId, versaoId) {
     </table>
     <div class="modal-acoes">
       <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/excel?versao_id=${versaoId}" target="_blank">Relatório Excel</a>
-      <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/pdf?versao_id=${versaoId}" target="_blank">Relatório PDF</a>
       <span style="flex:1"></span>
       ${dados.versao.status === "rascunho" ? `<button class="btn-primario somente-admin" id="btn-editar-rascunho-desenho">Editar rascunho</button>` : ""}
       <button class="btn-secundario" onclick="fecharModal()">Fechar</button>

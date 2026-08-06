@@ -3,8 +3,6 @@ import ipaddress
 import os
 import re
 import socket
-import subprocess
-import tempfile
 import urllib.request
 from copy import copy
 from urllib.parse import urlparse
@@ -428,6 +426,7 @@ def _preencher_itens_molde(ws, itens):
             "quant_anterior": float(item["quantidade_anterior"]),
         })
         linha += 1
+    return max(_ITEM_LINHA_FINAL_MOLDE, linha - 1)
 
 
 def _preencher_revisoes_molde(ws, lista, versao, historico):
@@ -446,6 +445,26 @@ def _preencher_revisoes_molde(ws, lista, versao, historico):
             "data": data_txt,
         })
         linha += 1
+    return max(_REV_LINHA_FINAL_MOLDE, linha - 1)
+
+
+# Coluna mais à direita usada em cada aba, conforme a área de impressão
+# original do molde (B2:AH42 na aba de itens, B2:AJ32 na Capa).
+_ITEM_COL_DIREITA = 34  # AH
+_REV_COL_DIREITA = 36  # AJ
+
+
+def _ajustar_area_impressao(ws, ultima_linha, col_direita):
+    """O molde vem com área e escala de impressão fixas pro tamanho original
+    (32 itens / 18 revisões). Se a lista tiver mais linhas que isso, a área
+    de impressão precisa crescer junto - senão as linhas extras existem na
+    planilha mas não aparecem ao imprimir/exportar (ficam "cortadas"). Troca
+    a escala fixa por "encolher até a largura da página" pra nenhuma coluna
+    nunca ficar cortada horizontalmente, não importa o conteúdo."""
+    ws.print_area = f"B2:{get_column_letter(col_direita)}{ultima_linha}"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
 
 
 def _preencher_molde_lista(lista, versao, itens, historico):
@@ -458,8 +477,10 @@ def _preencher_molde_lista(lista, versao, itens, historico):
     _preencher_cabecalho_molde(ws_capa, _CAMPOS_CABECALHO_CAPA, lista, versao)
     ws_itens["B9"] = f"DESENHO DE REFERÊNCIA : {lista['numero_desenho']}"
 
-    _preencher_itens_molde(ws_itens, itens)
-    _preencher_revisoes_molde(ws_capa, lista, versao, historico)
+    ultima_linha_itens = _preencher_itens_molde(ws_itens, itens)
+    ultima_linha_rev = _preencher_revisoes_molde(ws_capa, lista, versao, historico)
+    _ajustar_area_impressao(ws_itens, ultima_linha_itens, _ITEM_COL_DIREITA)
+    _ajustar_area_impressao(ws_capa, ultima_linha_rev, _REV_COL_DIREITA)
 
     ws_itens.title = _titulo_aba_valido(lista["numero_desenho"])
     return wb
@@ -483,48 +504,6 @@ def relatorio_excel(lista_id):
     nome_arquivo = f"lista_{lista['numero_desenho']}_rev{versao['versao'] if versao else 0}.xlsx"
     return send_file(buf, as_attachment=True, download_name=nome_arquivo,
                       mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-
-@relatorios_bp.get("/api/listas/<int:lista_id>/relatorio/pdf")
-@login_required
-def relatorio_pdf(lista_id):
-    """PDF do molde exato: preenche a mesma planilha do cliente usada no
-    /excel e converte pra PDF via LibreOffice (headless) - assim o PDF sai
-    com a formatação original do arquivo, não uma recriação aproximada."""
-    pid = projeto_da_lista(lista_id)
-    if pid is None or not projeto_permitido(pid):
-        return jsonify({"erro": "Sem permissão para este relatório"}), 403
-    ctx = _carregar_contexto(lista_id, request.args.get("versao_id", type=int))
-    if not ctx:
-        return jsonify({"erro": "Lista não encontrada"}), 404
-    lista, versao, itens, historico = ctx["lista"], ctx["versao"], ctx["itens"], ctx["historico"]
-
-    wb = _preencher_molde_lista(lista, versao, itens, historico)
-    with tempfile.TemporaryDirectory() as tmpdir:
-        caminho_xlsx = os.path.join(tmpdir, "lista.xlsx")
-        wb.save(caminho_xlsx)
-        try:
-            resultado = subprocess.run(
-                [
-                    "soffice", "--headless", "--norestore",
-                    f"-env:UserInstallation=file://{tmpdir}/loprofile",  # perfil isolado por requisição, evita conflito entre conversões concorrentes
-                    "--convert-to", "pdf", "--outdir", tmpdir, caminho_xlsx,
-                ],
-                capture_output=True, timeout=60,
-            )
-        except FileNotFoundError:
-            return jsonify({"erro": "Conversão para PDF indisponível: LibreOffice não está instalado neste ambiente."}), 500
-        except subprocess.TimeoutExpired:
-            return jsonify({"erro": "A conversão para PDF demorou demais e foi cancelada."}), 500
-        caminho_pdf = os.path.join(tmpdir, "lista.pdf")
-        if resultado.returncode != 0 or not os.path.exists(caminho_pdf):
-            return jsonify({"erro": "Falha ao converter o relatório para PDF."}), 500
-        with open(caminho_pdf, "rb") as f:
-            buf = io.BytesIO(f.read())
-
-    buf.seek(0)
-    nome_arquivo = f"lista_{lista['numero_desenho']}_rev{versao['versao'] if versao else 0}.pdf"
-    return send_file(buf, as_attachment=True, download_name=nome_arquivo, mimetype="application/pdf")
 
 
 @relatorios_bp.get("/api/projetos/<int:projeto_id>/relatorio/excel")
