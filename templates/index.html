@@ -383,6 +383,12 @@
 
 <div id="toast" class="toast oculto"></div>
 
+<div id="aviso-nova-versao" class="aviso-nova-versao oculto">
+  <span>Uma nova versão do sistema está disponível.</span>
+  <button type="button" id="btn-recarregar-versao">Atualizar agora</button>
+</div>
+
+<script>window.__VERSAO_JS_ATUAL__ = "{{ asset_versions['js/app.js'] }}";</script>
 <script src="{{ url_for('static', filename='js/app.js') }}?v={{ asset_versions['js/app.js'] }}"></script>
 </body>
 </html>

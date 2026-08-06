@@ -119,6 +119,12 @@ def create_app():
     def health():
         return {"status": "ok"}
 
+    @app.route("/api/versao")
+    def versao():
+        # Usado pelo frontend pra detectar que um novo deploy saiu enquanto a
+        # aba (SPA) segue aberta com o JS antigo, e avisar pra recarregar.
+        return {"js": ASSET_VERSIONS["js/app.js"]}
+
     return app
 
 

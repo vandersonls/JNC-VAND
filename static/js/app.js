@@ -43,6 +43,24 @@ function toast(msg, tipo = "sucesso") {
   setTimeout(() => el.classList.add("oculto"), 3000);
 }
 
+// Como o app é uma SPA, uma aba deixada aberta continua rodando o JS que
+// tinha quando foi carregada, mesmo depois de um novo deploy no servidor.
+// Isso checa periodicamente se a versão do app.js publicada mudou e, se
+// mudou, mostra um aviso fixo pedindo pra recarregar - em vez da pessoa
+// achar que uma correção "não funcionou" quando na verdade ela só está
+// vendo o código antigo.
+async function verificarNovaVersao() {
+  try {
+    const r = await fetch("/api/versao", { credentials: "include" });
+    const dados = await r.json();
+    if (dados.js && window.__VERSAO_JS_ATUAL__ && dados.js !== window.__VERSAO_JS_ATUAL__) {
+      document.getElementById("aviso-nova-versao").classList.remove("oculto");
+    }
+  } catch (_) { /* falha de rede na checagem não deve incomodar ninguém */ }
+}
+document.getElementById("btn-recarregar-versao").addEventListener("click", () => location.reload());
+setInterval(verificarNovaVersao, 5 * 60 * 1000);
+
 function ehAdmin() {
   return state.usuario && (state.usuario.perfil === "master" || state.usuario.perfil === "administrador");
 }

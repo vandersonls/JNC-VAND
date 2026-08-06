@@ -480,6 +480,18 @@ input[type="number"], select, textarea {
 .toast.erro { background: var(--erro); }
 .toast.sucesso { background: var(--sucesso); }
 
+.aviso-nova-versao {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 300;
+  background: var(--azul); color: white; padding: 10px 20px;
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  font-size: 13.5px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.aviso-nova-versao button {
+  background: white; color: var(--azul); border: none; border-radius: 6px;
+  padding: 6px 14px; font-weight: 600; cursor: pointer; font-size: 13px;
+}
+.aviso-nova-versao button:hover { background: #eef2f7; }
+
 @media (max-width: 800px) {
   .sidebar { width: 70px; }
   .sidebar .logo, .nav-item, #usuario-nome, .badge-perfil { display: none; }
