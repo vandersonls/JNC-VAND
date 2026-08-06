@@ -66,6 +66,13 @@ function aplicarPermissoes() {
 // modais com dados editáveis). Só telas puramente informativas (ex.:
 // "Ver versão", resultado de importação) passam fecharAoClicarFora=true.
 let _modalFechaAoClicarFora = false;
+// Fica true assim que algo muda dentro do modal aberto - liga um aviso de
+// confirmação antes de fechar por Cancelar/Fechar/Esc/clique fora, pra não
+// perder alterações em andamento. Fechamentos programáticos após salvar com
+// sucesso continuam chamando fecharModal() direto (sem aviso), só os pontos
+// de saída "manual" (botão Cancelar/Fechar, Esc, clique fora) passam por
+// fecharModalComConfirmacao().
+let _modalTemAlteracoes = false;
 
 function abrirModal(html, extraClass = "", { fecharAoClicarFora = false } = {}) {
   const modal = document.getElementById("modal-conteudo");
@@ -74,18 +81,31 @@ function abrirModal(html, extraClass = "", { fecharAoClicarFora = false } = {}) 
   document.getElementById("modal-corpo").innerHTML = html;
   document.getElementById("modal-overlay").classList.remove("oculto");
   _modalFechaAoClicarFora = fecharAoClicarFora;
+  _modalTemAlteracoes = false;
 }
 function fecharModal() {
   document.getElementById("modal-overlay").classList.add("oculto");
 }
+function fecharModalComConfirmacao() {
+  if (_modalTemAlteracoes && !confirm("Você tem alterações não salvas neste formulário. Se sair agora, elas serão perdidas. Deseja continuar?")) {
+    return;
+  }
+  fecharModal();
+}
+// Marca "alterado" em qualquer input/select/textarea digitado dentro do
+// modal. Ações via clique que mudam dados sem disparar input/change (ex.:
+// adicionar/remover material na Lista por Desenho) marcam a flag na própria
+// função, explicitamente.
+document.getElementById("modal-corpo").addEventListener("input", () => { _modalTemAlteracoes = true; });
+document.getElementById("modal-corpo").addEventListener("change", () => { _modalTemAlteracoes = true; });
 document.getElementById("modal-overlay").addEventListener("click", (e) => {
-  if (e.target.id === "modal-overlay" && _modalFechaAoClicarFora) fecharModal();
+  if (e.target.id === "modal-overlay" && _modalFechaAoClicarFora) fecharModalComConfirmacao();
 });
-// Esc sempre fecha (é uma tecla de intenção clara, diferente de um clique
-// sem querer fora da caixa) - inclusive em modais com formulário.
+// Esc segue o mesmo aviso - é uma tecla de intenção clara, mas ainda assim
+// não deve descartar um formulário em andamento sem confirmar.
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !document.getElementById("modal-overlay").classList.contains("oculto")) {
-    fecharModal();
+    fecharModalComConfirmacao();
   }
 });
 
@@ -429,7 +449,7 @@ async function modalMaterial(material = null) {
       <select id="mat-area"><option value="">-- Selecione --</option>${opcoesAreas}</select>
     </div>
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-primario" onclick="salvarMaterial(${material ? material.id : "null"})">Salvar</button>
     </div>
   `);
@@ -494,7 +514,7 @@ function mostrarModalEscolherArea(arquivo) {
       <p style="color:var(--cinza); font-size:12.5px; margin:0;">Todos os materiais desta planilha serão vinculados à área escolhida.</p>
     </div>
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-primario" id="btn-continuar-importacao">Continuar</button>
     </div>
   `);
@@ -539,7 +559,7 @@ function mostrarModalDuplicados(analise, arquivo, areaId) {
       ${analise.duplicados.map(linhasDuplicado).join("")}
     </div>
     <div class="modal-acoes" style="flex-wrap:wrap;">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <span style="flex:1"></span>
       <button class="btn-secundario" id="btn-importar-sem-duplicadas">Importar sem as duplicadas</button>
       <button class="btn-primario" id="btn-importar-com-duplicadas">Importar com as duplicadas</button>
@@ -573,7 +593,7 @@ async function executarImportacao(arquivo, areaId, modoDuplicados = "manter") {
         ${r.duplicados_excluidos ? `<p>Linhas excluídas por duplicidade de código: <b>${r.duplicados_excluidos}</b></p>` : ""}
       </div>
       <div class="modal-acoes">
-        <button class="btn-primario" onclick="fecharModal()">Ok</button>
+        <button class="btn-primario" onclick="fecharModalComConfirmacao()">Ok</button>
       </div>
     `, "", { fecharAoClicarFora: true });
     carregarMateriais();
@@ -661,7 +681,7 @@ function modalCliente(cliente = null) {
       <label>URL da Logo</label><input id="cli-logo" value="${esc(c.logo_url || "")}" placeholder="https://...">
     </div>
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-primario" onclick="salvarCliente(${cliente ? cliente.id : "null"})">Salvar</button>
     </div>
   `);
@@ -748,7 +768,7 @@ async function modalProjeto(projeto = null) {
       <select id="proj-area"><option value="">-- Selecione --</option>${opcoesAreas}</select>
     </div>
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-primario" onclick="salvarProjeto(${projeto ? projeto.id : "null"})">Salvar</button>
     </div>
   `);
@@ -844,7 +864,7 @@ function abrirSelecaoListas(titulo, mensagem, listas, aoConfirmar) {
     <p style="color:var(--cinza); font-size:13px;">${mensagem}</p>
     <div class="selecao-lista-wrap">${linhas}</div>
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-primario" id="btn-continuar-selecao-listas">Continuar</button>
     </div>
   `);
@@ -969,7 +989,7 @@ function confirmarComSenha(titulo, mensagem, aoConfirmar) {
     <p>Digite sua senha para confirmar:</p>
     ${campoSenhaHtml("confirmar-senha-input", 'autocomplete="current-password"')}
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-perigo" id="btn-confirmar-senha">${titulo}</button>
     </div>
   `);
@@ -1101,7 +1121,7 @@ function renderCabecalhoLista(listaId, lista, somenteDados = false) {
       </div>
     </div>
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-primario ${somenteDados ? "somente-admin" : ""}" id="btn-continuar-cabecalho">${somenteDados ? "Salvar" : "Continuar"}</button>
     </div>
   `, "modal-media");
@@ -1165,7 +1185,7 @@ function renderEditorLista(listaId, lista) {
         <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/excel" target="_blank">Relatório Excel</a>
       ` : ""}
       <span style="flex:1"></span>
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-primario somente-admin" id="btn-revisar-desenho">Revisar lista</button>
     </div>
   `, "modal-grande");
@@ -1262,6 +1282,7 @@ function renderEditorLista(listaId, lista) {
     fecharAutocomplete();
     redesenharChips();
     redesenharItensEditor();
+    _modalTemAlteracoes = true;
   });
 
   document.getElementById("btn-revisar-desenho").addEventListener("click", () => {
@@ -1308,6 +1329,7 @@ function renderEditorLista(listaId, lista) {
       btn.addEventListener("click", () => {
         window._itensEditor.splice(Number(btn.dataset.idx), 1);
         redesenharItensEditor();
+        _modalTemAlteracoes = true;
       });
     });
   }
@@ -1343,7 +1365,7 @@ function renderReviewLista(listaId, lista) {
       </table>
     </div>
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-secundario" id="btn-voltar-editor-desenho">Voltar</button>
       <button class="btn-secundario somente-admin" id="btn-salvar-rascunho-desenho">Salvar rascunho</button>
       <button class="btn-primario somente-admin" id="btn-emitir-desenho">Emitir versão</button>
@@ -1428,7 +1450,7 @@ async function verVersao(listaId, versaoId) {
       <a class="btn-secundario" href="/api/listas/${listaId}/relatorio/excel?versao_id=${versaoId}" target="_blank">Relatório Excel</a>
       <span style="flex:1"></span>
       ${dados.versao.status === "rascunho" ? `<button class="btn-primario somente-admin" id="btn-editar-rascunho-desenho">Editar rascunho</button>` : ""}
-      <button class="btn-secundario" onclick="fecharModal()">Fechar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Fechar</button>
     </div>
   `, "modal-grande", { fecharAoClicarFora: true });
   aplicarPermissoes();
@@ -1448,7 +1470,7 @@ function mostrarItensVersaoGenerico(titulo, itens, campos, rotulos) {
         ${itens.map((i) => `<tr>${campos.map((c) => `<td>${CAMPOS_QUANTIDADE.includes(c) ? formatarQuantidade(i[c], i.unidade) : esc(i[c])}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${rotulos.length}">Sem itens</td></tr>`}
       </tbody>
     </table>
-    <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModal()">Fechar</button></div>
+    <div class="modal-acoes"><button class="btn-secundario" onclick="fecharModalComConfirmacao()">Fechar</button></div>
   `, "modal-grande", { fecharAoClicarFora: true });
 }
 
@@ -1622,7 +1644,7 @@ function renderModalRevisaoPQ() {
       </table>
     </div>
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-secundario" id="btn-salvar-rascunho-pq">Salvar rascunho</button>
       <button class="btn-primario" id="btn-emitir-pq">Emitir versão</button>
     </div>
@@ -1789,7 +1811,7 @@ function renderModalRevisaoCompras() {
       </table>
     </div>
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-secundario" id="btn-salvar-rascunho-compras">Salvar rascunho</button>
       <button class="btn-primario" id="btn-emitir-compras">Emitir versão</button>
     </div>
@@ -1860,7 +1882,7 @@ async function modalUsuario(usuario = null) {
       </div>
     </div>
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-primario" onclick="salvarUsuario(${usuario ? usuario.id : "null"})">Salvar</button>
     </div>
   `);
@@ -1950,7 +1972,7 @@ function confirmarAcaoRisco(titulo, mensagem, palavra, aoConfirmar) {
     <p>Para confirmar, digite <b>${palavra}</b> no campo abaixo:</p>
     <input type="text" id="risco-confirmacao-texto" autocomplete="off">
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-perigo" id="btn-confirmar-risco" disabled>${titulo}</button>
     </div>
   `);
@@ -2017,7 +2039,7 @@ function modalArea(area = null) {
       <label>Nome</label><input id="area-nome" value="${area ? area.nome : ""}">
     </div>
     <div class="modal-acoes">
-      <button class="btn-secundario" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-primario" onclick="salvarArea(${area ? area.id : "null"})">Salvar</button>
     </div>
   `);
