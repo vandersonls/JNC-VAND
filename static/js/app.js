@@ -101,41 +101,26 @@ function aplicarPermissoes() {
   });
 }
 
-// Fica true assim que algo muda dentro do modal aberto - liga um aviso de
-// confirmação antes de fechar por Cancelar/Fechar/Esc/clique fora, pra não
-// perder alterações em andamento. Fechamentos programáticos após salvar com
-// sucesso continuam chamando fecharModal() direto (sem aviso), só os pontos
-// de saída "manual" (botão Cancelar/Fechar, Esc, clique fora) passam por
-// fecharModalComConfirmacao(). Clicar fora tenta fechar como qualquer outro
-// botão de saída: fecha na hora se nada mudou, avisa se mudou algo.
-let _modalTemAlteracoes = false;
-
 function abrirModal(html, extraClass = "") {
   const modal = document.getElementById("modal-conteudo");
   modal.className = `modal ${extraClass}`.trim();
   modal.classList.remove("modal-maximizado");
   document.getElementById("modal-corpo").innerHTML = html;
   document.getElementById("modal-overlay").classList.remove("oculto");
-  _modalTemAlteracoes = false;
 }
 function fecharModal() {
   document.getElementById("modal-overlay").classList.add("oculto");
 }
+// Sempre pede confirmação antes de fechar, sem depender de detectar se algo
+// mudou (evita qualquer chance de perder dados por falha em algum caso não
+// coberto pelo rastreio de alterações). Clicar fora do modal não fecha mais
+// nada - só os botões Cancelar/Fechar e Esc passam por aqui.
 async function fecharModalComConfirmacao() {
-  if (_modalTemAlteracoes && !(await confirmarPersonalizado("Você tem alterações não salvas neste formulário. Se sair agora, elas serão perdidas. Deseja continuar?"))) {
+  if (!(await confirmarPersonalizado("Deseja fechar esta janela? Alterações não salvas serão perdidas."))) {
     return;
   }
   fecharModal();
 }
-// Marca "alterado" em qualquer input/select/textarea digitado dentro do
-// modal. Ações via clique que mudam dados sem disparar input/change (ex.:
-// adicionar/remover material na Lista por Desenho) marcam a flag na própria
-// função, explicitamente.
-document.getElementById("modal-corpo").addEventListener("input", () => { _modalTemAlteracoes = true; });
-document.getElementById("modal-corpo").addEventListener("change", () => { _modalTemAlteracoes = true; });
-document.getElementById("modal-overlay").addEventListener("click", (e) => {
-  if (e.target.id === "modal-overlay") fecharModalComConfirmacao();
-});
 // Esc segue o mesmo aviso - é uma tecla de intenção clara, mas ainda assim
 // não deve descartar um formulário em andamento sem confirmar.
 document.addEventListener("keydown", (e) => {
@@ -1326,7 +1311,6 @@ function renderEditorLista(listaId, lista) {
     fecharAutocomplete();
     redesenharChips();
     redesenharItensEditor();
-    _modalTemAlteracoes = true;
   });
 
   document.getElementById("btn-revisar-desenho").addEventListener("click", () => {
@@ -1373,7 +1357,6 @@ function renderEditorLista(listaId, lista) {
       btn.addEventListener("click", () => {
         window._itensEditor.splice(Number(btn.dataset.idx), 1);
         redesenharItensEditor();
-        _modalTemAlteracoes = true;
       });
     });
   }
