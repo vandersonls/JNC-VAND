@@ -1060,8 +1060,17 @@ document.getElementById("btn-nova-lista").addEventListener("click", async () => 
   renderCabecalhoLista(null, {});
 });
 
-function _rotuloMaterial(m) {
-  return `${m.codigo} — ${m.descricao}`;
+// Monta o rótulo de um material com código e bitola em destaque (linha 1)
+// e a descrição completa como texto secundário (linha 2) - sem isso, dois
+// materiais com a mesma descrição e bitolas diferentes (ex.: cabos de
+// mesma família em calibres distintos) ficam indistinguíveis na busca.
+function _rotuloMaterialHtml(m) {
+  const bitola = m.bitola ? `<span class="badge-bitola">${esc(m.bitola)}</span>` : "";
+  return `
+    <span class="material-rotulo">
+      <span class="material-codigo">${esc(m.codigo)}</span>${bitola}
+      <span class="material-descricao">${esc(m.descricao)}</span>
+    </span>`;
 }
 
 // Escapa caracteres especiais de HTML (ex.: "<", ">") antes de inserir texto
@@ -1275,7 +1284,7 @@ function renderEditorLista(listaId, lista) {
     listaAutocomplete.innerHTML = resultados.map((m) => `
       <div class="autocomplete-item ${selecionados.has(m.id) ? "selecionado" : ""}" data-material-id="${m.id}">
         <input type="checkbox" tabindex="-1" ${selecionados.has(m.id) ? "checked" : ""}>
-        <span>${esc(_rotuloMaterial(m))}</span>
+        ${_rotuloMaterialHtml(m)}
       </div>
     `).join("");
     listaAutocomplete.classList.remove("oculto");
@@ -1350,7 +1359,7 @@ function renderEditorLista(listaId, lista) {
     const tbody = document.getElementById("itens-editor");
     tbody.innerHTML = window._itensEditor.map((item, idx) => `
       <tr>
-        <td>${esc(_rotuloMaterial(item))}</td>
+        <td>${_rotuloMaterialHtml(item)}</td>
         <td><input type="number" step="1" min="0" class="item-qtd" data-idx="${idx}" value="${Math.round(Number(item.quantidade)) || 0}" style="width:100px"></td>
         <td><button class="btn-perigo" type="button" data-idx="${idx}">Remover</button></td>
       </tr>`).join("") || `<tr><td colspan="3">Nenhum material adicionado.</td></tr>`;
