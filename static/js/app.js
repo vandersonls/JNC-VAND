@@ -1530,12 +1530,10 @@ function _toggleArvore(estado, versaoId, renderArvoreFn) {
 const pqArvoreState = { versoes: [], expandidas: new Set() };
 
 async function carregarListaPQ() {
-  const [dados, versoes, rascunho] = await Promise.all([
-    api(`/api/projetos/${state.projetoAtual.id}/lista-pq`),
+  const [versoes, rascunho] = await Promise.all([
     api(`/api/projetos/${state.projetoAtual.id}/lista-pq/versoes`),
     api(`/api/projetos/${state.projetoAtual.id}/lista-pq/rascunho`),
   ]);
-  renderTabelaPQ(dados.versao, dados.itens);
   renderArvorePQ(versoes);
   window._pqRascunho = rascunho.versao ? rascunho : null;
   document.getElementById("btn-continuar-rascunho-pq").classList.toggle("oculto", !window._pqRascunho);
@@ -1587,21 +1585,6 @@ async function verVersaoPQ(versaoId) {
     ["codigo", "descricao", "fabricante", "bitola", "quantidade_base", "percentual", "quantidade_atualizada", "unidade"],
     ["Código", "Descrição", "Fabricante", "Bitola", "Qtd. Base", "%", "Qtd. Atualizada", "Unidade"],
   );
-}
-
-function renderTabelaPQ(versao, itens) {
-  document.getElementById("pq-info").innerHTML = versao
-    ? `Revisão <b>${versao.versao}</b> — salva em ${new Date(versao.criado_em).toLocaleString("pt-BR")} por <b>${esc(versao.criado_por_nome || "-")}</b>`
-    : `Nenhuma versão salva ainda. Clique em "Revisar lista" para montar a primeira versão a partir da Lista de Material por Desenho.`;
-  const tbody = document.getElementById("tbody-pq");
-  tbody.innerHTML = itens.map((i) => `
-    <tr>
-      <td>${esc(i.codigo)}</td><td>${esc(i.descricao)}</td><td>${esc(i.fabricante || "")}</td><td>${esc(i.bitola || "")}</td>
-      <td>${formatarQuantidade(i.quantidade_base, i.unidade)}</td>
-      <td>${Number(i.percentual).toLocaleString("pt-BR")}%</td>
-      <td>${formatarQuantidade(i.quantidade_atualizada, i.unidade)}</td>
-      <td>${esc(i.unidade)}</td>
-    </tr>`).join("") || `<tr><td colspan="8">Nenhum item nesta versão.</td></tr>`;
 }
 
 function calcularQtdAtualizada(item) {
@@ -1714,12 +1697,10 @@ async function salvarVersaoPQ(status) {
 const comprasArvoreState = { versoes: [], expandidas: new Set() };
 
 async function carregarListaCompras() {
-  const [dados, versoes, rascunho] = await Promise.all([
-    api(`/api/projetos/${state.projetoAtual.id}/lista-compras`),
+  const [versoes, rascunho] = await Promise.all([
     api(`/api/projetos/${state.projetoAtual.id}/lista-compras/versoes`),
     api(`/api/projetos/${state.projetoAtual.id}/lista-compras/rascunho`),
   ]);
-  renderTabelaCompras(dados.versao, dados.itens);
   renderArvoreCompras(versoes);
   window._comprasRascunho = rascunho.versao ? rascunho : null;
   document.getElementById("btn-continuar-rascunho-compras").classList.toggle("oculto", !window._comprasRascunho);
@@ -1780,18 +1761,6 @@ async function verVersaoCompras(versaoId) {
     ["codigo", "descricao", "fabricante", "bitola", "quantidade", "unidade"],
     ["Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"],
   );
-}
-
-function renderTabelaCompras(versao, itens) {
-  document.getElementById("compras-info").innerHTML = versao
-    ? `Revisão <b>${versao.versao}</b> — salva em ${new Date(versao.criado_em).toLocaleString("pt-BR")} por <b>${esc(versao.criado_por_nome || "-")}</b>`
-    : `Nenhuma versão salva ainda. Clique em "Revisar lista" para montar a primeira versão a partir da Planilha de Quantidades.`;
-  const tbody = document.getElementById("tbody-compras");
-  tbody.innerHTML = itens.map((i) => `
-    <tr>
-      <td>${esc(i.codigo)}</td><td>${esc(i.descricao)}</td><td>${esc(i.fabricante || "")}</td><td>${esc(i.bitola || "")}</td>
-      <td>${formatarQuantidade(i.quantidade, i.unidade)}</td><td>${esc(i.unidade)}</td>
-    </tr>`).join("") || `<tr><td colspan="6">Nenhum item nesta versão.</td></tr>`;
 }
 
 document.getElementById("btn-revisar-compras").addEventListener("click", async () => {
