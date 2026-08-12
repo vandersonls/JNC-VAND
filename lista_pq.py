@@ -155,7 +155,7 @@ def salvar_lista_pq(projeto_id):
     data = request.get_json(force=True) or {}
     itens = data.get("itens") or []
     if not itens:
-        return jsonify({"erro": "A Lista PQ precisa ter pelo menos um item"}), 400
+        return jsonify({"erro": "A Planilha de Quantidades precisa ter pelo menos um item"}), 400
     status = "rascunho" if data.get("status") == "rascunho" else "salvo"
 
     versao_id, numero_versao = salvar_versao(
@@ -204,7 +204,7 @@ def salvar_lista_pq(projeto_id):
 
     registrar(
         "criar" if status == "salvo" else "rascunho", "lista_pq", projeto_id,
-        f"{'Emitiu' if status == 'salvo' else 'Salvou o rascunho d'}a Lista PQ v{numero_versao} do projeto #{projeto_id}",
+        f"{'Emitiu' if status == 'salvo' else 'Salvou o rascunho d'}a Planilha de Quantidades v{numero_versao} do projeto #{projeto_id}",
         depois=data,
     )
     return jsonify({"versao_id": versao_id, "versao": numero_versao, "status": status}), 201

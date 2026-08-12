@@ -861,8 +861,8 @@ document.getElementById("btn-criar-pq").addEventListener("click", async () => {
   const listas = await api(`/api/projetos/${state.projetoAtual.id}/listas`);
   if (!listas.length) { toast("Este projeto ainda não tem nenhuma Lista por Desenho cadastrada", "erro"); return; }
   abrirSelecaoListas(
-    "Selecionar Listas para a PQ",
-    "Escolha quais Listas por Desenho entrarão na consolidação da Lista PQ. Por padrão, todas estão marcadas.",
+    "Selecionar Listas para a Planilha de Quantidades",
+    "Escolha quais Listas por Desenho entrarão na consolidação da Planilha de Quantidades. Por padrão, todas estão marcadas.",
     listas,
     (selecionados) => {
       window._pqListaIdsSelecionados = selecionados;
@@ -898,13 +898,13 @@ function abrirSelecaoListas(titulo, mensagem, listas, aoConfirmar) {
 
 document.getElementById("btn-criar-compras").addEventListener("click", async () => {
   const dadosPQ = await api(`/api/projetos/${state.projetoAtual.id}/lista-pq`);
-  if (!dadosPQ.versao) { toast("A Lista PQ deste projeto ainda não tem nenhuma versão salva", "erro"); return; }
+  if (!dadosPQ.versao) { toast("A Planilha de Quantidades deste projeto ainda não tem nenhuma versão salva", "erro"); return; }
   const versaoPQ = await api(`/api/lista-pq/versoes/${dadosPQ.versao.id}`);
   const origens = versaoPQ.versao.origens || [];
-  if (!origens.length) { toast("Esta versão da Lista PQ não tem listas de origem registradas", "erro"); return; }
+  if (!origens.length) { toast("Esta versão da Planilha de Quantidades não tem listas de origem registradas", "erro"); return; }
   abrirSelecaoListas(
     "Selecionar Listas para a Lista de Compras",
-    "Escolha quais listas por desenho (que compõem a Lista PQ atual) entrarão na Lista de Compras. Por padrão, todas estão marcadas.",
+    "Escolha quais listas por desenho (que compõem a Planilha de Quantidades atual) entrarão na Lista de Compras. Por padrão, todas estão marcadas.",
     origens.map((o) => ({ id: o.lista_desenho_id, numero_desenho: o.numero_desenho, titulo: o.titulo })),
     (selecionados) => {
       window._comprasListaIdsSelecionados = selecionados;
@@ -1542,7 +1542,7 @@ async function carregarListaPQ() {
 }
 
 function renderArvorePQ(versoes) {
-  _renderArvore("arvore-pq", "Nenhuma versão da Lista PQ salva ainda.", versoes, pqArvoreState, renderNoPQ);
+  _renderArvore("arvore-pq", "Nenhuma versão da Planilha de Quantidades salva ainda.", versoes, pqArvoreState, renderNoPQ);
 }
 
 function renderNoPQ(v) {
@@ -1583,7 +1583,7 @@ function toggleArvorePQ(versaoId) {
 async function verVersaoPQ(versaoId) {
   const dados = await api(`/api/lista-pq/versoes/${versaoId}`);
   mostrarItensVersaoGenerico(
-    `Lista PQ — versão ${dados.versao.versao}${dados.versao.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}`, dados.itens,
+    `Planilha de Quantidades — versão ${dados.versao.versao}${dados.versao.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}`, dados.itens,
     ["codigo", "descricao", "fabricante", "bitola", "quantidade_base", "percentual", "quantidade_atualizada", "unidade"],
     ["Código", "Descrição", "Fabricante", "Bitola", "Qtd. Base", "%", "Qtd. Atualizada", "Unidade"],
   );
@@ -1656,7 +1656,7 @@ function renderModalRevisaoPQ() {
     </tr>`).join("");
 
   abrirModal(`
-    <h3>Revisar Lista PQ</h3>
+    <h3>Revisar Planilha de Quantidades</h3>
     <div class="form-grid" style="flex-direction:row; align-items:flex-end; gap:10px;">
       <div style="flex:1">
         <label>Aplicar percentual a todos os itens</label>
@@ -1703,7 +1703,7 @@ async function salvarVersaoPQ(status) {
     const lista_ids = window._pqListaIdsSelecionados || [];
     await api(`/api/projetos/${state.projetoAtual.id}/lista-pq`, { method: "POST", body: JSON.stringify({ itens, lista_ids, status }) });
     fecharModal();
-    toast(status === "rascunho" ? "Rascunho da Lista PQ salvo" : "Nova versão da Lista PQ emitida com sucesso");
+    toast(status === "rascunho" ? "Rascunho da Planilha de Quantidades salvo" : "Nova versão da Planilha de Quantidades emitida com sucesso");
     document.getElementById("btn-revisar-pq").classList.add("oculto");
     document.getElementById("btn-criar-pq").classList.remove("oculto");
     carregarListaPQ();
@@ -1738,7 +1738,7 @@ function renderNoCompras(v) {
           <span class="arvore-toggle invisivel"></span>
           ${ICONE_ARQUIVO}
           <span class="arvore-label">
-            <span class="arvore-titulo">Lista PQ v${pq.versao}</span>
+            <span class="arvore-titulo">Planilha de Quantidades v${pq.versao}</span>
             <span class="arvore-sub">${new Date(pq.criado_em).toLocaleString("pt-BR")}</span>
           </span>
         </div>
@@ -1751,7 +1751,7 @@ function renderNoCompras(v) {
               <span class="arvore-sub">v${o.versao_numero}</span>
             </span>
           </div>`).join("")}`
-    : `<div class="arvore-carregando">Origem da Lista PQ não registrada.</div>`;
+    : `<div class="arvore-carregando">Origem da Planilha de Quantidades não registrada.</div>`;
   return `
     <div class="arvore-no">
       <div class="arvore-linha arvore-linha-pasta">
@@ -1785,7 +1785,7 @@ async function verVersaoCompras(versaoId) {
 function renderTabelaCompras(versao, itens) {
   document.getElementById("compras-info").innerHTML = versao
     ? `Revisão <b>${versao.versao}</b> — salva em ${new Date(versao.criado_em).toLocaleString("pt-BR")} por <b>${esc(versao.criado_por_nome || "-")}</b>`
-    : `Nenhuma versão salva ainda. Clique em "Revisar lista" para montar a primeira versão a partir da Lista PQ.`;
+    : `Nenhuma versão salva ainda. Clique em "Revisar lista" para montar a primeira versão a partir da Planilha de Quantidades.`;
   const tbody = document.getElementById("tbody-compras");
   tbody.innerHTML = itens.map((i) => `
     <tr>
@@ -1830,7 +1830,7 @@ function renderModalRevisaoCompras() {
 
   abrirModal(`
     <h3>Revisar Lista de Compras</h3>
-    <p style="color:var(--cinza); font-size:13px;">Itens vindos da última versão salva da Lista PQ. Ajuste as quantidades se necessário.</p>
+    <p style="color:var(--cinza); font-size:13px;">Itens vindos da última versão salva da Planilha de Quantidades. Ajuste as quantidades se necessário.</p>
     <div style="max-height:360px; overflow-y:auto; margin:12px 0;">
       <table class="tabela">
         <thead><tr><th>Código</th><th>Descrição</th><th>Quantidade</th><th>Unidade</th></tr></thead>
@@ -2029,7 +2029,7 @@ document.getElementById("btn-risco-materiais").addEventListener("click", () => {
 document.getElementById("btn-risco-projetos").addEventListener("click", () => {
   confirmarAcaoRisco(
     "Excluir todos os projetos",
-    "Todos os projetos, listas por desenho, Listas PQ e Listas de Compras serão removidos. Essa ação não pode ser desfeita.",
+    "Todos os projetos, listas por desenho, Planilhas de Quantidades e Listas de Compras serão removidos. Essa ação não pode ser desfeita.",
     "EXCLUIR",
     () => api("/api/risco/projetos", { method: "DELETE" }),
   );

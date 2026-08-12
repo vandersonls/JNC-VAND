@@ -741,7 +741,7 @@ def relatorio_lista_pq_excel(projeto_id):
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Lista PQ"
+    ws.title = "Planilha de Quantidades"
     largura_total = 8
     fino = Side(style="thin", color="000000")
     borda = Border(left=fino, right=fino, top=fino, bottom=fino)
@@ -752,7 +752,7 @@ def relatorio_lista_pq_excel(projeto_id):
     linha = _cabecalho_excel_com_logos(
         ws, largura_total, config.get("nome_empresa", ""), config.get("logo_url", ""),
         projeto["cliente_nome"], projeto.get("cliente_logo_url"),
-        f"{projeto['codigo']} — {projeto['nome']}", "LISTA PQ",
+        f"{projeto['codigo']} — {projeto['nome']}", "PLANILHA DE QUANTIDADES",
         versao["versao"] if versao else "-", data_versao,
     )
 
@@ -775,7 +775,7 @@ def relatorio_lista_pq_excel(projeto_id):
         linha += 1
     if not itens:
         ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=largura_total)
-        ws.cell(row=linha, column=1, value="Nenhuma versão salva da Lista PQ ainda.").alignment = centro
+        ws.cell(row=linha, column=1, value="Nenhuma versão salva da Planilha de Quantidades ainda.").alignment = centro
 
     for i, w in enumerate([6, 14, 32, 20, 12, 12, 12, 14, 10], start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
@@ -804,7 +804,7 @@ def relatorio_lista_pq_pdf(projeto_id):
     elementos = _cabecalho_pdf_com_logos(
         config.get("nome_empresa", ""), config.get("logo_url", ""),
         projeto["cliente_nome"], projeto.get("cliente_logo_url"),
-        f"{projeto['codigo']} — {projeto['nome']}", "LISTA PQ",
+        f"{projeto['codigo']} — {projeto['nome']}", "PLANILHA DE QUANTIDADES",
         versao["versao"] if versao else "-", data_versao,
     )
 
@@ -813,7 +813,7 @@ def relatorio_lista_pq_pdf(projeto_id):
         dados.append([idx, item["codigo"], item["descricao"], item["fabricante"] or "-", item["bitola"] or "-",
                       item["quantidade_base"], f"{float(item['percentual']):g}%", item["quantidade_atualizada"], item["unidade"]])
     if not itens:
-        dados.append(["-", "-", "Nenhuma versão salva da Lista PQ ainda.", "-", "-", "-", "-", "-", "-"])
+        dados.append(["-", "-", "Nenhuma versão salva da Planilha de Quantidades ainda.", "-", "-", "-", "-", "-", "-"])
 
     tabela = _tabela_quebravel(
         dados, col_widths=[1.2 * cm, 2.5 * cm, 6.5 * cm, 3.5 * cm, 2.2 * cm, 2.2 * cm, 1.8 * cm, 2.8 * cm, 2 * cm],
