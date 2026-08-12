@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS projetos (
     nome VARCHAR(200) NOT NULL,
     cliente_id INT,
     descricao TEXT,
-    status ENUM('planejamento', 'em_andamento', 'concluido', 'cancelado') NOT NULL DEFAULT 'planejamento',
+    status ENUM('conceitual', 'basico', 'detalhado') NOT NULL DEFAULT 'conceitual',
     numero_cliente VARCHAR(100),
     numero_fornecedor VARCHAR(100),
     area_id INT NULL,
@@ -167,6 +167,22 @@ SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND COLUMN_NAME = 'compras_versao_atual_id');
 SET @sql = IF(@col_exists = 0, 'ALTER TABLE projetos ADD COLUMN compras_versao_atual_id INT NULL', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- Migra o status de "andamento" (planejamento/em_andamento/concluido/cancelado)
+-- para "fase de engenharia" (conceitual/basico/detalhado). Alarga o enum pra
+-- caber os dois conjuntos, remapeia os valores antigos e só depois estreita
+-- pro conjunto novo - assim é seguro rodar de novo em bancos já migrados
+-- (a 2ª execução não encontra nenhum valor antigo pra remapear).
+ALTER TABLE projetos MODIFY COLUMN status
+    ENUM('planejamento', 'em_andamento', 'concluido', 'cancelado', 'conceitual', 'basico', 'detalhado')
+    NOT NULL DEFAULT 'conceitual';
+UPDATE projetos SET status = CASE status
+    WHEN 'planejamento' THEN 'conceitual'
+    WHEN 'em_andamento' THEN 'detalhado'
+    WHEN 'concluido' THEN 'detalhado'
+    WHEN 'cancelado' THEN 'conceitual'
+    ELSE status END;
+ALTER TABLE projetos MODIFY COLUMN status ENUM('conceitual', 'basico', 'detalhado') NOT NULL DEFAULT 'conceitual';
 
 -- =========================================================
 -- LISTAS POR DESENHO (cabeçalho lógico - agrupa versões)

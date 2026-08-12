@@ -118,7 +118,7 @@ def criar_projeto():
         """INSERT INTO projetos (codigo, nome, cliente_id, status, numero_cliente, numero_fornecedor, area_id, criado_por)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
         (
-            data["codigo"], data["nome"], data["cliente_id"], data.get("status", "planejamento"),
+            data["codigo"], data["nome"], data["cliente_id"], data.get("status", "conceitual"),
             data.get("numero_cliente", ""), data.get("numero_fornecedor", ""), data["area_id"],
             current_user.id,
         ),
@@ -146,7 +146,7 @@ def editar_projeto(projeto_id):
            numero_cliente=%s, numero_fornecedor=%s, area_id=%s
            WHERE id=%s""",
         (
-            data["codigo"], data["nome"], data["cliente_id"], data.get("status", "planejamento"),
+            data["codigo"], data["nome"], data["cliente_id"], data.get("status", "conceitual"),
             data.get("numero_cliente", ""), data.get("numero_fornecedor", ""), data["area_id"],
             projeto_id,
         ),

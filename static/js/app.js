@@ -260,15 +260,14 @@ function ativarTabInterna(nome) {
 
 // ---------- DASHBOARD ----------
 const CORES_STATUS = {
-  planejamento: "var(--viz-serie-1)",
-  em_andamento: "var(--viz-serie-3)",
-  concluido: "var(--viz-serie-2)",
-  cancelado: "var(--viz-serie-6)",
+  conceitual: "var(--viz-serie-1)",
+  basico: "var(--viz-serie-3)",
+  detalhado: "var(--viz-serie-2)",
 };
 const ROTULOS_STATUS = {
-  planejamento: "Planejamento", em_andamento: "Em andamento", concluido: "Concluído", cancelado: "Cancelado",
+  conceitual: "Projeto Conceitual", basico: "Projeto Básico", detalhado: "Projeto Detalhado",
 };
-const ORDEM_STATUS = ["planejamento", "em_andamento", "concluido", "cancelado"];
+const ORDEM_STATUS = ["conceitual", "basico", "detalhado"];
 
 async function carregarDashboard() {
   const [materiais, clientes, projetos, resumo] = await Promise.all([
@@ -768,18 +767,18 @@ async function excluirProjeto(id) {
 async function modalProjeto(projeto = null) {
   if (!state.clientes.length) state.clientes = await api("/api/clientes");
   await garantirAreasCarregadas();
-  const p = projeto || { codigo: "", nome: "", cliente_id: "", status: "planejamento", numero_cliente: "", numero_fornecedor: "", area_id: "" };
-  const opcoesClientes = state.clientes.map((c) => `<option value="${c.id}" ${p.cliente_id == c.id ? "selected" : ""}>${esc(c.razao_social)}</option>`).join("");
+  const p = projeto || { codigo: "", nome: "", cliente_id: "", status: "conceitual", numero_cliente: "", numero_fornecedor: "", area_id: "" };
+  const opcoesClientes = state.clientes.map((c) => `<option value="${c.id}" ${p.cliente_id == c.id ? "selected" : ""}>${esc(c.nome_fantasia || c.razao_social)}</option>`).join("");
   const opcoesAreas = state.areas.map((a) => `<option value="${a.id}" ${p.area_id == a.id ? "selected" : ""}>${esc(a.nome)}</option>`).join("");
   abrirModal(`
     <h3>${projeto ? "Editar" : "Novo"} Projeto</h3>
     <div class="form-grid">
       <label>Cliente</label>
       <select id="proj-cliente"><option value="">-- Selecione --</option>${opcoesClientes}</select>
-      <label>Nome do Projeto</label><input id="proj-nome" value="${esc(p.nome)}">
+      <label>Número do Projeto</label><input id="proj-nome" value="${esc(p.nome)}">
       <label>Status</label>
       <select id="proj-status">
-        ${["planejamento", "em_andamento", "concluido", "cancelado"].map((s) => `<option value="${s}" ${p.status === s ? "selected" : ""}>${s}</option>`).join("")}
+        ${ORDEM_STATUS.map((s) => `<option value="${s}" ${p.status === s ? "selected" : ""}>${ROTULOS_STATUS[s]}</option>`).join("")}
       </select>
       <label>Código</label><input id="proj-codigo" value="${esc(p.codigo)}">
       <label>Nº do Cliente</label><input id="proj-numero-cliente" value="${esc(p.numero_cliente || "")}">
