@@ -454,7 +454,7 @@ CREATE TABLE IF NOT EXISTS auditoria (
     id INT AUTO_INCREMENT PRIMARY KEY,
     usuario_id INT NULL,
     usuario_nome VARCHAR(150) NOT NULL,
-    acao ENUM('criar', 'editar', 'excluir', 'importar', 'login', 'logout') NOT NULL,
+    acao ENUM('criar', 'editar', 'excluir', 'importar', 'login', 'logout', 'exportar', 'encerrar_sessao') NOT NULL,
     entidade VARCHAR(50) NOT NULL,
     entidade_id INT NULL,
     descricao VARCHAR(500) NOT NULL,
@@ -467,7 +467,7 @@ CREATE TABLE IF NOT EXISTS auditoria (
 ) ENGINE=InnoDB;
 
 -- Redefinir o ENUM é seguro de reexecutar (mesma definição não gera erro).
-ALTER TABLE auditoria MODIFY COLUMN acao ENUM('criar', 'editar', 'excluir', 'importar', 'login', 'logout', 'exportar') NOT NULL;
+ALTER TABLE auditoria MODIFY COLUMN acao ENUM('criar', 'editar', 'excluir', 'importar', 'login', 'logout', 'exportar', 'encerrar_sessao') NOT NULL;
 
 -- Usuário master inicial (senha: admin123 - troque após o primeiro login)
 -- Hash gerado com werkzeug.security.generate_password_hash em tempo de execução (ver seed.py)

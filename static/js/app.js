@@ -1842,11 +1842,32 @@ async function carregarUsuarios() {
   tbody.innerHTML = usuarios.map((u) => `
     <tr>
       <td>${esc(u.nome)}</td><td>${esc(u.email)}</td><td>${esc(u.perfil)}</td><td>${u.ativo ? "Sim" : "Não"}</td>
+      <td>${u.sessao_ativa ? '<span class="badge-rascunho" style="background:#eaf1fb;color:var(--azul);">Ativa</span>' : "-"}</td>
       <td class="acoes-linha">
         <button class="link-acao" onclick='editarUsuario(${esc(JSON.stringify(u))})'>Editar</button>
-        <button class="link-acao" onclick="excluirUsuario(${u.id})">Desativar</button>
+        ${u.sessao_ativa ? `<button class="link-acao somente-master" onclick="encerrarSessaoUsuario(${u.id}, '${esc(u.nome)}')">Encerrar sessão</button>` : ""}
+        ${u.ativo
+          ? `<button class="link-acao" onclick="excluirUsuario(${u.id})">Desativar</button>`
+          : `<button class="link-acao" onclick='ativarUsuario(${esc(JSON.stringify(u))})'>Ativar</button>`}
       </td>
     </tr>`).join("");
+  aplicarPermissoes();
+}
+
+async function encerrarSessaoUsuario(id, nome) {
+  if (!(await confirmarPersonalizado(`Encerrar a sessão ativa de ${nome}? A pessoa será desconectada e poderá entrar de novo imediatamente.`))) return;
+  await api(`/api/usuarios/${id}/encerrar-sessao`, { method: "POST" });
+  toast("Sessão encerrada");
+  carregarUsuarios();
+}
+
+async function ativarUsuario(u) {
+  const areas = (u.areas || []).map((a) => a.id);
+  try {
+    await api(`/api/usuarios/${u.id}`, { method: "PUT", body: JSON.stringify({ nome: u.nome, perfil: u.perfil, ativo: 1, areas }) });
+    toast("Usuário reativado");
+    carregarUsuarios();
+  } catch (err) { toast(err.message, "erro"); }
 }
 
 async function modalUsuario(usuario = null) {
@@ -1875,16 +1896,37 @@ async function modalUsuario(usuario = null) {
           ${opcoesAreas || "<span style='color:var(--cinza); font-size:13px;'>Nenhuma área cadastrada ainda.</span>"}
         </div>
       </div>
+      ${usuario ? `
+        <label style="display:flex; align-items:center; gap:6px; font-weight:normal;">
+          <input type="checkbox" id="usr-ativo" ${u.ativo ? "checked" : ""}> Usuário ativo (desmarque para desativar, marque para reativar)
+        </label>
+      ` : ""}
     </div>
     <div class="modal-acoes">
+      ${usuario && usuario.id !== state.usuario.id ? `
+        <button class="btn-perigo somente-master" style="margin-right:auto;" onclick="excluirUsuarioPermanente(${usuario.id}, '${esc(usuario.nome)}')">Excluir permanentemente</button>
+      ` : ""}
       <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-primario" onclick="salvarUsuario(${usuario ? usuario.id : "null"})">Salvar</button>
     </div>
   `);
+  aplicarPermissoes();
 
   document.getElementById("usr-perfil").addEventListener("change", (e) => {
     document.getElementById("usr-areas-wrap").classList.toggle("oculto", e.target.value === "master");
   });
+}
+
+async function excluirUsuarioPermanente(id, nome) {
+  if (!(await confirmarPersonalizado(
+    `Excluir PERMANENTEMENTE o usuário ${nome}? Diferente de "Desativar", isso não pode ser desfeito - o cadastro de login será removido de vez. Projetos e listas criados por essa pessoa continuam existindo normalmente.`
+  ))) return;
+  try {
+    await api(`/api/usuarios/${id}/permanente`, { method: "DELETE" });
+    fecharModal();
+    toast("Usuário excluído permanentemente");
+    carregarUsuarios();
+  } catch (err) { toast(err.message, "erro"); }
 }
 
 async function salvarUsuario(id) {
@@ -1892,7 +1934,10 @@ async function salvarUsuario(id) {
   const areas = [...document.querySelectorAll(".usr-area:checked")].map((c) => Number(c.value));
   try {
     if (id) {
-      const payload = { nome: document.getElementById("usr-nome").value.trim(), perfil: document.getElementById("usr-perfil").value, ativo: 1, areas };
+      const payload = {
+        nome: document.getElementById("usr-nome").value.trim(), perfil: document.getElementById("usr-perfil").value,
+        ativo: document.getElementById("usr-ativo").checked ? 1 : 0, areas,
+      };
       if (senha) payload.senha = senha;
       await api(`/api/usuarios/${id}`, { method: "PUT", body: JSON.stringify(payload) });
     } else {

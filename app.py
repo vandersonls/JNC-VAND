@@ -65,10 +65,13 @@ def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "troque-esta-chave-em-producao")
     # Flags de segurança do cookie de sessão:
-    #  - Secure: só trafega em HTTPS (Railway serve HTTPS)
+    #  - Secure: só trafega em HTTPS (Railway serve HTTPS). Numa rede local
+    #    sem HTTPS, deixar isso "True" faz o navegador descartar o cookie
+    #    silenciosamente - login parece funcionar mas cai na requisição
+    #    seguinte. SESSION_COOKIE_SECURE=false desliga essa exigência.
     #  - HttpOnly: JavaScript não consegue ler o cookie (mitiga roubo via XSS)
     #  - SameSite=Lax: o cookie não é enviado em requisições cross-site (mitiga CSRF)
-    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "true").lower() != "false"
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     # O app é servido no mesmo domínio da API (SPA same-origin), então NÃO
@@ -131,4 +134,4 @@ def create_app():
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
