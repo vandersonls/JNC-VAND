@@ -825,8 +825,6 @@ document.getElementById("btn-voltar-projetos").addEventListener("click", () => a
 async function abrirProjeto(id) {
   state.projetoAtual = state.projetos.find((p) => p.id === id);
   document.getElementById("projeto-detalhe-titulo").textContent = `${state.projetoAtual.codigo} — ${state.projetoAtual.nome}`;
-  document.getElementById("link-relatorio-projeto-excel").href = `/api/projetos/${id}/relatorio/excel`;
-  document.getElementById("link-relatorio-projeto-pdf").href = `/api/projetos/${id}/relatorio/pdf`;
   document.getElementById("link-relatorio-pq-excel").href = `/api/projetos/${id}/lista-pq/relatorio/excel`;
   document.getElementById("link-relatorio-pq-pdf").href = `/api/projetos/${id}/lista-pq/relatorio/pdf`;
   document.getElementById("link-relatorio-compras-excel").href = `/api/projetos/${id}/lista-compras/relatorio/excel`;
@@ -928,9 +926,18 @@ function renderArvoreListas() {
     cont.innerHTML = `<div class="arvore-vazio">Nenhuma lista cadastrada para este projeto.</div>`;
     return;
   }
-  cont.innerHTML = arvoreState.listas.map(renderNoLista).join("");
+  const termo = (document.getElementById("busca-listas")?.value || "").trim().toLowerCase();
+  const listas = termo
+    ? arvoreState.listas.filter((l) => [l.numero_cliente, l.numero_fornecedor, l.titulo, l.numero_desenho]
+        .some((campo) => (campo || "").toLowerCase().includes(termo)))
+    : arvoreState.listas;
+  cont.innerHTML = listas.length
+    ? listas.map(renderNoLista).join("")
+    : `<div class="arvore-vazio">Nenhuma lista encontrada para "${esc(termo)}".</div>`;
   aplicarPermissoes();
 }
+
+document.getElementById("busca-listas").addEventListener("input", renderArvoreListas);
 
 const ICONE_PASTA = `<svg class="arvore-icone" viewBox="0 0 20 20" fill="none"><path d="M2.5 5.5a1 1 0 0 1 1-1h4l1.5 1.8h7.5a1 1 0 0 1 1 1v8.2a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V5.5Z" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
 const ICONE_ARQUIVO = `<svg class="arvore-icone" viewBox="0 0 20 20" fill="none"><path d="M6 2.5h6l3 3v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M12 2.5V6h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
