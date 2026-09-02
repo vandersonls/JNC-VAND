@@ -58,6 +58,28 @@ SET @sql = IF(@col_exists = 0, 'ALTER TABLE clientes ADD COLUMN logo_url VARCHAR
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- =========================================================
+-- MOLDES DE EXCEL POR CLIENTE (upload + mapeamento de campos)
+-- =========================================================
+-- Cada cliente pode ter até um molde de cada tipo. O arquivo fica como BLOB
+-- no banco (não no disco) porque o Railway tem sistema de arquivos efêmero -
+-- some a cada deploy. "mapeamento" fica NULL até alguém mapear os campos
+-- pela tela (Clientes -> Moldes); enquanto NULL, o molde existe mas ainda
+-- não pode ser usado pra gerar relatório. Por enquanto só o tipo
+-- 'lista_materiais' tem tela/motor de preenchimento prontos.
+CREATE TABLE IF NOT EXISTS clientes_templates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    cliente_id INT NOT NULL,
+    tipo ENUM('lista_materiais', 'registro_documentos') NOT NULL,
+    nome_arquivo VARCHAR(255) NOT NULL,
+    arquivo LONGBLOB NOT NULL,
+    mapeamento JSON NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_template_cliente FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_cliente_tipo (cliente_id, tipo)
+) ENGINE=InnoDB;
+
+-- =========================================================
 -- ÁREAS (disciplinas: Engenharia Elétrica, Mecânica, Civil, etc.)
 -- =========================================================
 CREATE TABLE IF NOT EXISTS areas (

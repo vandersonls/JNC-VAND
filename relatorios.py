@@ -1,6 +1,6 @@
 import io
 import ipaddress
-import os
+import json
 import re
 import socket
 import urllib.request
@@ -188,7 +188,7 @@ def _tabela_quebravel(dados, col_widths, alinhar_direita=None, cor_cabecalho=Non
 
 def _carregar_contexto(lista_id, versao_id=None):
     lista = db.query_one(
-        """SELECT ld.*, p.codigo AS projeto_codigo, p.nome AS projeto_nome,
+        """SELECT ld.*, p.codigo AS projeto_codigo, p.nome AS projeto_nome, p.cliente_id AS projeto_cliente_id,
                   c.razao_social AS cliente_nome, c.logo_url AS cliente_logo_url
            FROM listas_desenho ld
            JOIN projetos p ON p.id = ld.projeto_id
@@ -331,46 +331,15 @@ def _data_emissao_exibicao(lista, versao):
     return versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
 
 
-# Fonte e tamanhos usados no carimbo padrão de documentos de engenharia
-# (modelo em anexo do cliente) - bem mais compactos que o resto do sistema.
 # =========================================================
 # LISTA POR DESENHO - preenchimento do molde exato do cliente
 # =========================================================
-# O arquivo relatorio_templates/lista_por_desenho.xlsx é o modelo enviado
-# pelo cliente e NÃO pode ser alterado (símbolos, logos, fontes, bordas,
-# layout). Só escrevemos valores nas células de dados - toda a formatação
-# é a que já vem no próprio arquivo.
-TEMPLATE_LISTA_DESENHO = os.path.join(os.path.dirname(__file__), "relatorio_templates", "lista_por_desenho.xlsx")
-
-# aba 1 = "MMITT-ED-LM-..." (itens), aba 0 = "Capa " - mesmas coordenadas de
-# cabeçalho nas duas, exceto onde a largura da aba muda a coluna do bloco
-# Nº Cliente/Nº Projetista/Projeto (W na aba de itens, V na Capa).
-_CAMPOS_CABECALHO_ITENS = {
-    "projeto": "W2", "subtitulo": "B4", "area": "B5", "disciplina": "B6", "titulo": "B7",
-    "numero_cliente": "W4", "numero_projetista": "W7", "rev": "AG7",
-}
-_CAMPOS_CABECALHO_CAPA = {
-    "projeto": "V2", "subtitulo": "B4", "area": "B5", "disciplina": "B6", "titulo": "B7",
-    "numero_cliente": "V4", "numero_projetista": "V7", "rev": "AG7",
-}
-
-# (nome_campo, coluna_inicial, coluna_final) de cada linha de item na tabela
-# de materiais - a mescla de cada campo já vem pronta no molde até a linha 42.
-_ITEM_COLUNAS = [
-    ("item", 2, 2), ("codigo", 3, 4), ("descricao", 5, 15), ("referencia", 16, 22),
-    ("complemento", 23, 27), ("unidade", 28, 29), ("quant_atual", 30, 32), ("quant_anterior", 33, 34),
-]
-_ITEM_LINHA_INICIAL = 11
-_ITEM_LINHA_FINAL_MOLDE = 42
-_ITEM_LINHA_ESTILO = 20  # linha "do meio" usada como fonte de estilo ao precisar de mais linhas que o molde
-
-_REV_COLUNAS = [
-    ("rev", 2, 3), ("te", 4, 5), ("descricao", 6, 18), ("por", 19, 21),
-    ("ver", 22, 24), ("apr", 25, 27), ("aut", 28, 30), ("data", 31, 36),
-]
-_REV_LINHA_INICIAL = 14
-_REV_LINHA_FINAL_MOLDE = 31
-_REV_LINHA_ESTILO = 20
+# Cada cliente manda o próprio molde de Excel (upload em Clientes -> Molde
+# de impressão), com layout próprio, e mapeia uma vez onde cada campo nosso
+# vai (tela de mapeamento). O motor abaixo é genérico - só sabe escrever
+# "este campo vai nesta célula" e "esta tabela repete a partir desta linha",
+# conforme o JSON de mapeamento salvo; não tem nenhuma coordenada de cliente
+# específico fixa no código.
 
 
 def _titulo_aba_valido(texto):
@@ -403,11 +372,11 @@ def _escrever_linha_grade(ws, linha, colunas, valores):
             ws.cell(row=linha, column=col_ini, value=valores[nome])
 
 
-def _definir_com_quebra(ws, coord, valor, tamanho_min=None, limite_caracteres=40):
+def _definir_com_quebra(ws, coord, valor, tamanho_min=9, limite_caracteres=40):
     """Escreve o valor mantendo o resto do estilo da célula, mas ligando
-    quebra de linha automática - o molde vem sem isso, então texto mais
-    longo que o esperado (ex.: nome de projeto grande) vazava pra fora da
-    caixa em vez de quebrar dentro dela. Se mesmo quebrando o texto for
+    quebra de linha automática - o molde costuma vir sem isso, então texto
+    mais longo que o esperado (ex.: nome de projeto grande) vazava pra fora
+    da caixa em vez de quebrar dentro dela. Se mesmo quebrando o texto for
     comprido demais, reduz um pouco a fonte em vez de deixar cortado."""
     cel = ws[coord]
     cel.value = valor
@@ -419,40 +388,82 @@ def _definir_com_quebra(ws, coord, valor, tamanho_min=None, limite_caracteres=40
         cel.font = Font(name=fonte.name, size=novo_tamanho, bold=fonte.bold, italic=fonte.italic, color=fonte.color)
 
 
-def _preencher_cabecalho_molde(ws, campos, lista, versao):
-    _definir_com_quebra(ws, campos["projeto"], lista["projeto_nome"], tamanho_min=9)
-    _definir_com_quebra(ws, campos["subtitulo"], lista.get("subtitulo") or "")
-    _definir_com_quebra(ws, campos["area"], lista.get("area_titulo") or "")
-    _definir_com_quebra(ws, campos["disciplina"], lista.get("disciplina") or "")
-    _definir_com_quebra(ws, campos["titulo"], lista.get("titulo") or "")
-    _definir_com_quebra(ws, campos["numero_cliente"], lista.get("numero_cliente") or "")
-    _definir_com_quebra(ws, campos["numero_projetista"], lista.get("numero_fornecedor") or "")
-    _definir_com_quebra(ws, campos["rev"], _rev_exibicao(lista, versao))
+def _preencher_campos(ws, campos, valores):
+    """campos: {nome_campo: "coordenada"} do mapeamento salvo. valores: dados
+    de verdade (lista, versão etc.) já resolvidos. Campo mapeado sem valor
+    disponível, ou valor sem campo mapeado, é simplesmente ignorado."""
+    for campo, coord in campos.items():
+        if campo in valores:
+            _definir_com_quebra(ws, coord, valores[campo])
 
 
-def _preencher_itens_molde(ws, itens):
-    linha = _ITEM_LINHA_INICIAL
+def _preencher_tabela(ws, tabela_cfg, linhas_dados):
+    """tabela_cfg vem do mapeamento salvo: fonte_dados, linha_inicial,
+    linha_final_molde, linha_estilo, colunas ([nome, col_ini, col_fim]),
+    col_direita_impressao. linhas_dados é a lista de dicts (um por item, por
+    exemplo) a escrever a partir da linha_inicial, duplicando o estilo da
+    linha_estilo quando precisar de mais linhas que o molde já tem prontas."""
+    colunas = [tuple(c) for c in tabela_cfg["colunas"]]
+    linha = tabela_cfg["linha_inicial"]
+    linha_final_molde = tabela_cfg["linha_final_molde"]
+    linha_estilo = tabela_cfg["linha_estilo"]
+    for dados in linhas_dados:
+        if linha > linha_final_molde:
+            _duplicar_linha_estilo(ws, linha_estilo, linha, colunas)
+        _escrever_linha_grade(ws, linha, colunas, dados)
+        linha += 1
+    ultima_linha = max(linha_final_molde, linha - 1)
+    # "canto_superior_impressao" é opcional no mapeamento (default A1) - só
+    # existe pra preservar moldes migrados cuja área de impressão original
+    # não começava no canto absoluto da planilha (ex.: linha/coluna 1 em
+    # branco de propósito, fora da área impressa do molde do cliente).
+    _ajustar_area_impressao(ws, tabela_cfg.get("canto_superior_impressao", "A1"), ultima_linha, tabela_cfg["col_direita_impressao"])
+
+
+def _ajustar_area_impressao(ws, canto_superior, ultima_linha, col_direita):
+    """O molde costuma vir com área e escala de impressão fixas pro tamanho
+    original. Se a lista tiver mais linhas que isso, a área de impressão
+    precisa crescer junto - senão as linhas extras existem na planilha mas
+    não aparecem ao imprimir/exportar (ficam "cortadas"). Troca a escala
+    fixa por "encolher até a largura da página" pra nenhuma coluna nunca
+    ficar cortada horizontalmente, não importa o conteúdo."""
+    ws.print_area = f"{canto_superior}:{get_column_letter(col_direita)}{ultima_linha}"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+
+def _campos_lista(lista, versao):
+    """Valores dos campos únicos (cabeçalho) pra uma Lista por Desenho -
+    mesmos nomes de campo que a tela de mapeamento oferece."""
+    return {
+        "projeto": lista["projeto_nome"], "subtitulo": lista.get("subtitulo") or "",
+        "area": lista.get("area_titulo") or "", "disciplina": lista.get("disciplina") or "",
+        "titulo": lista.get("titulo") or "", "numero_cliente": lista.get("numero_cliente") or "",
+        "numero_projetista": lista.get("numero_fornecedor") or "", "rev": _rev_exibicao(lista, versao),
+        "numero_desenho": lista.get("numero_desenho") or "",
+        "referencia_desenho": f"DESENHO DE REFERÊNCIA : {lista.get('numero_desenho') or ''}",
+    }
+
+
+def _linhas_itens(itens):
+    linhas = []
     for idx, item in enumerate(itens, start=1):
-        if linha > _ITEM_LINHA_FINAL_MOLDE:
-            _duplicar_linha_estilo(ws, _ITEM_LINHA_ESTILO, linha, _ITEM_COLUNAS)
-        _escrever_linha_grade(ws, linha, _ITEM_COLUNAS, {
+        linhas.append({
             "item": idx, "codigo": item["codigo"], "descricao": item["descricao"],
             "referencia": item["fabricante"] or "", "complemento": item["bitola"] or "",
             "unidade": item["unidade"], "quant_atual": float(item["quantidade"]),
             "quant_anterior": float(item["quantidade_anterior"]),
         })
-        linha += 1
-    return max(_ITEM_LINHA_FINAL_MOLDE, linha - 1)
+    return linhas
 
 
-def _preencher_revisoes_molde(ws, lista, versao, historico):
-    linha = _REV_LINHA_INICIAL
+def _linhas_revisoes(lista, versao, historico):
+    linhas = []
     for v in (h for h in historico if h["status"] == "salvo"):
-        if linha > _REV_LINHA_FINAL_MOLDE:
-            _duplicar_linha_estilo(ws, _REV_LINHA_ESTILO, linha, _REV_COLUNAS)
         eh_atual = versao is not None and v["versao"] == versao["versao"]
         data_txt = _data_emissao_exibicao(lista, versao) if eh_atual else v["criado_em"].strftime("%d/%m/%Y")
-        _escrever_linha_grade(ws, linha, _REV_COLUNAS, {
+        linhas.append({
             "rev": v["versao"], "te": v["tipo_emissao"] or "-", "descricao": v["observacoes"] or "-",
             "por": _assinatura_curta(lista, "elaborador_nome", "elaborador_sigla"),
             "ver": _assinatura_curta(lista, "verificador_nome", "verificador_sigla"),
@@ -460,45 +471,45 @@ def _preencher_revisoes_molde(ws, lista, versao, historico):
             "aut": _assinatura_curta(lista, "autorizado_nome", "autorizado_sigla"),
             "data": data_txt,
         })
-        linha += 1
-    return max(_REV_LINHA_FINAL_MOLDE, linha - 1)
+    return linhas
 
 
-# Coluna mais à direita usada em cada aba, conforme a área de impressão
-# original do molde (B2:AH42 na aba de itens, B2:AJ32 na Capa).
-_ITEM_COL_DIREITA = 34  # AH
-_REV_COL_DIREITA = 36  # AJ
+def _molde_cliente(cliente_id, tipo):
+    """Busca o molde mapeado desse cliente/tipo. Devolve None se o cliente
+    não tiver nenhum molde desse tipo mapeado ainda."""
+    if not cliente_id:
+        return None
+    row = db.query_one(
+        "SELECT arquivo, mapeamento FROM clientes_templates WHERE cliente_id = %s AND tipo = %s AND mapeamento IS NOT NULL",
+        (cliente_id, tipo),
+    )
+    if not row:
+        return None
+    mapeamento = row["mapeamento"]
+    if isinstance(mapeamento, str):
+        mapeamento = json.loads(mapeamento)
+    return row["arquivo"], mapeamento
 
 
-def _ajustar_area_impressao(ws, ultima_linha, col_direita):
-    """O molde vem com área e escala de impressão fixas pro tamanho original
-    (32 itens / 18 revisões). Se a lista tiver mais linhas que isso, a área
-    de impressão precisa crescer junto - senão as linhas extras existem na
-    planilha mas não aparecem ao imprimir/exportar (ficam "cortadas"). Troca
-    a escala fixa por "encolher até a largura da página" pra nenhuma coluna
-    nunca ficar cortada horizontalmente, não importa o conteúdo."""
-    ws.print_area = f"B2:{get_column_letter(col_direita)}{ultima_linha}"
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-
-
-def _preencher_molde_lista(lista, versao, itens, historico):
-    """Abre o molde do cliente e devolve o Workbook com os dados da lista
-    preenchidos nas células certas - sem tocar em nenhuma formatação."""
-    wb = openpyxl.load_workbook(TEMPLATE_LISTA_DESENHO)
-    ws_capa, ws_itens = wb.worksheets[0], wb.worksheets[1]
-
-    _preencher_cabecalho_molde(ws_itens, _CAMPOS_CABECALHO_ITENS, lista, versao)
-    _preencher_cabecalho_molde(ws_capa, _CAMPOS_CABECALHO_CAPA, lista, versao)
-    _definir_com_quebra(ws_itens, "B9", f"DESENHO DE REFERÊNCIA : {lista['numero_desenho']}")
-
-    ultima_linha_itens = _preencher_itens_molde(ws_itens, itens)
-    ultima_linha_rev = _preencher_revisoes_molde(ws_capa, lista, versao, historico)
-    _ajustar_area_impressao(ws_itens, ultima_linha_itens, _ITEM_COL_DIREITA)
-    _ajustar_area_impressao(ws_capa, ultima_linha_rev, _REV_COL_DIREITA)
-
-    ws_itens.title = _titulo_aba_valido(lista["numero_desenho"])
+def _preencher_molde_generico(arquivo_bytes, mapeamento, dados_por_fonte):
+    """Abre o molde do cliente (bytes do banco) e devolve o Workbook com os
+    dados preenchidos nas células que o mapeamento indica - sem tocar em
+    nenhuma formatação que já vem no próprio arquivo."""
+    wb = openpyxl.load_workbook(io.BytesIO(arquivo_bytes))
+    campos_valores = dados_por_fonte.get("_campos", {})
+    for aba_cfg in mapeamento.get("abas", []):
+        if aba_cfg["origem"] >= len(wb.worksheets):
+            continue  # molde foi substituído por um com menos abas depois do mapeamento
+        ws = wb.worksheets[aba_cfg["origem"]]
+        _preencher_campos(ws, aba_cfg.get("campos", {}), campos_valores)
+        for tabela_cfg in aba_cfg.get("tabelas", []):
+            linhas_dados = dados_por_fonte.get(tabela_cfg["fonte_dados"], [])
+            _preencher_tabela(ws, tabela_cfg, linhas_dados)
+            # A aba com a tabela de itens é a "principal" do arquivo - renomeá-la
+            # pro número do desenho facilita identificar o arquivo baixado
+            # (mesmo comportamento de quando isso era fixo pro molde da Ausenco).
+            if tabela_cfg["fonte_dados"] == "itens" and campos_valores.get("numero_desenho"):
+                ws.title = _titulo_aba_valido(campos_valores["numero_desenho"])
     return wb
 
 
@@ -513,7 +524,19 @@ def relatorio_excel(lista_id):
         return jsonify({"erro": "Lista não encontrada"}), 404
     lista, versao, itens, historico = ctx["lista"], ctx["versao"], ctx["itens"], ctx["historico"]
 
-    wb = _preencher_molde_lista(lista, versao, itens, historico)
+    molde = _molde_cliente(lista.get("projeto_cliente_id"), "lista_materiais")
+    if not molde:
+        return jsonify({
+            "erro": "Este cliente ainda não tem um molde de Lista de Materiais mapeado. "
+                    "Vá na Lista por Desenho do projeto e use \"Upload de Template\" pra enviar e mapear o molde dele."
+        }), 400
+    arquivo_bytes, mapeamento = molde
+    dados_por_fonte = {
+        "_campos": _campos_lista(lista, versao),
+        "itens": _linhas_itens(itens),
+        "revisoes": _linhas_revisoes(lista, versao, historico),
+    }
+    wb = _preencher_molde_generico(arquivo_bytes, mapeamento, dados_por_fonte)
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)

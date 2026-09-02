@@ -739,6 +739,362 @@ async function excluirCliente(id) {
 
 document.getElementById("btn-novo-cliente").addEventListener("click", () => modalCliente());
 
+// ---------- MOLDES DE EXCEL POR CLIENTE ----------
+// Cada cliente pode ter um molde de "Lista de Materiais" - o Excel exato
+// que ele manda pro projetista, com o layout dele mesmo (nada a ver com o
+// nosso). Fluxo: enviar o arquivo em branco -> mapear os campos uma vez
+// (associar cada dado nosso a uma célula do molde do cliente) -> daí em
+// diante o relatório da Lista por Desenho passa a sair nesse molde.
+const ROTULO_TIPO_TEMPLATE = { lista_materiais: "Lista de Materiais", registro_documentos: "Registro de Documentos" };
+
+async function abrirTemplatesCliente(clienteId) {
+  if (!clienteId) { toast("Este projeto ainda não tem um cliente definido - edite o projeto antes.", "erro"); return; }
+  const cliente = state.clientes.find((c) => c.id === clienteId) || (await api(`/api/clientes?q=`)).find((c) => c.id === clienteId);
+  const templates = await api(`/api/clientes/${clienteId}/templates`);
+  renderModalTemplatesCliente(clienteId, cliente, templates);
+}
+
+function renderModalTemplatesCliente(clienteId, cliente, templates) {
+  const t = templates.find((x) => x.tipo === "lista_materiais");
+  const status = !t ? "Não enviado" : (t.mapeado ? "Mapeado" : "Enviado — aguardando mapeamento");
+  const classeStatus = !t ? "" : (t.mapeado ? "ok" : "pendente");
+
+  abrirModal(`
+    <h3>Molde de impressão — ${esc(cliente ? cliente.razao_social : "Cliente")}</h3>
+    <p style="color:var(--cinza); font-size:13px;">
+      Envie o modelo de Excel em branco que esse cliente manda pro preenchimento da Lista de Materiais.
+      Depois de enviado, mapeie os campos uma vez pra ele passar a ser usado no preenchimento automático.
+    </p>
+    <div class="templates-cliente-grid">
+      <div class="card-template-cliente">
+        <h4>${esc(ROTULO_TIPO_TEMPLATE.lista_materiais)}</h4>
+        <p class="status-template ${classeStatus}">${status}</p>
+        ${t ? `<p class="arvore-sub">${esc(t.nome_arquivo)}</p>` : ""}
+        <div class="acoes-linha somente-admin">
+          <label class="btn-secundario" style="cursor:pointer; margin:0;">
+            ${t ? "Substituir arquivo" : "Enviar arquivo"}
+            <input type="file" accept=".xlsx" class="input-template-cliente" style="display:none">
+          </label>
+          ${t ? `<button class="btn-secundario" onclick="abrirMapeamentoTemplate(${clienteId}, ${t.id})">${t.mapeado ? "Editar mapeamento" : "Mapear campos"}</button>` : ""}
+          ${t ? `<button class="btn-perigo somente-master" onclick="excluirTemplateCliente(${clienteId}, ${t.id})">Remover</button>` : ""}
+        </div>
+      </div>
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Fechar</button>
+    </div>
+  `, "modal-media");
+  aplicarPermissoes();
+
+  document.querySelector(".input-template-cliente").addEventListener("change", async (e) => {
+    const arquivo = e.target.files[0];
+    if (!arquivo) return;
+    const formData = new FormData();
+    formData.append("tipo", "lista_materiais");
+    formData.append("arquivo", arquivo);
+    try {
+      await api(`/api/clientes/${clienteId}/templates`, { method: "POST", body: formData });
+      toast("Molde enviado");
+      abrirTemplatesCliente(clienteId);
+    } catch (err) { toast(err.message, "erro"); }
+  });
+}
+
+async function excluirTemplateCliente(clienteId, templateId) {
+  if (!(await confirmarPersonalizado("Remover este molde? Será preciso enviar e mapear de novo se precisar dele outra vez."))) return;
+  try {
+    await api(`/api/clientes/${clienteId}/templates/${templateId}`, { method: "DELETE" });
+    toast("Molde removido");
+    abrirTemplatesCliente(clienteId);
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+// Campos canônicos que o motor de preenchimento (relatorios.py) sabe usar -
+// mesmos nomes que já existiam fixos no código pro molde antigo da Ausenco.
+const CAMPOS_MAPEAMENTO_LISTA_MATERIAIS = {
+  unicos: [
+    { campo: "projeto", rotulo: "Nome do Projeto" },
+    { campo: "subtitulo", rotulo: "Subtítulo (linha 1 do carimbo)" },
+    { campo: "area", rotulo: "Área (linha 2 do carimbo)" },
+    { campo: "disciplina", rotulo: "Disciplina (linha 3 do carimbo)" },
+    { campo: "titulo", rotulo: "Título do Documento (linha 4)" },
+    { campo: "numero_cliente", rotulo: "Número do Cliente" },
+    { campo: "numero_projetista", rotulo: "Número do Projetista" },
+    { campo: "rev", rotulo: "Revisão" },
+    { campo: "numero_desenho", rotulo: "Número do Desenho de Referência" },
+    { campo: "referencia_desenho", rotulo: "Nº do Desenho, com rótulo (\"DESENHO DE REFERÊNCIA : X\")" },
+  ],
+  tabelas: [
+    {
+      fonte_dados: "itens", rotulo: "Tabela de Itens",
+      colunas: [
+        { campo: "item", rotulo: "Item (nº sequencial)" },
+        { campo: "codigo", rotulo: "Código" },
+        { campo: "descricao", rotulo: "Descrição" },
+        { campo: "referencia", rotulo: "Fabricante/Referência" },
+        { campo: "complemento", rotulo: "Bitola/Complemento" },
+        { campo: "unidade", rotulo: "Unidade" },
+        { campo: "quant_atual", rotulo: "Quantidade" },
+        { campo: "quant_anterior", rotulo: "Quantidade Anterior" },
+      ],
+    },
+    {
+      fonte_dados: "revisoes", rotulo: "Tabela de Revisões",
+      colunas: [
+        { campo: "rev", rotulo: "Rev." },
+        { campo: "te", rotulo: "TE (tipo de emissão)" },
+        { campo: "descricao", rotulo: "Descrição da Revisão" },
+        { campo: "por", rotulo: "Elaborado por" },
+        { campo: "ver", rotulo: "Verificado por" },
+        { campo: "apr", rotulo: "Aprovado por" },
+        { campo: "aut", rotulo: "Autorizado por" },
+        { campo: "data", rotulo: "Data" },
+      ],
+    },
+  ],
+};
+
+// Estado da tela de mapeamento em edição (existe só enquanto o modal está
+// aberto). "_mapeamentoArmado" é o campo que vai ser associado no próximo
+// clique numa célula da prévia.
+let _mapeamentoEmEdicao = null;
+let _mapeamentoArmado = null;
+
+async function abrirMapeamentoTemplate(clienteId, templateId) {
+  const preview = await api(`/api/clientes/${clienteId}/templates/${templateId}/preview`);
+  _mapeamentoEmEdicao = {
+    clienteId, templateId, abas: preview.abas, abaAtiva: 0,
+    camposUnicos: {}, tabelas: {},
+  };
+  _mapeamentoArmado = null;
+  if (preview.mapeamento) _aplicarMapeamentoSalvoNoEstado(preview.mapeamento);
+  renderMapeamentoTemplate();
+}
+
+function _aplicarMapeamentoSalvoNoEstado(mapeamentoJson) {
+  (mapeamentoJson.abas || []).forEach((aba) => {
+    Object.entries(aba.campos || {}).forEach(([campo, coord]) => {
+      _mapeamentoEmEdicao.camposUnicos[campo] = { origem: aba.origem, coord };
+    });
+    (aba.tabelas || []).forEach((tab) => {
+      _mapeamentoEmEdicao.tabelas[tab.fonte_dados] = {
+        origem: aba.origem, linha: tab.linha_inicial,
+        colunas: Object.fromEntries((tab.colunas || []).map(([campo, ini, fim]) => [campo, { colIni: ini, colFim: fim }])),
+      };
+    });
+  });
+}
+
+function renderMapeamentoTemplate() {
+  const cfg = CAMPOS_MAPEAMENTO_LISTA_MATERIAIS;
+  const abaAtiva = _mapeamentoEmEdicao.abaAtiva;
+
+  abrirModal(`
+    <h3>Mapear campos — Lista de Materiais</h3>
+    <div class="mapeamento-aviso">
+      Clique num campo à direita e depois na célula correspondente no molde. Campos sem
+      correspondência no molde do cliente podem ficar sem mapear — o preenchimento simplesmente
+      pula esse campo, sem erro.
+    </div>
+    <div class="mapeamento-molde">
+      <div class="mapeamento-preview">
+        <div class="mapeamento-preview-abas">
+          ${_mapeamentoEmEdicao.abas.map((a) => `
+            <button type="button" class="btn-secundario" style="${a.origem === abaAtiva ? "background:var(--azul);color:white;" : ""}" onclick="_trocarAbaMapeamento(${a.origem})">${esc(a.nome)}</button>
+          `).join("")}
+        </div>
+        <div class="mapeamento-preview-tabela-wrap" id="mapeamento-tabela-wrap"></div>
+      </div>
+      <div class="mapeamento-campos" id="mapeamento-campos-painel">${_htmlPainelCampos(cfg)}</div>
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
+      <button class="btn-primario" id="btn-salvar-mapeamento">Salvar mapeamento</button>
+    </div>
+  `, "modal-grande");
+  aplicarPermissoes();
+
+  _renderPreviewAbaMapeamento(abaAtiva);
+  document.getElementById("btn-salvar-mapeamento").addEventListener("click", _salvarMapeamentoTemplate);
+}
+
+function _htmlPainelCampos(cfg) {
+  return `
+    <h4>Campos únicos</h4>
+    ${cfg.unicos.map((f) => _htmlBotaoCampoMapeamento("unico", null, f.campo, f.rotulo)).join("")}
+    ${cfg.tabelas.map((t) => `
+      <h4>${esc(t.rotulo)}</h4>
+      ${t.colunas.map((f) => _htmlBotaoCampoMapeamento("tabela", t.fonte_dados, f.campo, f.rotulo)).join("")}
+    `).join("")}`;
+}
+
+// Atualiza só o painel de campos (sem recriar o modal inteiro) - usado a
+// cada clique de mapeamento pra não perder a posição de scroll da prévia.
+function _atualizarPainelCampos() {
+  const painel = document.getElementById("mapeamento-campos-painel");
+  if (painel) painel.innerHTML = _htmlPainelCampos(CAMPOS_MAPEAMENTO_LISTA_MATERIAIS);
+}
+
+function _htmlBotaoCampoMapeamento(grupo, tabela, campo, rotulo) {
+  let coordAtual = null;
+  if (grupo === "unico") {
+    const v = _mapeamentoEmEdicao.camposUnicos[campo];
+    if (v) coordAtual = v.coord;
+  } else {
+    const t = _mapeamentoEmEdicao.tabelas[tabela];
+    if (t && t.colunas[campo]) coordAtual = `${_colunaParaLetra(t.colunas[campo].colIni)}${t.linha}`;
+  }
+  const armado = _mapeamentoArmado && _mapeamentoArmado.grupo === grupo && _mapeamentoArmado.tabela === tabela && _mapeamentoArmado.campo === campo;
+  return `
+    <button type="button" class="mapeamento-campo-btn ${armado ? "armado" : ""}" onclick="_armarCampoMapeamento('${grupo}', ${tabela ? `'${tabela}'` : "null"}, '${campo}')">
+      <span>${esc(rotulo)}</span>
+      ${coordAtual
+        ? `<span class="valor-mapeado">${esc(coordAtual)}<span class="limpar-mapeamento" onclick="event.stopPropagation(); _limparCampoMapeamento('${grupo}', ${tabela ? `'${tabela}'` : "null"}, '${campo}')" title="Remover">&times;</span></span>`
+        : `<span class="sem-mapeamento">não definido</span>`}
+    </button>`;
+}
+
+function _colunaParaLetra(col) {
+  let letra = "";
+  while (col > 0) {
+    const resto = (col - 1) % 26;
+    letra = String.fromCharCode(65 + resto) + letra;
+    col = Math.floor((col - 1) / 26);
+  }
+  return letra;
+}
+
+function _armarCampoMapeamento(grupo, tabela, campo) {
+  _mapeamentoArmado = { grupo, tabela, campo };
+  _atualizarPainelCampos();
+}
+
+function _limparCampoMapeamento(grupo, tabela, campo) {
+  if (grupo === "unico") delete _mapeamentoEmEdicao.camposUnicos[campo];
+  else if (_mapeamentoEmEdicao.tabelas[tabela]) delete _mapeamentoEmEdicao.tabelas[tabela].colunas[campo];
+  _atualizarPainelCampos();
+  _renderPreviewAbaMapeamento(_mapeamentoEmEdicao.abaAtiva);
+}
+
+function _trocarAbaMapeamento(origem) {
+  _mapeamentoEmEdicao.abaAtiva = origem;
+  renderMapeamentoTemplate();
+}
+
+function _renderPreviewAbaMapeamento(origem) {
+  const aba = _mapeamentoEmEdicao.abas.find((a) => a.origem === origem);
+  const wrap = document.getElementById("mapeamento-tabela-wrap");
+  if (!aba) { wrap.innerHTML = ""; return; }
+  // Preserva a posição do scroll entre re-renders (senão cada clique de
+  // mapeamento jogava a prévia de volta pro topo, incômodo numa planilha grande).
+  const scrollTop = wrap.scrollTop, scrollLeft = wrap.scrollLeft;
+
+  const grade = {};
+  aba.celulas.forEach((c) => { grade[`${c.linha}_${c.coluna}`] = c; });
+  const ocupadas = new Set();
+  aba.celulas.forEach((c) => {
+    for (let r = c.linha; r < c.linha + c.rowspan; r++) {
+      for (let col = c.coluna; col < c.coluna + c.colspan; col++) {
+        if (r !== c.linha || col !== c.coluna) ocupadas.add(`${r}_${col}`);
+      }
+    }
+  });
+
+  let html = "<table class=\"mapeamento-preview-tabela\">";
+  for (let linha = 1; linha <= aba.linhas; linha++) {
+    html += "<tr>";
+    for (let col = 1; col <= aba.colunas; col++) {
+      const chave = `${linha}_${col}`;
+      if (ocupadas.has(chave)) continue;
+      const cel = grade[chave];
+      const rowspan = cel ? cel.rowspan : 1;
+      const colspan = cel ? cel.colspan : 1;
+      const valor = cel && cel.valor !== null ? cel.valor : "";
+      const coord = `${_colunaParaLetra(col)}${linha}`;
+      const mapeada = _coordEstaMapeada(origem, linha, col);
+      html += `<td data-linha="${linha}" data-coluna="${col}" title="${esc(coord)}"
+        class="${mapeada ? "celula-mapeada" : ""} ${valor === "" ? "celula-vazia" : ""}"
+        ${rowspan > 1 ? `rowspan="${rowspan}"` : ""} ${colspan > 1 ? `colspan="${colspan}"` : ""}
+        onclick="_clicarCelulaMapeamento(${origem}, ${linha}, ${col}, ${colspan})">${esc(valor) || "&nbsp;"}</td>`;
+    }
+    html += "</tr>";
+  }
+  html += "</table>";
+  wrap.innerHTML = html;
+  wrap.scrollTop = scrollTop;
+  wrap.scrollLeft = scrollLeft;
+}
+
+function _coordEstaMapeada(origem, linha, coluna) {
+  const unicoAqui = Object.values(_mapeamentoEmEdicao.camposUnicos).some((v) => {
+    const lc = _coordParaLinhaColuna(v.coord);
+    return v.origem === origem && lc.linha === linha && lc.coluna === coluna;
+  });
+  if (unicoAqui) return true;
+  return Object.values(_mapeamentoEmEdicao.tabelas).some((t) =>
+    t.origem === origem && t.linha === linha && Object.values(t.colunas).some((c) => coluna >= c.colIni && coluna <= c.colFim)
+  );
+}
+
+function _coordParaLinhaColuna(coord) {
+  const m = /^([A-Z]+)(\d+)$/.exec(coord);
+  if (!m) return { linha: 0, coluna: 0 };
+  let coluna = 0;
+  for (const ch of m[1]) coluna = coluna * 26 + (ch.charCodeAt(0) - 64);
+  return { linha: Number(m[2]), coluna };
+}
+
+function _clicarCelulaMapeamento(origem, linha, coluna, colspan) {
+  if (!_mapeamentoArmado) { toast("Clique primeiro num campo à direita", "erro"); return; }
+  const { grupo, tabela, campo } = _mapeamentoArmado;
+
+  if (grupo === "unico") {
+    _mapeamentoEmEdicao.camposUnicos[campo] = { origem, coord: `${_colunaParaLetra(coluna)}${linha}` };
+  } else {
+    if (!_mapeamentoEmEdicao.tabelas[tabela]) {
+      _mapeamentoEmEdicao.tabelas[tabela] = { origem, linha, colunas: {} };
+    }
+    const estadoTabela = _mapeamentoEmEdicao.tabelas[tabela];
+    if (estadoTabela.linha !== linha || estadoTabela.origem !== origem) {
+      toast(`As colunas dessa tabela precisam estar todas na mesma linha de exemplo (linha ${estadoTabela.linha}).`, "erro");
+      return;
+    }
+    estadoTabela.colunas[campo] = { colIni: coluna, colFim: coluna + colspan - 1 };
+  }
+  _mapeamentoArmado = null;
+  _atualizarPainelCampos();
+  _renderPreviewAbaMapeamento(origem);
+}
+
+async function _salvarMapeamentoTemplate() {
+  const porAba = {};
+  Object.entries(_mapeamentoEmEdicao.camposUnicos).forEach(([campo, v]) => {
+    porAba[v.origem] = porAba[v.origem] || { origem: v.origem, campos: {}, tabelas: [] };
+    porAba[v.origem].campos[campo] = v.coord;
+  });
+  Object.entries(_mapeamentoEmEdicao.tabelas).forEach(([fonteDados, t]) => {
+    if (!Object.keys(t.colunas).length) return;
+    porAba[t.origem] = porAba[t.origem] || { origem: t.origem, campos: {}, tabelas: [] };
+    const colDireita = Math.max(...Object.values(t.colunas).map((c) => c.colFim));
+    porAba[t.origem].tabelas.push({
+      fonte_dados: fonteDados, linha_inicial: t.linha, linha_final_molde: t.linha, linha_estilo: t.linha,
+      colunas: Object.entries(t.colunas).map(([campo, c]) => [campo, c.colIni, c.colFim]),
+      col_direita_impressao: colDireita,
+    });
+  });
+
+  const abas = Object.values(porAba);
+  if (!abas.length) { toast("Mapeie ao menos um campo antes de salvar", "erro"); return; }
+
+  try {
+    await api(`/api/clientes/${_mapeamentoEmEdicao.clienteId}/templates/${_mapeamentoEmEdicao.templateId}/mapeamento`, {
+      method: "PUT", body: JSON.stringify({ abas }),
+    });
+    fecharModal();
+    toast("Mapeamento salvo");
+  } catch (err) { toast(err.message, "erro"); }
+}
+
 // ---------- PROJETOS ----------
 async function carregarProjetos() {
   state.projetos = await api("/api/projetos");
@@ -1051,9 +1407,8 @@ document.getElementById("btn-nova-lista").addEventListener("click", async () => 
   renderCabecalhoLista(null, {});
 });
 
-// Botão só visual por enquanto - o comportamento ainda vai ser definido.
 document.getElementById("btn-upload-template").addEventListener("click", () => {
-  toast("Em breve", "erro");
+  abrirTemplatesCliente(state.projetoAtual?.cliente_id);
 });
 
 // Monta o rótulo de um material com código e bitola em destaque (linha 1)
