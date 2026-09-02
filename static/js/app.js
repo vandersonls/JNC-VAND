@@ -1051,6 +1051,11 @@ document.getElementById("btn-nova-lista").addEventListener("click", async () => 
   renderCabecalhoLista(null, {});
 });
 
+// Botão só visual por enquanto - o comportamento ainda vai ser definido.
+document.getElementById("btn-upload-template").addEventListener("click", () => {
+  toast("Em breve", "erro");
+});
+
 // Monta o rótulo de um material com código e bitola em destaque (linha 1)
 // e a descrição completa como texto secundário (linha 2) - sem isso, dois
 // materiais com a mesma descrição e bitolas diferentes (ex.: cabos de
