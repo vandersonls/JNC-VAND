@@ -399,14 +399,14 @@ input[type="number"], select, textarea {
 .mapeamento-molde { display: flex; gap: 16px; align-items: flex-start; }
 .mapeamento-preview { flex: 1 1 auto; min-width: 0; }
 .mapeamento-preview-abas { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
-.mapeamento-preview-tabela-wrap { max-height: 480px; overflow: auto; border: 1px solid var(--borda); border-radius: 8px; }
-table.mapeamento-preview-tabela { border-collapse: collapse; font-size: 11.5px; white-space: nowrap; }
+.mapeamento-preview-tabela-wrap { max-height: 480px; overflow: auto; border: 1px solid var(--borda); border-radius: 8px; background: #f7f8fa; }
+table.mapeamento-preview-tabela { border-collapse: collapse; font-family: Calibri, Arial, sans-serif; font-size: 11px; white-space: nowrap; background: white; }
 table.mapeamento-preview-tabela td {
-  border: 1px solid #eef0f3; padding: 3px 6px; cursor: pointer; max-width: 220px; overflow: hidden; text-overflow: ellipsis;
+  border: 1px solid #eef0f3; padding: 1px 4px; cursor: pointer; max-width: 260px; overflow: hidden; text-overflow: ellipsis;
 }
-table.mapeamento-preview-tabela td:hover { background: #eaf1fb; }
-table.mapeamento-preview-tabela td.celula-mapeada { background: #d6e8ff; font-weight: 600; }
-table.mapeamento-preview-tabela td.celula-vazia { color: #c3c8d1; }
+table.mapeamento-preview-tabela td:hover { outline: 1px solid var(--azul-claro); outline-offset: -1px; }
+table.mapeamento-preview-tabela td.celula-mapeada { box-shadow: inset 0 0 0 2px var(--dourado); }
+table.mapeamento-preview-tabela td.celula-vazia { color: #b7bcc4; }
 
 .mapeamento-campos { flex: 0 0 280px; max-height: 520px; overflow-y: auto; }
 .mapeamento-campos h4 { margin: 14px 0 6px; color: var(--azul); font-size: 13px; }

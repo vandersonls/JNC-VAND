@@ -5,6 +5,7 @@ import io
 import json
 
 import openpyxl
+from openpyxl.utils import get_column_letter
 from flask import Blueprint, request, jsonify
 
 from auth import perfis_permitidos
@@ -81,10 +82,59 @@ def enviar_template(cliente_id):
     return jsonify({"id": template_id}), 201
 
 
+def _cor_hex(cor):
+    """openpyxl guarda cor como objeto Color, que pode ser RGB direto, uma
+    referência de tema/indexada (sem RGB de verdade) ou None. Só devolvemos
+    um "#RRGGBB" utilizável quando é mesmo uma cor RGB explícita - o resto
+    (tema, automática) a gente ignora e deixa o navegador usar o padrão."""
+    if not cor or cor.type != "rgb" or not isinstance(cor.rgb, str) or len(cor.rgb) != 8:
+        return None
+    rgb = cor.rgb[2:]  # descarta os 2 primeiros dígitos (canal alpha/ARGB)
+    if rgb.upper() in ("000000",) and cor.rgb.upper() == "00000000":
+        return None  # preto "vazio" (célula sem cor definida) - não vale a pena forçar
+    return f"#{rgb}"
+
+
+def _estilo_celula(cel):
+    """Extrai só o que é visualmente relevante pra prévia se parecer com o
+    Excel de verdade: negrito/tamanho/cor da fonte, cor de fundo (se sólida),
+    alinhamento e quais lados têm borda. Ignora o resto (não precisamos de
+    fidelidade 100%, só de uma leitura fácil e reconhecível pelo usuário)."""
+    estilo = {}
+    fonte = cel.font
+    if fonte:
+        if fonte.bold:
+            estilo["b"] = True
+        if fonte.size and round(fonte.size) != 11:
+            estilo["sz"] = round(fonte.size)
+        cor = _cor_hex(fonte.color)
+        if cor:
+            estilo["fc"] = cor
+    if cel.fill and cel.fill.patternType == "solid":
+        cor = _cor_hex(cel.fill.fgColor)
+        if cor and cor.upper() != "#FFFFFF":
+            estilo["bg"] = cor
+    alin = cel.alignment
+    if alin:
+        if alin.horizontal:
+            estilo["ha"] = alin.horizontal
+        if alin.vertical:
+            estilo["va"] = alin.vertical
+        if alin.wrap_text:
+            estilo["wrap"] = True
+    borda = cel.border
+    if borda:
+        lados = [lado for lado, b in (("t", borda.top), ("r", borda.right), ("b", borda.bottom), ("l", borda.left)) if b and b.style]
+        if lados:
+            estilo["bd"] = lados
+    return estilo
+
+
 def _celulas_com_mesclagens(ws):
-    """Devolve a lista de células com valor pra prévia, já com rowspan/colspan
-    das mesclagens (célula-âncora carrega o span; o resto da mesclagem some
-    da lista pra não duplicar na tabela HTML do front)."""
+    """Devolve a lista de células com valor + estilo visual pra prévia, já
+    com rowspan/colspan das mesclagens (célula-âncora carrega o span; o
+    resto da mesclagem some da lista pra não duplicar na tabela HTML do
+    front)."""
     mesclado_por_ancora = {}
     celulas_dentro_de_mescla = set()
     for rng in ws.merged_cells.ranges:
@@ -108,8 +158,23 @@ def _celulas_com_mesclagens(ws):
             celulas.append({
                 "coord": cel.coordinate, "linha": cel.row, "coluna": cel.column,
                 "valor": valor, "rowspan": rowspan, "colspan": colspan,
+                "estilo": _estilo_celula(cel),
             })
-    return celulas, max_row, max_col
+
+    # Largura das colunas (unidade Excel, ~7px por unidade) e altura das
+    # linhas (pontos, 1pt ~= 1.33px) - sem isso a prévia fica toda com
+    # colunas/linhas do mesmo tamanho, bem diferente da proporção real.
+    largura_padrao, altura_padrao = 8.43, 15.0
+    larguras_col = []
+    for c in range(1, max_col + 1):
+        dim = ws.column_dimensions.get(get_column_letter(c))
+        larguras_col.append(round((dim.width if dim and dim.width else largura_padrao) * 7))
+    alturas_linha = []
+    for r in range(1, max_row + 1):
+        dim = ws.row_dimensions.get(r)
+        alturas_linha.append(round((dim.height if dim and dim.height else altura_padrao) * 1.33))
+
+    return celulas, max_row, max_col, larguras_col, alturas_linha
 
 
 @templates_cliente_bp.get("/api/clientes/<int:cliente_id>/templates/<int:template_id>/preview")
@@ -128,8 +193,11 @@ def preview_template(cliente_id, template_id):
     abas = []
     for indice, nome in enumerate(wb.sheetnames):
         ws = wb[nome]
-        celulas, max_row, max_col = _celulas_com_mesclagens(ws)
-        abas.append({"origem": indice, "nome": nome, "linhas": max_row, "colunas": max_col, "celulas": celulas})
+        celulas, max_row, max_col, larguras_col, alturas_linha = _celulas_com_mesclagens(ws)
+        abas.append({
+            "origem": indice, "nome": nome, "linhas": max_row, "colunas": max_col, "celulas": celulas,
+            "larguras_col": larguras_col, "alturas_linha": alturas_linha,
+        })
 
     mapeamento = row["mapeamento"]
     if isinstance(mapeamento, str):  # driver pode devolver JSON como texto cru

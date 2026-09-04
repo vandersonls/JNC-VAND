@@ -1000,9 +1000,17 @@ function _renderPreviewAbaMapeamento(origem) {
     }
   });
 
+  const larguras = aba.larguras_col || [];
+  const alturas = aba.alturas_linha || [];
+
   let html = "<table class=\"mapeamento-preview-tabela\">";
+  html += "<colgroup>";
+  for (let col = 1; col <= aba.colunas; col++) {
+    html += `<col style="width:${larguras[col - 1] || 56}px">`;
+  }
+  html += "</colgroup>";
   for (let linha = 1; linha <= aba.linhas; linha++) {
-    html += "<tr>";
+    html += `<tr style="height:${alturas[linha - 1] || 20}px">`;
     for (let col = 1; col <= aba.colunas; col++) {
       const chave = `${linha}_${col}`;
       if (ocupadas.has(chave)) continue;
@@ -1012,8 +1020,10 @@ function _renderPreviewAbaMapeamento(origem) {
       const valor = cel && cel.valor !== null ? cel.valor : "";
       const coord = `${_colunaParaLetra(col)}${linha}`;
       const mapeada = _coordEstaMapeada(origem, linha, col);
+      const estiloCss = _estiloCelulaParaCss(cel && cel.estilo);
       html += `<td data-linha="${linha}" data-coluna="${col}" title="${esc(coord)}"
         class="${mapeada ? "celula-mapeada" : ""} ${valor === "" ? "celula-vazia" : ""}"
+        style="${estiloCss}"
         ${rowspan > 1 ? `rowspan="${rowspan}"` : ""} ${colspan > 1 ? `colspan="${colspan}"` : ""}
         onclick="_clicarCelulaMapeamento(${origem}, ${linha}, ${col}, ${colspan})">${esc(valor) || "&nbsp;"}</td>`;
     }
@@ -1023,6 +1033,26 @@ function _renderPreviewAbaMapeamento(origem) {
   wrap.innerHTML = html;
   wrap.scrollTop = scrollTop;
   wrap.scrollLeft = scrollLeft;
+}
+
+// Converte o objeto de estilo compacto que o backend manda (b/sz/fc/bg/
+// ha/va/wrap/bd) num "style=" de verdade, pra prévia ficar parecida com o
+// Excel de origem (negrito, cores, alinhamento, bordas).
+function _estiloCelulaParaCss(estilo) {
+  if (!estilo) return "";
+  const partes = [];
+  if (estilo.b) partes.push("font-weight:700");
+  if (estilo.sz) partes.push(`font-size:${estilo.sz}px`);
+  if (estilo.fc) partes.push(`color:${estilo.fc}`);
+  if (estilo.bg) partes.push(`background-color:${estilo.bg}`);
+  if (estilo.ha) partes.push(`text-align:${estilo.ha}`);
+  if (estilo.va) partes.push(`vertical-align:${estilo.va === "center" ? "middle" : estilo.va}`);
+  if (estilo.wrap) partes.push("white-space:normal");
+  if (estilo.bd) {
+    const mapa = { t: "border-top", r: "border-right", b: "border-bottom", l: "border-left" };
+    estilo.bd.forEach((lado) => partes.push(`${mapa[lado]}:1px solid #8a8f98`));
+  }
+  return partes.join(";");
 }
 
 function _coordEstaMapeada(origem, linha, coluna) {
