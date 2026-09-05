@@ -869,6 +869,7 @@ async function abrirMapeamentoTemplate(clienteId, templateId) {
   _mapeamentoEmEdicao = {
     clienteId, templateId, abas: preview.abas, abaAtiva: 0,
     camposUnicos: {}, tabelas: {},
+    zoom: null, // null = ajusta automático pra folha inteira caber na área visível
   };
   _mapeamentoArmado = null;
   if (preview.mapeamento) _aplicarMapeamentoSalvoNoEstado(preview.mapeamento);
@@ -906,9 +907,17 @@ function renderMapeamentoTemplate() {
     <div class="mapeamento-molde">
       <div class="mapeamento-preview">
         <div class="mapeamento-preview-abas">
-          ${_mapeamentoEmEdicao.abas.map((a) => `
-            <button type="button" class="btn-secundario" style="${a.origem === abaAtiva ? "background:var(--azul);color:white;" : ""}" onclick="_trocarAbaMapeamento(${a.origem})">${esc(a.nome)}</button>
-          `).join("")}
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            ${_mapeamentoEmEdicao.abas.map((a) => `
+              <button type="button" class="btn-secundario" style="${a.origem === abaAtiva ? "background:var(--azul);color:white;" : ""}" onclick="_trocarAbaMapeamento(${a.origem})">${esc(a.nome)}</button>
+            `).join("")}
+          </div>
+          <div class="mapeamento-zoom">
+            <button type="button" class="btn-zoom" onclick="_ajustarZoomMapeamento(-0.1)" title="Diminuir zoom">−</button>
+            <span id="mapeamento-zoom-valor">100%</span>
+            <button type="button" class="btn-zoom" onclick="_ajustarZoomMapeamento(0.1)" title="Aumentar zoom">+</button>
+            <button type="button" class="btn-zoom btn-zoom-ajustar" onclick="_ajustarZoomMapeamento(0)" title="Ajustar a folha inteira à tela">Ajustar</button>
+          </div>
         </div>
         <div class="mapeamento-preview-tabela-wrap" id="mapeamento-tabela-wrap"></div>
       </div>
@@ -1135,6 +1144,7 @@ function _renderPreviewAbaMapeamento(origem) {
   // pra caber texto longo, desalinhando as imagens (que são posicionadas
   // pela largura que o PRÓPRIO Excel tem, não pela largura que o texto pede).
   const larguraTotal = larguras.reduce((a, b) => a + b, 0);
+  const alturaTotal = alturas.reduce((a, b) => a + b, 0);
 
   let html = `<table class="mapeamento-preview-tabela" style="width:${larguraTotal}px">`;
   html += "<colgroup>";
@@ -1176,9 +1186,57 @@ function _renderPreviewAbaMapeamento(origem) {
     return `<img src="${img.src}" style="position:absolute; left:${left}px; top:${top}px; width:${img.largura}px; height:${img.altura}px; pointer-events:none;">`;
   }).join("");
 
-  wrap.innerHTML = `<div style="position:relative; display:inline-block;">${html}${imagensHtml}</div>`;
+  // Zoom: escala o conteúdo inteiro (tabela + imagens) via CSS transform em
+  // vez de recalcular cada largura/altura/fonte na mão - fica nítido em
+  // qualquer nível (o navegador redesenha o texto na escala final, não faz
+  // um "esticamento" de bitmap) e mantém a fidelidade ao Excel de origem
+  // (nenhum arredondamento por célula que poderia desalinhar as imagens).
+  // "zoom: null" = ajusta automaticamente pra a folha inteira caber na área
+  // visível, como abrir uma prévia de impressão.
+  let zoom;
+  if (_mapeamentoEmEdicao.zoom != null) {
+    zoom = _mapeamentoEmEdicao.zoom;
+  } else {
+    zoom = _calcularZoomAjuste(wrap, larguraTotal, alturaTotal);
+    if (wrap.clientWidth <= 0 || wrap.clientHeight <= 0) {
+      // Primeira pintura do modal - o navegador ainda não mediu o tamanho
+      // real do wrap (clientWidth/Height vêm 0), então o ajuste caiu no
+      // fallback de 100%. Tenta de novo no próximo frame, já com o layout
+      // pronto (a pessoa só vê o resultado corrigido, sem piscar).
+      requestAnimationFrame(() => { if (_mapeamentoEmEdicao.zoom == null) _renderPreviewAbaMapeamento(origem); });
+    }
+  }
+  _zoomEfetivoAtual = zoom;
+  const rotuloZoom = document.getElementById("mapeamento-zoom-valor");
+  if (rotuloZoom) rotuloZoom.textContent = `${Math.round(zoom * 100)}%`;
+
+  wrap.innerHTML = `
+    <div style="position:relative; width:${larguraTotal * zoom}px; height:${alturaTotal * zoom}px;">
+      <div style="position:absolute; top:0; left:0; transform:scale(${zoom}); transform-origin:top left;">${html}${imagensHtml}</div>
+    </div>`;
   wrap.scrollTop = scrollTop;
   wrap.scrollLeft = scrollLeft;
+}
+
+// Zoom que faz a folha inteira caber na área visível da prévia (como abrir
+// uma prévia de impressão) - usado como padrão ao abrir/trocar de aba, até
+// a pessoa mexer manualmente no +/-.
+function _calcularZoomAjuste(wrap, larguraTotal, alturaTotal) {
+  const dispW = wrap.clientWidth - 4, dispH = wrap.clientHeight - 4;
+  if (!larguraTotal || !alturaTotal || dispW <= 0 || dispH <= 0) return 1;
+  return Math.max(0.25, Math.min(dispW / larguraTotal, dispH / alturaTotal, 1.5));
+}
+
+let _zoomEfetivoAtual = 1;
+
+function _ajustarZoomMapeamento(delta) {
+  if (delta === 0) {
+    _mapeamentoEmEdicao.zoom = null; // volta a ajustar automático (folha inteira)
+  } else {
+    const atual = _mapeamentoEmEdicao.zoom != null ? _mapeamentoEmEdicao.zoom : _zoomEfetivoAtual;
+    _mapeamentoEmEdicao.zoom = Math.round(Math.min(3, Math.max(0.25, atual + delta)) * 100) / 100;
+  }
+  _renderPreviewAbaMapeamento(_mapeamentoEmEdicao.abaAtiva);
 }
 
 // Converte o objeto de estilo compacto que o backend manda (b/sz/fc/bg/
