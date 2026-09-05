@@ -396,13 +396,34 @@ input[type="number"], select, textarea {
 .status-template.ok { color: var(--sucesso); }
 .card-template-cliente .acoes-linha { margin-top: 10px; gap: 8px; }
 
+/* Tela cheia de verdade (não só "modal grande") - o editor de mapeamento
+   precisa do máximo de espaço possível pra mostrar o desenho técnico num
+   zoom legível; qualquer margem sobrando é espaço tirado da leitura. Fica
+   depois de .modal-maximizado no arquivo de propósito: mesma especificidade
+   (classe + !important) então, se alguém clicar no botão de maximizar
+   genérico do modal por engano, essa regra continua ganhando por ordem. */
+.modal-tela-cheia {
+  width: 100vw !important; max-width: 100vw !important;
+  height: 100vh !important; max-height: 100vh !important;
+  border-radius: 0;
+}
+
+.mapeamento-secoes-abas { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+.mapeamento-secao-btn {
+  padding: 8px 18px; border: 1px solid var(--borda); border-bottom: none; border-radius: 8px 8px 0 0;
+  background: var(--fundo); cursor: pointer; font-size: 13px; font-weight: 600; color: var(--cinza);
+  box-shadow: inset 0 -3px 0 transparent;
+}
+.mapeamento-secao-btn:hover { color: var(--azul); }
+.mapeamento-secao-btn.ativa { color: var(--azul); background: var(--branco); box-shadow: inset 0 -3px 0 var(--azul); }
+
 .mapeamento-molde { display: flex; gap: 16px; align-items: flex-start; }
 .mapeamento-preview { flex: 1 1 auto; min-width: 0; }
 .mapeamento-preview-abas { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; justify-content: space-between; align-items: center; }
-/* Altura fixa (em vez de só um teto) - dá uma área de visualização grande e
-   estável, proporcional a uma folha de impressão, sobre a qual o zoom
-   "Ajustar" calcula o quanto encolher/ampliar a planilha pra caber inteira. */
-.mapeamento-preview-tabela-wrap { height: 600px; overflow: auto; border: 1px solid var(--borda); border-radius: 8px; background: #f7f8fa; }
+/* Altura relativa à viewport (a tela agora é 100vh) em vez de um valor fixo
+   - usa o espaço que sobra depois do cabeçalho/abas/botões, em qualquer
+   tamanho de tela, sempre proporcional a uma folha de impressão. */
+.mapeamento-preview-tabela-wrap { height: calc(100vh - 330px); min-height: 320px; overflow: auto; border: 1px solid var(--borda); border-radius: 8px; background: #f7f8fa; }
 .mapeamento-zoom { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--cinza); }
 .mapeamento-zoom #mapeamento-zoom-valor { min-width: 38px; text-align: center; font-weight: 600; }
 .btn-zoom {
@@ -422,19 +443,28 @@ table.mapeamento-preview-tabela td:hover { outline: 1px solid var(--azul-claro);
 table.mapeamento-preview-tabela td.celula-mapeada { box-shadow: inset 0 0 0 2px var(--dourado); }
 table.mapeamento-preview-tabela td.celula-vazia { color: #b7bcc4; }
 
-.mapeamento-campos { flex: 0 0 280px; max-height: 600px; overflow-y: auto; }
+.mapeamento-campos { flex: 0 0 300px; height: calc(100vh - 330px); min-height: 320px; overflow-y: auto; }
 .mapeamento-campos h4 { margin: 14px 0 6px; color: var(--azul); font-size: 13px; }
 .mapeamento-campos h4:first-child { margin-top: 0; }
 .mapeamento-campo-btn {
   display: flex; justify-content: space-between; align-items: center; gap: 6px; width: 100%;
-  padding: 6px 10px; margin-bottom: 4px; border: 1px solid var(--borda); border-radius: 6px;
-  background: var(--branco); cursor: pointer; font-size: 12.5px; text-align: left;
+  padding: 8px 12px; margin-bottom: 6px; border: 1px solid var(--borda); border-radius: 8px;
+  background: var(--branco); cursor: pointer; font-size: 13px; text-align: left;
 }
 .mapeamento-campo-btn:hover { border-color: var(--azul-claro); }
 .mapeamento-campo-btn.armado { border-color: var(--dourado); background: #fff8ea; box-shadow: 0 0 0 2px rgba(240,165,48,0.25); }
-.mapeamento-campo-btn .valor-mapeado { color: var(--sucesso); font-weight: 600; display: flex; align-items: center; gap: 4px; }
-.mapeamento-campo-btn .sem-mapeamento { color: #c3c8d1; }
-.mapeamento-campo-btn .limpar-mapeamento { color: var(--erro); font-weight: 700; padding: 0 2px; }
+/* Badge verde pra campo já mapeado - lê como uma etiqueta, não como texto
+   solto, e o "x" de remover fica dentro dela mesma. */
+.mapeamento-campo-btn .valor-mapeado {
+  display: flex; align-items: center; gap: 5px; background: #e6f4ea; color: var(--sucesso);
+  font-weight: 700; padding: 3px 6px 3px 10px; border-radius: 999px; font-size: 12px; flex: 0 0 auto;
+}
+/* "Não definido" com um pontinho discreto em vez de só texto cinza - bate o
+   olho no que falta sem competir visualmente com o que já foi resolvido. */
+.mapeamento-campo-btn .sem-mapeamento { display: flex; align-items: center; gap: 6px; color: #a7adb8; font-size: 12px; flex: 0 0 auto; }
+.mapeamento-campo-btn .sem-mapeamento::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #d7dbe2; flex: 0 0 auto; }
+.mapeamento-campo-btn .limpar-mapeamento { color: var(--sucesso); opacity: 0.6; font-weight: 700; padding: 0 2px; }
+.mapeamento-campo-btn .limpar-mapeamento:hover { opacity: 1; color: var(--erro); }
 .mapeamento-aviso { background: #fff8ea; border: 1px solid #f0deb0; border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 10px; }
 
 /* ---------- ÁRVORE DE LISTAS POR DESENHO ---------- */

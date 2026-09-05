@@ -869,7 +869,8 @@ async function abrirMapeamentoTemplate(clienteId, templateId) {
   _mapeamentoEmEdicao = {
     clienteId, templateId, abas: preview.abas, abaAtiva: 0,
     camposUnicos: {}, tabelas: {},
-    zoom: null, // null = ajusta automático pra folha inteira caber na área visível
+    secaoAtiva: "unicos", // qual grupo de campos (cabeçalho / uma das tabelas) está em foco no painel
+    zoom: 1, // 100% por padrão - legível de cara. "Ver folha inteira" (null) é uma ação manual, não o padrão.
   };
   _mapeamentoArmado = null;
   if (preview.mapeamento) _aplicarMapeamentoSalvoNoEstado(preview.mapeamento);
@@ -890,9 +891,17 @@ function _aplicarMapeamentoSalvoNoEstado(mapeamentoJson) {
   });
 }
 
+// Seções em que o painel de campos se divide - cabeçalho (campos únicos) +
+// uma por tabela repetida. Cada uma vira uma aba própria, pra não misturar
+// tudo numa lista só rolando infinita.
+function _secoesMapeamento(cfg) {
+  return [{ id: "unicos", rotulo: "Cabeçalho" }, ...cfg.tabelas.map((t) => ({ id: t.fonte_dados, rotulo: t.rotulo }))];
+}
+
 function renderMapeamentoTemplate() {
   const cfg = CAMPOS_MAPEAMENTO_LISTA_MATERIAIS;
   const abaAtiva = _mapeamentoEmEdicao.abaAtiva;
+  const secaoAtiva = _mapeamentoEmEdicao.secaoAtiva;
 
   abrirModal(`
     <h3>Mapear campos — Lista de Materiais</h3>
@@ -903,6 +912,11 @@ function renderMapeamentoTemplate() {
       <div style="margin-top:8px;">
         <button type="button" class="btn-secundario" onclick="_mapeamentoAutomatico()">✨ Mapeamento automático</button>
       </div>
+    </div>
+    <div class="mapeamento-secoes-abas">
+      ${_secoesMapeamento(cfg).map((s) => `
+        <button type="button" class="mapeamento-secao-btn ${s.id === secaoAtiva ? "ativa" : ""}" onclick="_trocarSecaoMapeamento('${s.id}')">${esc(s.rotulo)}</button>
+      `).join("")}
     </div>
     <div class="mapeamento-molde">
       <div class="mapeamento-preview">
@@ -916,7 +930,7 @@ function renderMapeamentoTemplate() {
             <button type="button" class="btn-zoom" onclick="_ajustarZoomMapeamento(-0.1)" title="Diminuir zoom">−</button>
             <span id="mapeamento-zoom-valor">100%</span>
             <button type="button" class="btn-zoom" onclick="_ajustarZoomMapeamento(0.1)" title="Aumentar zoom">+</button>
-            <button type="button" class="btn-zoom btn-zoom-ajustar" onclick="_ajustarZoomMapeamento(0)" title="Ajustar a folha inteira à tela">Ajustar</button>
+            <button type="button" class="btn-zoom btn-zoom-ajustar" onclick="_ajustarZoomMapeamento(0)" title="Ver a folha inteira (reduz o zoom pra caber tudo)">Ver tudo</button>
           </div>
         </div>
         <div class="mapeamento-preview-tabela-wrap" id="mapeamento-tabela-wrap"></div>
@@ -927,21 +941,58 @@ function renderMapeamentoTemplate() {
       <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
       <button class="btn-primario" id="btn-salvar-mapeamento">Salvar mapeamento</button>
     </div>
-  `, "modal-grande");
+  `, "modal-tela-cheia");
   aplicarPermissoes();
 
   _renderPreviewAbaMapeamento(abaAtiva);
   document.getElementById("btn-salvar-mapeamento").addEventListener("click", _salvarMapeamentoTemplate);
 }
 
+// Só os campos da seção em foco (cabeçalho OU uma tabela por vez) - evita a
+// lista única enorme misturando tudo, que fazia a pessoa perder a referência
+// de onde estava rolando.
 function _htmlPainelCampos(cfg) {
-  return `
-    <h4>Campos únicos</h4>
-    ${cfg.unicos.map((f) => _htmlBotaoCampoMapeamento("unico", null, f.campo, f.rotulo)).join("")}
-    ${cfg.tabelas.map((t) => `
-      <h4>${esc(t.rotulo)}</h4>
-      ${t.colunas.map((f) => _htmlBotaoCampoMapeamento("tabela", t.fonte_dados, f.campo, f.rotulo)).join("")}
-    `).join("")}`;
+  if (_mapeamentoEmEdicao.secaoAtiva === "unicos") {
+    return cfg.unicos.map((f) => _htmlBotaoCampoMapeamento("unico", null, f.campo, f.rotulo)).join("");
+  }
+  const t = cfg.tabelas.find((t) => t.fonte_dados === _mapeamentoEmEdicao.secaoAtiva);
+  return t ? t.colunas.map((f) => _htmlBotaoCampoMapeamento("tabela", t.fonte_dados, f.campo, f.rotulo)).join("") : "";
+}
+
+// Troca a seção em foco e, se ela já tiver algum campo mapeado, pula pra
+// aba do Excel e rola a prévia até a célula já mapeada - só faz isso quando
+// já existe uma coordenada real (nunca chuta uma posição sem ter certeza).
+function _trocarSecaoMapeamento(secao) {
+  _mapeamentoEmEdicao.secaoAtiva = secao;
+  _mapeamentoArmado = null;
+  const alvo = _primeiroCampoMapeadoDaSecao(secao);
+  if (alvo) _mapeamentoEmEdicao.abaAtiva = alvo.origem;
+  renderMapeamentoTemplate();
+  if (alvo) _centralizarPreviewEm(alvo.origem, alvo.linha, alvo.coluna);
+}
+
+function _primeiroCampoMapeadoDaSecao(secao) {
+  if (secao === "unicos") {
+    const v = Object.values(_mapeamentoEmEdicao.camposUnicos)[0];
+    if (!v) return null;
+    const lc = _coordParaLinhaColuna(v.coord);
+    return { origem: v.origem, linha: lc.linha, coluna: lc.coluna };
+  }
+  const t = _mapeamentoEmEdicao.tabelas[secao];
+  if (!t || !Object.keys(t.colunas).length) return null;
+  return { origem: t.origem, linha: t.linha, coluna: Object.values(t.colunas)[0].colIni };
+}
+
+// Centraliza a prévia (scroll) numa célula específica - usado ao trocar de
+// seção pra já mostrar onde o mapeamento existente daquele grupo está.
+function _centralizarPreviewEm(origem, linha, coluna) {
+  const aba = _mapeamentoEmEdicao.abas.find((a) => a.origem === origem);
+  const wrap = document.getElementById("mapeamento-tabela-wrap");
+  if (!aba || !wrap) return;
+  const somaAte = (lista, indice) => lista.slice(0, indice).reduce((a, b) => a + b, 0);
+  const zoom = _zoomEfetivoAtual || 1;
+  wrap.scrollLeft = Math.max(0, somaAte(aba.larguras_col || [], coluna - 1) * zoom - wrap.clientWidth / 2);
+  wrap.scrollTop = Math.max(0, somaAte(aba.alturas_linha || [], linha - 1) * zoom - wrap.clientHeight / 2);
 }
 
 // Atualiza só o painel de campos (sem recriar o modal inteiro) - usado a
