@@ -811,44 +811,48 @@ async function excluirTemplateCliente(clienteId, templateId) {
 
 // Campos canônicos que o motor de preenchimento (relatorios.py) sabe usar -
 // mesmos nomes que já existiam fixos no código pro molde antigo da Ausenco.
+// "chaves" são os termos (sem acento, minúsculo) que o mapeamento automático
+// procura no texto das células do molde pra sugerir cada campo. Cada grupo
+// (unicos / itens / revisoes) é buscado separadamente, então uma mesma
+// palavra (ex.: "rev") pode aparecer em mais de um grupo sem se confundir.
 const CAMPOS_MAPEAMENTO_LISTA_MATERIAIS = {
   unicos: [
-    { campo: "projeto", rotulo: "Nome do Projeto" },
-    { campo: "subtitulo", rotulo: "Subtítulo (linha 1 do carimbo)" },
-    { campo: "area", rotulo: "Área (linha 2 do carimbo)" },
-    { campo: "disciplina", rotulo: "Disciplina (linha 3 do carimbo)" },
-    { campo: "titulo", rotulo: "Título do Documento (linha 4)" },
-    { campo: "numero_cliente", rotulo: "Número do Cliente" },
-    { campo: "numero_projetista", rotulo: "Número do Projetista" },
-    { campo: "rev", rotulo: "Revisão" },
-    { campo: "numero_desenho", rotulo: "Número do Desenho de Referência" },
-    { campo: "referencia_desenho", rotulo: "Nº do Desenho, com rótulo (\"DESENHO DE REFERÊNCIA : X\")" },
+    { campo: "projeto", rotulo: "Nome do Projeto", chaves: ["nome do projeto"] },
+    { campo: "subtitulo", rotulo: "Subtítulo (linha 1 do carimbo)", chaves: ["subtitulo"] },
+    { campo: "area", rotulo: "Área (linha 2 do carimbo)", chaves: ["area/departamento", "area", "arca"] },
+    { campo: "disciplina", rotulo: "Disciplina (linha 3 do carimbo)", chaves: ["disciplina"] },
+    { campo: "titulo", rotulo: "Título do Documento (linha 4)", chaves: ["titulo"] },
+    { campo: "numero_cliente", rotulo: "Número do Cliente", chaves: ["n jaguar", "numero do cliente", "n do cliente", "n° cliente", "no cliente"] },
+    { campo: "numero_projetista", rotulo: "Número do Projetista", chaves: ["numero do projetista", "n fornecedor", "numero do fornecedor", "n do fornecedor"] },
+    { campo: "rev", rotulo: "Revisão", chaves: ["rev.:", "rev:"] },
+    { campo: "numero_desenho", rotulo: "Número do Desenho de Referência", chaves: ["numero do desenho", "n do documento", "n:"] },
+    { campo: "referencia_desenho", rotulo: "Nº do Desenho, com rótulo (\"DESENHO DE REFERÊNCIA : X\")", chaves: [] },
   ],
   tabelas: [
     {
       fonte_dados: "itens", rotulo: "Tabela de Itens",
       colunas: [
-        { campo: "item", rotulo: "Item (nº sequencial)" },
-        { campo: "codigo", rotulo: "Código" },
-        { campo: "descricao", rotulo: "Descrição" },
-        { campo: "referencia", rotulo: "Fabricante/Referência" },
-        { campo: "complemento", rotulo: "Bitola/Complemento" },
-        { campo: "unidade", rotulo: "Unidade" },
-        { campo: "quant_atual", rotulo: "Quantidade" },
-        { campo: "quant_anterior", rotulo: "Quantidade Anterior" },
+        { campo: "item", rotulo: "Item (nº sequencial)", chaves: ["item"] },
+        { campo: "codigo", rotulo: "Código", chaves: ["codigo", "cod. sap", "cod sap"] },
+        { campo: "descricao", rotulo: "Descrição", chaves: ["descricao"] },
+        { campo: "referencia", rotulo: "Fabricante/Referência", chaves: ["fabricante", "referencia"] },
+        { campo: "complemento", rotulo: "Bitola/Complemento", chaves: ["bitola", "complemento"] },
+        { campo: "unidade", rotulo: "Unidade", chaves: ["unidade", "unid.", "unid", "un."] },
+        { campo: "quant_atual", rotulo: "Quantidade", chaves: ["quantidade", "qtd", "qte"] },
+        { campo: "quant_anterior", rotulo: "Quantidade Anterior", chaves: ["quantidade anterior", "qtd anterior"] },
       ],
     },
     {
       fonte_dados: "revisoes", rotulo: "Tabela de Revisões",
       colunas: [
-        { campo: "rev", rotulo: "Rev." },
-        { campo: "te", rotulo: "TE (tipo de emissão)" },
-        { campo: "descricao", rotulo: "Descrição da Revisão" },
-        { campo: "por", rotulo: "Elaborado por" },
-        { campo: "ver", rotulo: "Verificado por" },
-        { campo: "apr", rotulo: "Aprovado por" },
-        { campo: "aut", rotulo: "Autorizado por" },
-        { campo: "data", rotulo: "Data" },
+        { campo: "rev", rotulo: "Rev.", chaves: ["rev."] },
+        { campo: "te", rotulo: "TE (tipo de emissão)", chaves: ["te", "status"] },
+        { campo: "descricao", rotulo: "Descrição da Revisão", chaves: ["descricao da revisao", "descricao"] },
+        { campo: "por", rotulo: "Elaborado por", chaves: ["preparado por", "elaborado por", "elaborador"] },
+        { campo: "ver", rotulo: "Verificado por", chaves: ["checado", "verificado por", "verificador"] },
+        { campo: "apr", rotulo: "Aprovado por", chaves: ["aprovado por", "aprovador"] },
+        { campo: "aut", rotulo: "Autorizado por", chaves: ["autorizado por", "autorizador"] },
+        { campo: "data", rotulo: "Data", chaves: ["data"] },
       ],
     },
   ],
@@ -895,6 +899,9 @@ function renderMapeamentoTemplate() {
       Clique num campo à direita e depois na célula correspondente no molde. Campos sem
       correspondência no molde do cliente podem ficar sem mapear — o preenchimento simplesmente
       pula esse campo, sem erro.
+      <div style="margin-top:8px;">
+        <button type="button" class="btn-secundario" onclick="_mapeamentoAutomatico()">✨ Mapeamento automático</button>
+      </div>
     </div>
     <div class="mapeamento-molde">
       <div class="mapeamento-preview">
@@ -974,6 +981,123 @@ function _limparCampoMapeamento(grupo, tabela, campo) {
   else if (_mapeamentoEmEdicao.tabelas[tabela]) delete _mapeamentoEmEdicao.tabelas[tabela].colunas[campo];
   _atualizarPainelCampos();
   _renderPreviewAbaMapeamento(_mapeamentoEmEdicao.abaAtiva);
+}
+
+function _normalizarTexto(txt) {
+  return (txt || "").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+}
+
+// Acha, numa lista de campos com "chaves" (palavras-chave), qual campo
+// corresponde ao texto normalizado de uma célula - o primeiro que bater
+// vence (evita a mesma célula virar sugestão pra dois campos ao mesmo tempo).
+function _campoPorPalavraChave(textoNormalizado, campos) {
+  if (!textoNormalizado) return null;
+  return campos.find((f) => (f.chaves || []).some((chave) => textoNormalizado.includes(chave))) || null;
+}
+
+// Mapeamento automático: sugere associações prováveis a partir do texto das
+// próprias células do molde, mas NUNCA sobrescreve um campo que a pessoa já
+// mapeou manualmente - só preenche o que ainda está "não definido". Sempre
+// revisável/corrigível depois, como qualquer mapeamento manual.
+function _mapeamentoAutomatico() {
+  const cfg = CAMPOS_MAPEAMENTO_LISTA_MATERIAIS;
+  let contagem = 0;
+
+  // Índice plano de todas as células de todas as abas, com texto normalizado -
+  // reaproveitado nas três buscas abaixo (campos únicos, itens, revisões).
+  const todasCelulas = [];
+  _mapeamentoEmEdicao.abas.forEach((aba) => {
+    aba.celulas.forEach((c) => {
+      if (c.valor) todasCelulas.push({ ...c, origem: aba.origem, texto: _normalizarTexto(c.valor) });
+    });
+  });
+  const celulaEm = (origem, linha, coluna) => {
+    const aba = _mapeamentoEmEdicao.abas.find((a) => a.origem === origem);
+    return aba && aba.celulas.find((c) => c.linha === linha && c.coluna <= coluna && coluna < c.coluna + c.colspan);
+  };
+
+  // ---- 1) Campos únicos: acha a célula-rótulo, valor fica embaixo (padrão
+  // mais comum nesses carimbos) ou, se não houver linha abaixo, ao lado. ----
+  cfg.unicos.forEach((f) => {
+    if (_mapeamentoEmEdicao.camposUnicos[f.campo] || !f.chaves.length) return;
+    const rotulo = todasCelulas.find((c) => (f.chaves || []).some((chave) => c.texto.includes(chave)));
+    if (!rotulo) return;
+    const abaixo = celulaEm(rotulo.origem, rotulo.linha + rotulo.rowspan, rotulo.coluna);
+    const alvo = abaixo || celulaEm(rotulo.origem, rotulo.linha, rotulo.coluna + rotulo.colspan);
+    const linha = alvo ? alvo.linha : rotulo.linha + rotulo.rowspan;
+    const coluna = alvo ? alvo.coluna : rotulo.coluna + rotulo.colspan;
+    _mapeamentoEmEdicao.camposUnicos[f.campo] = { origem: rotulo.origem, coord: `${_colunaParaLetra(coluna)}${linha}` };
+    contagem++;
+  });
+
+  // ---- 2) Tabelas (itens / revisões): acha a linha de cabeçalho com mais
+  // palavras-chave batendo, usa a linha seguinte como linha de exemplo. ----
+  cfg.tabelas.forEach((t) => {
+    const jaTinha = _mapeamentoEmEdicao.tabelas[t.fonte_dados];
+    let origemAlvo, linhaCabecalho, linhaDados;
+
+    if (jaTinha) {
+      // Já existe mapeamento parcial - continua na MESMA linha de exemplo
+      // já usada, só completando colunas que ainda faltam. O cabeçalho pode
+      // estar acima OU abaixo dessa linha (layout invertido) - escolhe o
+      // lado que tem mais rótulos batendo com as palavras-chave da tabela.
+      origemAlvo = jaTinha.origem;
+      linhaDados = jaTinha.linha;
+      const contarRotulos = (linha) => todasCelulas.filter(
+        (c) => c.origem === origemAlvo && c.linha === linha && _campoPorPalavraChave(c.texto, t.colunas)
+      ).length;
+      linhaCabecalho = contarRotulos(linhaDados + 1) > contarRotulos(linhaDados - 1) ? linhaDados + 1 : linhaDados - 1;
+    } else {
+      // Acha a aba/linha com mais palavras-chave dessa tabela batendo -
+      // com menos de 2 acertos não é confiável o bastante pra sugerir sozinho.
+      const porLinha = {};
+      todasCelulas.forEach((c) => {
+        const campo = _campoPorPalavraChave(c.texto, t.colunas);
+        if (!campo) return;
+        const chave = `${c.origem}_${c.linha}`;
+        porLinha[chave] = porLinha[chave] || { origem: c.origem, linha: c.linha, acertos: 0 };
+        porLinha[chave].acertos++;
+      });
+      const melhor = Object.values(porLinha).sort((a, b) => b.acertos - a.acertos)[0];
+      if (!melhor || melhor.acertos < 2) return;
+      origemAlvo = melhor.origem;
+      linhaCabecalho = melhor.linha;
+
+      // A linha de exemplo/dados normalmente fica logo ABAIXO do cabeçalho,
+      // mas alguns moldes (ex.: tabela de revisões da Jaguar) têm layout
+      // invertido - dado ACIMA, rótulo embaixo. Decide pelo lado que
+      // realmente parece ter valor preenchido (célula não-vazia e que não é
+      // ela mesma uma palavra-chave de rótulo) nas colunas do cabeçalho achado.
+      const colunasCabecalho = todasCelulas
+        .filter((c) => c.origem === origemAlvo && c.linha === linhaCabecalho)
+        .map((c) => c.coluna);
+      const contarDados = (linha) => colunasCabecalho.reduce((n, col) => {
+        const c = todasCelulas.find((cc) => cc.origem === origemAlvo && cc.linha === linha && cc.coluna === col);
+        return n + (c && !_campoPorPalavraChave(c.texto, t.colunas) ? 1 : 0);
+      }, 0);
+      linhaDados = contarDados(linhaCabecalho - 1) > contarDados(linhaCabecalho + 1)
+        ? linhaCabecalho - 1
+        : linhaCabecalho + 1;
+    }
+
+    const cabecalho = todasCelulas.filter((c) => c.origem === origemAlvo && c.linha === linhaCabecalho);
+    if (!_mapeamentoEmEdicao.tabelas[t.fonte_dados]) {
+      _mapeamentoEmEdicao.tabelas[t.fonte_dados] = { origem: origemAlvo, linha: linhaDados, colunas: {} };
+    }
+    const estadoTabela = _mapeamentoEmEdicao.tabelas[t.fonte_dados];
+    cabecalho.forEach((c) => {
+      const campo = _campoPorPalavraChave(c.texto, t.colunas);
+      if (!campo || estadoTabela.colunas[campo.campo]) return;
+      estadoTabela.colunas[campo.campo] = { colIni: c.coluna, colFim: c.coluna + c.colspan - 1 };
+      contagem++;
+    });
+  });
+
+  _atualizarPainelCampos();
+  _renderPreviewAbaMapeamento(_mapeamentoEmEdicao.abaAtiva);
+  toast(contagem
+    ? `${contagem} campo(s) preenchido(s) automaticamente - confira e complete o que faltar.`
+    : "Não encontrei correspondências óbvias no molde - mapeie manualmente.");
 }
 
 function _trocarAbaMapeamento(origem) {
