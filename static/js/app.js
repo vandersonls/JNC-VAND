@@ -822,7 +822,7 @@ const CAMPOS_MAPEAMENTO_LISTA_MATERIAIS = {
     { campo: "area", rotulo: "Área (linha 2 do carimbo)", chaves: ["area/departamento", "area", "arca"] },
     { campo: "disciplina", rotulo: "Disciplina (linha 3 do carimbo)", chaves: ["disciplina"] },
     { campo: "titulo", rotulo: "Título do Documento (linha 4)", chaves: ["titulo"] },
-    { campo: "numero_cliente", rotulo: "Número do Cliente", chaves: ["n jaguar", "numero do cliente", "n do cliente", "n° cliente", "no cliente"] },
+    { campo: "numero_cliente", rotulo: "Número do Cliente", chaves: ["n jaguar", "numero do cliente", "n do cliente", "n cliente", "no cliente"] },
     { campo: "numero_projetista", rotulo: "Número do Projetista", chaves: ["numero do projetista", "n fornecedor", "numero do fornecedor", "n do fornecedor"] },
     { campo: "rev", rotulo: "Revisão", chaves: ["rev.:", "rev:"] },
     { campo: "numero_desenho", rotulo: "Número do Desenho de Referência", chaves: ["numero do desenho", "n do documento", "n:"] },
@@ -984,7 +984,11 @@ function _limparCampoMapeamento(grupo, tabela, campo) {
 }
 
 function _normalizarTexto(txt) {
-  return (txt || "").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+  return (txt || "").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    // "º"/"°" (indicador ordinal/grau, usado como abreviação de "número" -
+    // "Nº", "N°") não é um acento e o NFD acima não remove - sem isso "Nº
+    // JAGUAR:" nunca batia com a palavra-chave "n jaguar".
+    .replace(/[°º]/g, "").trim();
 }
 
 // Acha, numa lista de campos com "chaves" (palavras-chave), qual campo
