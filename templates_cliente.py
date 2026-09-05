@@ -1,6 +1,7 @@
 """Moldes de Excel por cliente: upload, prévia (pra tela de mapeamento) e
 o mapeamento de campos em si. O preenchimento de verdade (usar o
 mapeamento pra gerar um relatório) fica em relatorios.py."""
+import base64
 import io
 import json
 
@@ -177,6 +178,33 @@ def _celulas_com_mesclagens(ws):
     return celulas, max_row, max_col, larguras_col, alturas_linha
 
 
+def _imagens_da_aba(ws):
+    """Logos/carimbos embutidos na planilha (ex.: logo da empresa e do
+    cliente no cabeçalho) não são células - são objetos de desenho
+    ancorados numa posição. Devolve posição (linha/coluna + deslocamento em
+    px dentro da célula) e tamanho de cada uma, com a imagem já em base64
+    pra o front desenhar por cima da tabela sem precisar de outra chamada."""
+    imagens = []
+    for img in getattr(ws, "_images", []):
+        try:
+            ancora = img.anchor._from
+            dados = img.ref.getvalue() if hasattr(img.ref, "getvalue") else None
+            if not dados:
+                continue
+            formato = (img.format or "png").lower()
+            mime = "jpeg" if formato in ("jpg", "jpeg") else formato
+            imagens.append({
+                "linha": ancora.row + 1, "coluna": ancora.col + 1,
+                "offset_x": round((ancora.colOff or 0) / 9525),
+                "offset_y": round((ancora.rowOff or 0) / 9525),
+                "largura": img.width, "altura": img.height,
+                "src": f"data:image/{mime};base64,{base64.b64encode(dados).decode('ascii')}",
+            })
+        except Exception:
+            continue  # uma imagem que não conseguimos ler não pode quebrar a prévia inteira
+    return imagens
+
+
 @templates_cliente_bp.get("/api/clientes/<int:cliente_id>/templates/<int:template_id>/preview")
 @perfis_permitidos("master", "administrador")
 def preview_template(cliente_id, template_id):
@@ -197,6 +225,7 @@ def preview_template(cliente_id, template_id):
         abas.append({
             "origem": indice, "nome": nome, "linhas": max_row, "colunas": max_col, "celulas": celulas,
             "larguras_col": larguras_col, "alturas_linha": alturas_linha,
+            "imagens": _imagens_da_aba(ws),
         })
 
     mapeamento = row["mapeamento"]

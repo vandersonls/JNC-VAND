@@ -1030,7 +1030,20 @@ function _renderPreviewAbaMapeamento(origem) {
     html += "</tr>";
   }
   html += "</table>";
-  wrap.innerHTML = html;
+
+  // Imagens (logos/carimbos) não são células - são desenhos ancorados numa
+  // posição (linha/coluna + deslocamento em px). Somamos a largura/altura
+  // acumulada até ali pra saber onde cair dentro da tabela renderizada, e
+  // desenhamos por cima com pointer-events:none pra não atrapalhar o clique
+  // nas células por baixo.
+  const somaAte = (lista, indice) => lista.slice(0, indice).reduce((a, b) => a + b, 0);
+  const imagensHtml = (aba.imagens || []).map((img) => {
+    const left = somaAte(larguras, img.coluna - 1) + (img.offset_x || 0);
+    const top = somaAte(alturas, img.linha - 1) + (img.offset_y || 0);
+    return `<img src="${img.src}" style="position:absolute; left:${left}px; top:${top}px; width:${img.largura}px; height:${img.altura}px; pointer-events:none;">`;
+  }).join("");
+
+  wrap.innerHTML = `<div style="position:relative; display:inline-block;">${html}${imagensHtml}</div>`;
   wrap.scrollTop = scrollTop;
   wrap.scrollLeft = scrollLeft;
 }
