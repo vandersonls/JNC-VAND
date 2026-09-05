@@ -178,7 +178,32 @@ def _celulas_com_mesclagens(ws):
     return celulas, max_row, max_col, larguras_col, alturas_linha
 
 
-def _imagens_da_aba(ws):
+def _tamanho_imagem_px(img, larguras_col, alturas_linha):
+    """O tamanho de EXIBIÇÃO de uma imagem no Excel pode ser bem diferente
+    do tamanho nativo do arquivo (é comum alguém arrastar a borda do logo
+    pra encolher ele dentro da célula) - usar img.width/height sempre dava
+    uma imagem grande demais nesses casos, cobrindo o texto ao redor.
+    Prioridade: 1) "ext" da âncora (tamanho de exibição explícito, o caso
+    mais comum) 2) vão entre "from" e "to" de um TwoCellAnchor, medido nas
+    mesmas larguras/alturas (já em px) que a prévia usa pra desenhar a
+    tabela 3) por último, o tamanho nativo do arquivo de imagem."""
+    anchor = img.anchor
+    ext = getattr(anchor, "ext", None)
+    if ext and ext.cx and ext.cy:
+        return ext.cx / 9525, ext.cy / 9525
+
+    to = getattr(anchor, "to", None)
+    if to:
+        frm = anchor._from
+        largura = (sum(larguras_col[frm.col:to.col]) - (frm.colOff or 0) / 9525 + (to.colOff or 0) / 9525)
+        altura = (sum(alturas_linha[frm.row:to.row]) - (frm.rowOff or 0) / 9525 + (to.rowOff or 0) / 9525)
+        if largura > 0 and altura > 0:
+            return largura, altura
+
+    return img.width, img.height
+
+
+def _imagens_da_aba(ws, larguras_col, alturas_linha):
     """Logos/carimbos embutidos na planilha (ex.: logo da empresa e do
     cliente no cabeçalho) não são células - são objetos de desenho
     ancorados numa posição. Devolve posição (linha/coluna + deslocamento em
@@ -193,11 +218,12 @@ def _imagens_da_aba(ws):
                 continue
             formato = (img.format or "png").lower()
             mime = "jpeg" if formato in ("jpg", "jpeg") else formato
+            largura, altura = _tamanho_imagem_px(img, larguras_col, alturas_linha)
             imagens.append({
                 "linha": ancora.row + 1, "coluna": ancora.col + 1,
                 "offset_x": round((ancora.colOff or 0) / 9525),
                 "offset_y": round((ancora.rowOff or 0) / 9525),
-                "largura": img.width, "altura": img.height,
+                "largura": round(largura), "altura": round(altura),
                 "src": f"data:image/{mime};base64,{base64.b64encode(dados).decode('ascii')}",
             })
         except Exception:
@@ -225,7 +251,7 @@ def preview_template(cliente_id, template_id):
         abas.append({
             "origem": indice, "nome": nome, "linhas": max_row, "colunas": max_col, "celulas": celulas,
             "larguras_col": larguras_col, "alturas_linha": alturas_linha,
-            "imagens": _imagens_da_aba(ws),
+            "imagens": _imagens_da_aba(ws, larguras_col, alturas_linha),
         })
 
     mapeamento = row["mapeamento"]
