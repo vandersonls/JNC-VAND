@@ -1002,8 +1002,13 @@ function _renderPreviewAbaMapeamento(origem) {
 
   const larguras = aba.larguras_col || [];
   const alturas = aba.alturas_linha || [];
+  // table-layout:fixed só respeita o colgroup se a tabela tiver uma largura
+  // total explícita - sem isso o navegador ainda podia "esticar" colunas
+  // pra caber texto longo, desalinhando as imagens (que são posicionadas
+  // pela largura que o PRÓPRIO Excel tem, não pela largura que o texto pede).
+  const larguraTotal = larguras.reduce((a, b) => a + b, 0);
 
-  let html = "<table class=\"mapeamento-preview-tabela\">";
+  let html = `<table class="mapeamento-preview-tabela" style="width:${larguraTotal}px">`;
   html += "<colgroup>";
   for (let col = 1; col <= aba.colunas; col++) {
     html += `<col style="width:${larguras[col - 1] || 56}px">`;
