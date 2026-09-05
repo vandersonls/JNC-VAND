@@ -180,20 +180,23 @@ def _celulas_com_mesclagens(ws):
 
 def _tamanho_imagem_px(img, larguras_col, alturas_linha):
     """O tamanho de EXIBIÇÃO de uma imagem no Excel pode ser bem diferente
-    do tamanho nativo do arquivo (é comum alguém arrastar a borda do logo
-    pra encolher ele dentro da célula) - usar img.width/height sempre dava
-    uma imagem grande demais nesses casos, cobrindo o texto ao redor.
+    do tamanho nativo do arquivo de imagem - usar img.width/height sempre
+    dava uma imagem grande demais nesses casos, cobrindo o texto ao redor.
     Prioridade: 1) "ext" da âncora (tamanho de exibição explícito, o caso
-    mais comum) 2) vão entre "from" e "to" de um TwoCellAnchor, medido nas
-    mesmas larguras/alturas (já em px) que a prévia usa pra desenhar a
-    tabela 3) por último, o tamanho nativo do arquivo de imagem."""
+    mais comum pra âncora de célula única) 2) vão entre "from" e "to" de um
+    TwoCellAnchor cujo modo é "esticar com as células" (editAs padrão/
+    "twoCell"), medido nas mesmas larguras/alturas que a prévia usa pra
+    desenhar a tabela 3) o tamanho nativo do arquivo - usado tanto como
+    último recurso quanto quando o modo é editAs="oneCell" (a imagem
+    mantém o tamanho fixo e só acompanha a posição da célula; nesse caso o
+    "to" salvo no arquivo é só um resquício e não reflete o tamanho real)."""
     anchor = img.anchor
     ext = getattr(anchor, "ext", None)
     if ext and ext.cx and ext.cy:
         return ext.cx / 9525, ext.cy / 9525
 
     to = getattr(anchor, "to", None)
-    if to:
+    if to and getattr(anchor, "editAs", None) != "oneCell":
         frm = anchor._from
         largura = (sum(larguras_col[frm.col:to.col]) - (frm.colOff or 0) / 9525 + (to.colOff or 0) / 9525)
         altura = (sum(alturas_linha[frm.row:to.row]) - (frm.rowOff or 0) / 9525 + (to.rowOff or 0) / 9525)
