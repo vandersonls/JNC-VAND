@@ -394,6 +394,13 @@ input[type="number"], select, textarea {
 .status-template { font-size: 12.5px; font-weight: 600; margin: 0 0 4px; color: var(--cinza); }
 .status-template.pendente { color: #b9720a; }
 .status-template.ok { color: var(--sucesso); }
+
+/* Selo ao lado de "Upload de Template" na Lista por Desenho - indica se o
+   cliente do projeto já tem molde de Lista de Materiais mapeado, sem
+   precisar clicar em "Baixar Excel" pra descobrir. */
+.status-molde-badge { font-size: 12.5px; font-weight: 600; padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
+.status-molde-badge.ok { color: var(--sucesso); background: #e6f4ea; }
+.status-molde-badge.alerta { color: #b9720a; background: #fff3e0; }
 .card-template-cliente .acoes-linha { margin-top: 10px; gap: 8px; }
 
 /* Tela cheia de verdade (não só "modal grande") - o editor de mapeamento
@@ -513,6 +520,8 @@ table.mapeamento-preview-tabela td.celula-vazia { color: #b7bcc4; }
 .acao-icone svg { width: 17px; height: 17px; }
 .acao-icone:hover { background: #eef1f6; color: var(--azul); }
 .acao-icone.acao-perigo:hover { background: #fdecec; color: var(--erro); }
+.acao-icone.desabilitado { color: #c3c8d1; cursor: not-allowed; }
+.acao-icone.desabilitado:hover { background: none; color: #c3c8d1; }
 
 .arvore-filhos { margin-left: 9px; padding-left: 20px; border-left: 1px solid #eef0f3; }
 .arvore-filhos.oculto { display: none; }

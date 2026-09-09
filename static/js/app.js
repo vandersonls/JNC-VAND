@@ -5,6 +5,7 @@ const state = {
   projetos: [],
   areas: [],
   projetoAtual: null,
+  moldeListaMateriaisMapeado: null, // null = ainda não sabe / não se aplica; true/false = já checou
 };
 
 async function garantirAreasCarregadas() {
@@ -796,6 +797,7 @@ function renderModalTemplatesCliente(clienteId, cliente, templates) {
       await api(`/api/clientes/${clienteId}/templates`, { method: "POST", body: formData });
       toast("Molde enviado");
       abrirTemplatesCliente(clienteId);
+      _atualizarStatusMoldeLista().then(renderArvoreListas);
     } catch (err) { toast(err.message, "erro"); }
   });
 }
@@ -806,6 +808,7 @@ async function excluirTemplateCliente(clienteId, templateId) {
     await api(`/api/clientes/${clienteId}/templates/${templateId}`, { method: "DELETE" });
     toast("Molde removido");
     abrirTemplatesCliente(clienteId);
+    _atualizarStatusMoldeLista().then(renderArvoreListas);
   } catch (err) { toast(err.message, "erro"); }
 }
 
@@ -1377,6 +1380,7 @@ async function _salvarMapeamentoTemplate() {
     });
     fecharModal();
     toast("Mapeamento salvo");
+    _atualizarStatusMoldeLista().then(renderArvoreListas);
   } catch (err) { toast(err.message, "erro"); }
 }
 
@@ -1472,7 +1476,35 @@ async function abrirProjeto(id) {
   document.getElementById("link-relatorio-compras-pdf").href = `/api/projetos/${id}/lista-compras/relatorio/pdf`;
   ativarTabInterna("projeto-detalhe");
   ativarSubtabPD("pd-desenho");
+  await _atualizarStatusMoldeLista();
   await carregarListas(id);
+}
+
+// Mostra, na Lista por Desenho, se o cliente do projeto atual já tem o
+// molde de Lista de Materiais mapeado - sem isso a pessoa só descobria
+// clicando em "Baixar Excel" e caindo num erro. Também usado pra
+// desabilitar o ícone de baixar de cada lista (renderNoLista) enquanto
+// não houver molde mapeado.
+async function _atualizarStatusMoldeLista() {
+  const clienteId = state.projetoAtual?.cliente_id;
+  if (!clienteId) { state.moldeListaMateriaisMapeado = null; }
+  else {
+    try {
+      const templates = await api(`/api/clientes/${clienteId}/templates`);
+      const molde = templates.find((t) => t.tipo === "lista_materiais");
+      state.moldeListaMateriaisMapeado = !!(molde && molde.mapeado);
+    } catch (err) {
+      state.moldeListaMateriaisMapeado = null; // não sabemos - não bloqueia nada, só não mostra o selo
+    }
+  }
+  const badge = document.getElementById("status-molde-lista");
+  if (badge) {
+    badge.innerHTML = state.moldeListaMateriaisMapeado === true
+      ? `<span class="status-molde-badge ok" title="O download em Excel de cada lista usa esse molde">✓ Molde mapeado</span>`
+      : state.moldeListaMateriaisMapeado === false
+        ? `<span class="status-molde-badge alerta" title="Sem molde mapeado, o download em Excel de cada lista fica indisponível">⚠ Sem molde de Lista de Materiais</span>`
+        : "";
+  }
 }
 
 document.querySelectorAll(".subnav-item-pd").forEach((btn) => {
@@ -1603,7 +1635,9 @@ function renderNoLista(l) {
         </span>
         <span class="arvore-acoes">
           <button class="link-acao" onclick="abrirEditorMateriais(${l.id})">Editar materiais</button>
-          <a class="acao-icone" href="/api/listas/${l.id}/relatorio/excel" target="_blank" title="Baixar Excel" aria-label="Baixar Excel">${ICONE_IMPRIMIR}</a>
+          ${state.moldeListaMateriaisMapeado === false
+            ? `<span class="acao-icone desabilitado" title="Cliente sem molde de Lista de Materiais mapeado - vá em &quot;Upload de Template&quot;" aria-label="Baixar Excel (indisponível, sem molde mapeado)">${ICONE_IMPRIMIR}</span>`
+            : `<a class="acao-icone" href="/api/listas/${l.id}/relatorio/excel" target="_blank" title="Baixar Excel" aria-label="Baixar Excel">${ICONE_IMPRIMIR}</a>`}
           <button class="acao-icone somente-admin" onclick="abrirEditorDados(${l.id})" title="Editar dados" aria-label="Editar dados">${ICONE_LAPIS}</button>
           <button class="acao-icone acao-perigo somente-master" onclick="excluirLista(${l.id})" title="Excluir" aria-label="Excluir">${ICONE_EXCLUIR}</button>
         </span>

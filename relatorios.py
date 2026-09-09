@@ -8,6 +8,7 @@ from copy import copy
 from urllib.parse import urlparse
 
 import openpyxl
+from openpyxl.cell.cell import MergedCell
 from openpyxl.drawing.image import Image as ExcelImage
 from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.utils import get_column_letter
@@ -368,8 +369,16 @@ def _duplicar_linha_estilo(ws, linha_origem, linha_destino, colunas):
 
 def _escrever_linha_grade(ws, linha, colunas, valores):
     for nome, col_ini, _ in colunas:
-        if nome in valores:
-            ws.cell(row=linha, column=col_ini, value=valores[nome])
+        if nome not in valores:
+            continue
+        cel = ws.cell(row=linha, column=col_ini)
+        if isinstance(cel, MergedCell):
+            # A coordenada mapeada caiu numa célula que faz parte de uma
+            # mesclagem, mas não é a âncora (canto superior esquerdo) - o
+            # openpyxl não deixa escrever aí (gerava 500 em vez de só pular
+            # esse campo, como já fazemos pra qualquer outro sem valor).
+            continue
+        cel.value = valores[nome]
 
 
 def _definir_com_quebra(ws, coord, valor, tamanho_min=9, limite_caracteres=40):
@@ -379,6 +388,10 @@ def _definir_com_quebra(ws, coord, valor, tamanho_min=9, limite_caracteres=40):
     da caixa em vez de quebrar dentro dela. Se mesmo quebrando o texto for
     comprido demais, reduz um pouco a fonte em vez de deixar cortado."""
     cel = ws[coord]
+    if isinstance(cel, MergedCell):
+        # Mesmo motivo do guard em _escrever_linha_grade - célula mapeada é
+        # parte de uma mesclagem, não a âncora. Pula em vez de travar.
+        return
     cel.value = valor
     alin = cel.alignment
     cel.alignment = Alignment(horizontal=alin.horizontal, vertical=alin.vertical, wrap_text=True)
@@ -536,9 +549,21 @@ def relatorio_excel(lista_id):
         "itens": _linhas_itens(itens),
         "revisoes": _linhas_revisoes(lista, versao, historico),
     }
-    wb = _preencher_molde_generico(arquivo_bytes, mapeamento, dados_por_fonte)
-    buf = io.BytesIO()
-    wb.save(buf)
+    try:
+        wb = _preencher_molde_generico(arquivo_bytes, mapeamento, dados_por_fonte)
+        buf = io.BytesIO()
+        wb.save(buf)
+    except Exception:
+        # Molde do cliente com algo que o mapeamento não previu (célula
+        # mesclada de um jeito inesperado, aba removida depois de mapeada,
+        # etc.) - melhor um erro claro pra rever o mapeamento do que a
+        # pessoa cair numa tela de erro genérica do servidor.
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "erro": "Não foi possível gerar o Excel com o molde mapeado desse cliente. "
+                    "Reveja o mapeamento em Lista por Desenho → Upload de Template, ou avise o suporte."
+        }), 500
     buf.seek(0)
     nome_arquivo = f"lista_{lista['numero_desenho']}_rev{versao['versao'] if versao else 0}.xlsx"
     return send_file(buf, as_attachment=True, download_name=nome_arquivo,
