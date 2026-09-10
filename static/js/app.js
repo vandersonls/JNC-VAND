@@ -740,31 +740,36 @@ async function excluirCliente(id) {
 
 document.getElementById("btn-novo-cliente").addEventListener("click", () => modalCliente());
 
-// ---------- MOLDES DE EXCEL POR CLIENTE ----------
-// Cada cliente pode ter um molde de "Lista de Materiais" - o Excel exato
-// que ele manda pro projetista, com o layout dele mesmo (nada a ver com o
-// nosso). Fluxo: enviar o arquivo em branco -> mapear os campos uma vez
-// (associar cada dado nosso a uma célula do molde do cliente) -> daí em
-// diante o relatório da Lista por Desenho passa a sair nesse molde.
+// ---------- MOLDES DE EXCEL POR PROJETO ----------
+// Cada PROJETO pode ter um molde de "Lista de Materiais" - o Excel exato
+// que o cliente manda pro projetista, com o layout dele mesmo (nada a ver
+// com o nosso). É por projeto, não por cliente, porque um mesmo cliente
+// pode mandar templates diferentes em projetos diferentes (o padrão dele
+// muda com o tempo, ou disciplinas diferentes usam layouts diferentes) -
+// compartilhar por cliente faria um projeto "herdar" por engano o molde
+// mapeado de outro. Fluxo: enviar o arquivo em branco -> mapear os campos
+// uma vez (associar cada dado nosso a uma célula do molde) -> daí em
+// diante o relatório da Lista por Desenho desse projeto sai nesse molde.
 const ROTULO_TIPO_TEMPLATE = { lista_materiais: "Lista de Materiais", registro_documentos: "Registro de Documentos" };
 
-async function abrirTemplatesCliente(clienteId) {
-  if (!clienteId) { toast("Este projeto ainda não tem um cliente definido - edite o projeto antes.", "erro"); return; }
-  const cliente = state.clientes.find((c) => c.id === clienteId) || (await api(`/api/clientes?q=`)).find((c) => c.id === clienteId);
-  const templates = await api(`/api/clientes/${clienteId}/templates`);
-  renderModalTemplatesCliente(clienteId, cliente, templates);
+async function abrirTemplatesProjeto(projetoId) {
+  const projeto = state.projetos.find((p) => p.id === projetoId);
+  const templates = await api(`/api/projetos/${projetoId}/templates`);
+  renderModalTemplatesProjeto(projetoId, projeto, templates);
 }
 
-function renderModalTemplatesCliente(clienteId, cliente, templates) {
+function renderModalTemplatesProjeto(projetoId, projeto, templates) {
   const t = templates.find((x) => x.tipo === "lista_materiais");
   const status = !t ? "Não enviado" : (t.mapeado ? "Mapeado" : "Enviado — aguardando mapeamento");
   const classeStatus = !t ? "" : (t.mapeado ? "ok" : "pendente");
+  const rotuloProjeto = projeto ? `${esc(projeto.codigo)} — ${esc(projeto.nome)}${projeto.cliente_nome ? ` (${esc(projeto.cliente_nome)})` : ""}` : "Projeto";
 
   abrirModal(`
-    <h3>Molde de impressão — ${esc(cliente ? cliente.razao_social : "Cliente")}</h3>
+    <h3>Molde de impressão — ${rotuloProjeto}</h3>
     <p style="color:var(--cinza); font-size:13px;">
-      Envie o modelo de Excel em branco que esse cliente manda pro preenchimento da Lista de Materiais.
-      Depois de enviado, mapeie os campos uma vez pra ele passar a ser usado no preenchimento automático.
+      Envie o modelo de Excel em branco que o cliente desse projeto manda pro preenchimento da Lista de Materiais.
+      Depois de enviado, mapeie os campos uma vez pra ele passar a ser usado no preenchimento automático. O molde
+      vale só pra este projeto - se o cliente tiver outro padrão em outro projeto, envie e mapeie separadamente lá.
     </p>
     <div class="templates-cliente-grid">
       <div class="card-template-cliente">
@@ -776,8 +781,8 @@ function renderModalTemplatesCliente(clienteId, cliente, templates) {
             ${t ? "Substituir arquivo" : "Enviar arquivo"}
             <input type="file" accept=".xlsx" class="input-template-cliente" style="display:none">
           </label>
-          ${t ? `<button class="btn-secundario" onclick="abrirMapeamentoTemplate(${clienteId}, ${t.id})">${t.mapeado ? "Editar mapeamento" : "Mapear campos"}</button>` : ""}
-          ${t ? `<button class="btn-perigo somente-master" onclick="excluirTemplateCliente(${clienteId}, ${t.id})">Remover</button>` : ""}
+          ${t ? `<button class="btn-secundario" onclick="abrirMapeamentoTemplate(${projetoId}, ${t.id})">${t.mapeado ? "Editar mapeamento" : "Mapear campos"}</button>` : ""}
+          ${t ? `<button class="btn-perigo somente-master" onclick="excluirTemplateProjeto(${projetoId}, ${t.id})">Remover</button>` : ""}
         </div>
       </div>
     </div>
@@ -794,20 +799,20 @@ function renderModalTemplatesCliente(clienteId, cliente, templates) {
     formData.append("tipo", "lista_materiais");
     formData.append("arquivo", arquivo);
     try {
-      await api(`/api/clientes/${clienteId}/templates`, { method: "POST", body: formData });
+      await api(`/api/projetos/${projetoId}/templates`, { method: "POST", body: formData });
       toast("Molde enviado");
-      abrirTemplatesCliente(clienteId);
+      abrirTemplatesProjeto(projetoId);
       _atualizarStatusMoldeLista().then(renderArvoreListas);
     } catch (err) { toast(err.message, "erro"); }
   });
 }
 
-async function excluirTemplateCliente(clienteId, templateId) {
+async function excluirTemplateProjeto(projetoId, templateId) {
   if (!(await confirmarPersonalizado("Remover este molde? Será preciso enviar e mapear de novo se precisar dele outra vez."))) return;
   try {
-    await api(`/api/clientes/${clienteId}/templates/${templateId}`, { method: "DELETE" });
+    await api(`/api/projetos/${projetoId}/templates/${templateId}`, { method: "DELETE" });
     toast("Molde removido");
-    abrirTemplatesCliente(clienteId);
+    abrirTemplatesProjeto(projetoId);
     _atualizarStatusMoldeLista().then(renderArvoreListas);
   } catch (err) { toast(err.message, "erro"); }
 }
@@ -867,10 +872,10 @@ const CAMPOS_MAPEAMENTO_LISTA_MATERIAIS = {
 let _mapeamentoEmEdicao = null;
 let _mapeamentoArmado = null;
 
-async function abrirMapeamentoTemplate(clienteId, templateId) {
-  const preview = await api(`/api/clientes/${clienteId}/templates/${templateId}/preview`);
+async function abrirMapeamentoTemplate(projetoId, templateId) {
+  const preview = await api(`/api/projetos/${projetoId}/templates/${templateId}/preview`);
   _mapeamentoEmEdicao = {
-    clienteId, templateId, abas: preview.abas, abaAtiva: 0,
+    projetoId, templateId, abas: preview.abas, abaAtiva: 0,
     camposUnicos: {}, tabelas: {},
     secaoAtiva: "unicos", // qual grupo de campos (cabeçalho / uma das tabelas) está em foco no painel
     zoom: 1, // 100% por padrão - legível de cara. "Ver folha inteira" (null) é uma ação manual, não o padrão.
@@ -1375,7 +1380,7 @@ async function _salvarMapeamentoTemplate() {
   if (!abas.length) { toast("Mapeie ao menos um campo antes de salvar", "erro"); return; }
 
   try {
-    await api(`/api/clientes/${_mapeamentoEmEdicao.clienteId}/templates/${_mapeamentoEmEdicao.templateId}/mapeamento`, {
+    await api(`/api/projetos/${_mapeamentoEmEdicao.projetoId}/templates/${_mapeamentoEmEdicao.templateId}/mapeamento`, {
       method: "PUT", body: JSON.stringify({ abas }),
     });
     fecharModal();
@@ -1480,17 +1485,18 @@ async function abrirProjeto(id) {
   await carregarListas(id);
 }
 
-// Mostra, na Lista por Desenho, se o cliente do projeto atual já tem o
-// molde de Lista de Materiais mapeado - sem isso a pessoa só descobria
-// clicando em "Baixar Excel" e caindo num erro. Também usado pra
-// desabilitar o ícone de baixar de cada lista (renderNoLista) enquanto
-// não houver molde mapeado.
+// Mostra, na Lista por Desenho, se o PROJETO atual já tem o molde de Lista
+// de Materiais mapeado - sem isso a pessoa só descobria clicando em
+// "Baixar Excel" e caindo num erro. Também usado pra desabilitar o ícone de
+// baixar de cada lista (renderNoLista) enquanto não houver molde mapeado.
+// É por projeto, não por cliente - dois projetos do mesmo cliente podem ter
+// moldes diferentes (ou um ter e o outro não).
 async function _atualizarStatusMoldeLista() {
-  const clienteId = state.projetoAtual?.cliente_id;
-  if (!clienteId) { state.moldeListaMateriaisMapeado = null; }
+  const projetoId = state.projetoAtual?.id;
+  if (!projetoId) { state.moldeListaMateriaisMapeado = null; }
   else {
     try {
-      const templates = await api(`/api/clientes/${clienteId}/templates`);
+      const templates = await api(`/api/projetos/${projetoId}/templates`);
       const molde = templates.find((t) => t.tipo === "lista_materiais");
       state.moldeListaMateriaisMapeado = !!(molde && molde.mapeado);
     } catch (err) {
@@ -1727,7 +1733,7 @@ document.getElementById("btn-nova-lista").addEventListener("click", async () => 
 });
 
 document.getElementById("btn-upload-template").addEventListener("click", () => {
-  abrirTemplatesCliente(state.projetoAtual?.cliente_id);
+  abrirTemplatesProjeto(state.projetoAtual?.id);
 });
 
 // Monta o rótulo de um material com código e bitola em destaque (linha 1)

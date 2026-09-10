@@ -487,14 +487,16 @@ def _linhas_revisoes(lista, versao, historico):
     return linhas
 
 
-def _molde_cliente(cliente_id, tipo):
-    """Busca o molde mapeado desse cliente/tipo. Devolve None se o cliente
-    não tiver nenhum molde desse tipo mapeado ainda."""
-    if not cliente_id:
+def _molde_projeto(projeto_id, tipo):
+    """Busca o molde mapeado desse projeto/tipo. Devolve None se o projeto
+    não tiver nenhum molde desse tipo mapeado ainda. O molde é do PROJETO,
+    não do cliente - um mesmo cliente pode ter templates diferentes em
+    projetos diferentes, então não dá pra compartilhar por cliente."""
+    if not projeto_id:
         return None
     row = db.query_one(
-        "SELECT arquivo, mapeamento FROM clientes_templates WHERE cliente_id = %s AND tipo = %s AND mapeamento IS NOT NULL",
-        (cliente_id, tipo),
+        "SELECT arquivo, mapeamento FROM projetos_templates WHERE projeto_id = %s AND tipo = %s AND mapeamento IS NOT NULL",
+        (projeto_id, tipo),
     )
     if not row:
         return None
@@ -537,10 +539,10 @@ def relatorio_excel(lista_id):
         return jsonify({"erro": "Lista não encontrada"}), 404
     lista, versao, itens, historico = ctx["lista"], ctx["versao"], ctx["itens"], ctx["historico"]
 
-    molde = _molde_cliente(lista.get("projeto_cliente_id"), "lista_materiais")
+    molde = _molde_projeto(lista.get("projeto_id"), "lista_materiais")
     if not molde:
         return jsonify({
-            "erro": "Este cliente ainda não tem um molde de Lista de Materiais mapeado. "
+            "erro": "Este projeto ainda não tem um molde de Lista de Materiais mapeado. "
                     "Vá na Lista por Desenho do projeto e use \"Upload de Template\" pra enviar e mapear o molde dele."
         }), 400
     arquivo_bytes, mapeamento = molde

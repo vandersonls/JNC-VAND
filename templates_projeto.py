@@ -1,6 +1,12 @@
-"""Moldes de Excel por cliente: upload, prévia (pra tela de mapeamento) e
+"""Moldes de Excel por projeto: upload, prévia (pra tela de mapeamento) e
 o mapeamento de campos em si. O preenchimento de verdade (usar o
-mapeamento pra gerar um relatório) fica em relatorios.py."""
+mapeamento pra gerar um relatório) fica em relatorios.py.
+
+Moldes são vinculados ao PROJETO, não ao cliente - um mesmo cliente pode
+enviar templates diferentes em projetos diferentes (ex.: o padrão mudou
+entre um projeto e outro, ou disciplinas diferentes usam layouts
+diferentes), então compartilhar por cliente causaria um projeto "herdar"
+por engano o molde mapeado de outro."""
 import base64
 import io
 import json
@@ -11,21 +17,24 @@ from flask import Blueprint, request, jsonify
 
 from auth import perfis_permitidos
 from auditoria import registrar
+from areas import projeto_permitido
 import db
 
-templates_cliente_bp = Blueprint("templates_cliente", __name__)
+templates_projeto_bp = Blueprint("templates_projeto", __name__)
 
 TIPOS_VALIDOS = ("lista_materiais", "registro_documentos")
 TAMANHO_MAXIMO = 10 * 1024 * 1024  # 10 MB - um molde de Excel real é bem menor que isso
 
 
-@templates_cliente_bp.get("/api/clientes/<int:cliente_id>/templates")
+@templates_projeto_bp.get("/api/projetos/<int:projeto_id>/templates")
 @perfis_permitidos("master", "administrador")
-def listar_templates(cliente_id):
+def listar_templates(projeto_id):
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para este projeto"}), 403
     rows = db.query_all(
         """SELECT id, tipo, nome_arquivo, mapeamento, atualizado_em
-           FROM clientes_templates WHERE cliente_id = %s""",
-        (cliente_id,),
+           FROM projetos_templates WHERE projeto_id = %s""",
+        (projeto_id,),
     )
     for row in rows:
         row["mapeado"] = row["mapeamento"] is not None
@@ -35,12 +44,14 @@ def listar_templates(cliente_id):
     return jsonify(rows)
 
 
-@templates_cliente_bp.post("/api/clientes/<int:cliente_id>/templates")
+@templates_projeto_bp.post("/api/projetos/<int:projeto_id>/templates")
 @perfis_permitidos("master", "administrador")
-def enviar_template(cliente_id):
-    cliente = db.query_one("SELECT id FROM clientes WHERE id = %s AND ativo = 1", (cliente_id,))
-    if not cliente:
-        return jsonify({"erro": "Cliente não encontrado"}), 404
+def enviar_template(projeto_id):
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para este projeto"}), 403
+    projeto = db.query_one("SELECT id FROM projetos WHERE id = %s", (projeto_id,))
+    if not projeto:
+        return jsonify({"erro": "Projeto não encontrado"}), 404
 
     tipo = request.form.get("tipo")
     if tipo not in TIPOS_VALIDOS:
@@ -61,25 +72,25 @@ def enviar_template(cliente_id):
         return jsonify({"erro": "Não foi possível abrir esse arquivo como Excel (.xlsx) válido"}), 400
 
     existente = db.query_one(
-        "SELECT id FROM clientes_templates WHERE cliente_id = %s AND tipo = %s", (cliente_id, tipo)
+        "SELECT id FROM projetos_templates WHERE projeto_id = %s AND tipo = %s", (projeto_id, tipo)
     )
     # Um novo envio sempre reseta o mapeamento - a estrutura do arquivo pode
     # ter mudado, então um mapeamento antigo poderia apontar pra células erradas.
     if existente:
         db.execute(
-            "UPDATE clientes_templates SET nome_arquivo=%s, arquivo=%s, mapeamento=NULL WHERE id=%s",
+            "UPDATE projetos_templates SET nome_arquivo=%s, arquivo=%s, mapeamento=NULL WHERE id=%s",
             (arquivo.filename, conteudo, existente["id"]),
         )
         template_id = existente["id"]
         acao = "editar"
     else:
         template_id = db.execute(
-            "INSERT INTO clientes_templates (cliente_id, tipo, nome_arquivo, arquivo) VALUES (%s,%s,%s,%s)",
-            (cliente_id, tipo, arquivo.filename, conteudo),
+            "INSERT INTO projetos_templates (projeto_id, tipo, nome_arquivo, arquivo) VALUES (%s,%s,%s,%s)",
+            (projeto_id, tipo, arquivo.filename, conteudo),
         )
         acao = "criar"
 
-    registrar(acao, "cliente_template", template_id, f"Enviou molde ({tipo}) para o cliente #{cliente_id}: {arquivo.filename}")
+    registrar(acao, "projeto_template", template_id, f"Enviou molde ({tipo}) para o projeto #{projeto_id}: {arquivo.filename}")
     return jsonify({"id": template_id}), 201
 
 
@@ -234,11 +245,13 @@ def _imagens_da_aba(ws, larguras_col, alturas_linha):
     return imagens
 
 
-@templates_cliente_bp.get("/api/clientes/<int:cliente_id>/templates/<int:template_id>/preview")
+@templates_projeto_bp.get("/api/projetos/<int:projeto_id>/templates/<int:template_id>/preview")
 @perfis_permitidos("master", "administrador")
-def preview_template(cliente_id, template_id):
+def preview_template(projeto_id, template_id):
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para este projeto"}), 403
     row = db.query_one(
-        "SELECT arquivo, mapeamento FROM clientes_templates WHERE id = %s AND cliente_id = %s", (template_id, cliente_id)
+        "SELECT arquivo, mapeamento FROM projetos_templates WHERE id = %s AND projeto_id = %s", (template_id, projeto_id)
     )
     if not row:
         return jsonify({"erro": "Molde não encontrado"}), 404
@@ -263,11 +276,13 @@ def preview_template(cliente_id, template_id):
     return jsonify({"abas": abas, "mapeamento": mapeamento})
 
 
-@templates_cliente_bp.put("/api/clientes/<int:cliente_id>/templates/<int:template_id>/mapeamento")
+@templates_projeto_bp.put("/api/projetos/<int:projeto_id>/templates/<int:template_id>/mapeamento")
 @perfis_permitidos("master", "administrador")
-def salvar_mapeamento(cliente_id, template_id):
+def salvar_mapeamento(projeto_id, template_id):
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para este projeto"}), 403
     row = db.query_one(
-        "SELECT id FROM clientes_templates WHERE id = %s AND cliente_id = %s", (template_id, cliente_id)
+        "SELECT id FROM projetos_templates WHERE id = %s AND projeto_id = %s", (template_id, projeto_id)
     )
     if not row:
         return jsonify({"erro": "Molde não encontrado"}), 404
@@ -276,21 +291,23 @@ def salvar_mapeamento(cliente_id, template_id):
         return jsonify({"erro": "Mapeamento vazio - associe ao menos um campo antes de salvar"}), 400
 
     db.execute(
-        "UPDATE clientes_templates SET mapeamento = %s WHERE id = %s",
+        "UPDATE projetos_templates SET mapeamento = %s WHERE id = %s",
         (json.dumps(mapeamento, ensure_ascii=False), template_id),
     )
-    registrar("editar", "cliente_template", template_id, f"Salvou o mapeamento de campos do molde #{template_id}")
+    registrar("editar", "projeto_template", template_id, f"Salvou o mapeamento de campos do molde #{template_id}")
     return jsonify({"ok": True})
 
 
-@templates_cliente_bp.delete("/api/clientes/<int:cliente_id>/templates/<int:template_id>")
+@templates_projeto_bp.delete("/api/projetos/<int:projeto_id>/templates/<int:template_id>")
 @perfis_permitidos("master")
-def excluir_template(cliente_id, template_id):
+def excluir_template(projeto_id, template_id):
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para este projeto"}), 403
     row = db.query_one(
-        "SELECT nome_arquivo FROM clientes_templates WHERE id = %s AND cliente_id = %s", (template_id, cliente_id)
+        "SELECT nome_arquivo FROM projetos_templates WHERE id = %s AND projeto_id = %s", (template_id, projeto_id)
     )
     if not row:
         return jsonify({"erro": "Molde não encontrado"}), 404
-    db.execute("DELETE FROM clientes_templates WHERE id = %s", (template_id,))
-    registrar("excluir", "cliente_template", template_id, f"Removeu o molde {row['nome_arquivo']} do cliente #{cliente_id}")
+    db.execute("DELETE FROM projetos_templates WHERE id = %s", (template_id,))
+    registrar("excluir", "projeto_template", template_id, f"Removeu o molde {row['nome_arquivo']} do projeto #{projeto_id}")
     return jsonify({"ok": True})

@@ -66,17 +66,23 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 -- pela tela (Clientes -> Moldes); enquanto NULL, o molde existe mas ainda
 -- não pode ser usado pra gerar relatório. Por enquanto só o tipo
 -- 'lista_materiais' tem tela/motor de preenchimento prontos.
-CREATE TABLE IF NOT EXISTS clientes_templates (
+-- Molde é por PROJETO, não por cliente: um mesmo cliente pode enviar
+-- templates diferentes em projetos diferentes (padrão mudou, disciplinas
+-- diferentes etc.) - compartilhar por cliente faria um projeto "herdar"
+-- por engano o molde mapeado de outro. Bancos antigos com a tabela
+-- "clientes_templates" (por cliente) devem rodar migrar_templates_para_projeto.py
+-- pra virar "projetos_templates" preservando os moldes já mapeados.
+CREATE TABLE IF NOT EXISTS projetos_templates (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    cliente_id INT NOT NULL,
+    projeto_id INT NOT NULL,
     tipo ENUM('lista_materiais', 'registro_documentos') NOT NULL,
     nome_arquivo VARCHAR(255) NOT NULL,
     arquivo LONGBLOB NOT NULL,
     mapeamento JSON NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT fk_template_cliente FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE,
-    UNIQUE KEY uq_cliente_tipo (cliente_id, tipo)
+    CONSTRAINT fk_template_projeto FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_projeto_tipo (projeto_id, tipo)
 ) ENGINE=InnoDB;
 
 -- =========================================================

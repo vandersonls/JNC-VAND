@@ -12,3 +12,7 @@ exports/*
 .env
 dump/
 *.ipynb
+.claude/
+cookies_teste.txt
+iniciar_servidor.bat
+backup_clientes_templates_*.json
