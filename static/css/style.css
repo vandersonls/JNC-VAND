@@ -251,28 +251,29 @@ h2 { margin-top: 0; color: var(--azul); }
 .btn-icone-voltar:hover { background: #eef1f6; border-color: var(--azul); }
 .projeto-titulo { margin: 0 0 20px; font-size: 22px; }
 
-/* Linha 4 da aba "Lista de Material por Desenho": busca + molde de impressão. */
+/* Linha 4: busca (por versão, ou por número/cliente/título na Lista por
+   Desenho) + botão de Template (só a Lista por Desenho é obrigatória). */
 .pd-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
 .pd-busca { width: 390px; max-width: 100%; } /* +50% sobre os 260px originais */
 
 /* Linha 5: ação principal isolada, sempre à esquerda, logo acima da tabela/histórico. */
 .pd-acao-primaria { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 
-/* Botão único de molde de impressão: a cor já diz o estado, sem precisar
+/* Botão único de template de impressão: a cor já diz o estado, sem precisar
    de um selo à parte. Clique sempre abre a mesma tela de upload/mapeamento. */
-.btn-molde {
+.btn-template {
   display: inline-flex; align-items: center; gap: 8px; border-radius: 8px; padding: 0 14px; height: 38px;
   font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--borda); background: transparent;
   color: var(--cinza); white-space: nowrap; transition: background .15s, border-color .15s, color .15s;
 }
-.btn-molde svg { width: 16px; height: 16px; flex: 0 0 auto; }
-.btn-molde:hover { border-color: var(--azul); color: var(--azul); }
-.btn-molde.status-pendente { background: #fff3e0; border-color: #f0c98a; color: #b9720a; }
-.btn-molde.status-pendente:hover { border-color: #b9720a; }
-.btn-molde.status-mapeado { background: #e6f4ea; border-color: #a9d8b4; color: var(--sucesso); }
-.btn-molde.status-mapeado:hover { border-color: var(--sucesso); }
-.btn-molde.status-erro { background: #fdecea; border-color: #f3b4ae; color: var(--erro); }
-.btn-molde.status-erro:hover { border-color: var(--erro); }
+.btn-template svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.btn-template:hover { border-color: var(--azul); color: var(--azul); }
+.btn-template.status-pendente { background: #fff3e0; border-color: #f0c98a; color: #b9720a; }
+.btn-template.status-pendente:hover { border-color: #b9720a; }
+.btn-template.status-mapeado { background: #e6f4ea; border-color: #a9d8b4; color: var(--sucesso); }
+.btn-template.status-mapeado:hover { border-color: var(--sucesso); }
+.btn-template.status-erro { background: #fdecea; border-color: #f3b4ae; color: var(--erro); }
+.btn-template.status-erro:hover { border-color: var(--erro); }
 
 .tabela tr.linha-duplicada td { background: #fff6e0; }
 .tabela tr.linha-duplicada:hover td { background: #ffefc4; }
@@ -451,7 +452,7 @@ input[type="number"], select, textarea {
 .mapeamento-secao-btn:hover { color: var(--azul); }
 .mapeamento-secao-btn.ativa { color: var(--azul); background: var(--branco); box-shadow: inset 0 -3px 0 var(--azul); }
 
-.mapeamento-molde { display: flex; gap: 16px; align-items: flex-start; }
+.mapeamento-template { display: flex; gap: 16px; align-items: flex-start; }
 .mapeamento-preview { flex: 1 1 auto; min-width: 0; }
 .mapeamento-preview-abas { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; justify-content: space-between; align-items: center; }
 /* Altura relativa à viewport (a tela agora é 100vh) em vez de um valor fixo

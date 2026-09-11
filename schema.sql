@@ -58,24 +58,27 @@ SET @sql = IF(@col_exists = 0, 'ALTER TABLE clientes ADD COLUMN logo_url VARCHAR
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- =========================================================
--- MOLDES DE EXCEL POR CLIENTE (upload + mapeamento de campos)
+-- TEMPLATES DE EXCEL POR PROJETO (upload + mapeamento de campos)
 -- =========================================================
--- Cada cliente pode ter até um molde de cada tipo. O arquivo fica como BLOB
--- no banco (não no disco) porque o Railway tem sistema de arquivos efêmero -
--- some a cada deploy. "mapeamento" fica NULL até alguém mapear os campos
--- pela tela (Clientes -> Moldes); enquanto NULL, o molde existe mas ainda
--- não pode ser usado pra gerar relatório. Por enquanto só o tipo
--- 'lista_materiais' tem tela/motor de preenchimento prontos.
--- Molde é por PROJETO, não por cliente: um mesmo cliente pode enviar
+-- Cada projeto pode ter até um template de cada tipo. O arquivo fica como
+-- BLOB no banco (não no disco) porque o Railway tem sistema de arquivos
+-- efêmero - some a cada deploy. "mapeamento" fica NULL até alguém mapear os
+-- campos pela tela de Template; enquanto NULL, o template existe mas ainda
+-- não pode ser usado pra gerar relatório - o relatório correspondente usa o
+-- layout padrão embutido no código até lá. 'lista_materiais' é o único tipo
+-- obrigatório (a Lista por Desenho não tem layout padrão, exige template
+-- mapeado pra baixar o Excel); 'planilha_quantidades' e 'lista_compras' são
+-- opcionais - sem template mapeado, o relatório sai no layout padrão normal.
+-- Template é por PROJETO, não por cliente: um mesmo cliente pode enviar
 -- templates diferentes em projetos diferentes (padrão mudou, disciplinas
 -- diferentes etc.) - compartilhar por cliente faria um projeto "herdar"
--- por engano o molde mapeado de outro. Bancos antigos com a tabela
+-- por engano o template mapeado de outro. Bancos antigos com a tabela
 -- "clientes_templates" (por cliente) devem rodar migrar_templates_para_projeto.py
--- pra virar "projetos_templates" preservando os moldes já mapeados.
+-- pra virar "projetos_templates" preservando os templates já mapeados.
 CREATE TABLE IF NOT EXISTS projetos_templates (
     id INT AUTO_INCREMENT PRIMARY KEY,
     projeto_id INT NOT NULL,
-    tipo ENUM('lista_materiais', 'registro_documentos') NOT NULL,
+    tipo ENUM('lista_materiais', 'registro_documentos', 'planilha_quantidades', 'lista_compras') NOT NULL,
     nome_arquivo VARCHAR(255) NOT NULL,
     arquivo LONGBLOB NOT NULL,
     mapeamento JSON NULL,
@@ -84,6 +87,11 @@ CREATE TABLE IF NOT EXISTS projetos_templates (
     CONSTRAINT fk_template_projeto FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
     UNIQUE KEY uq_projeto_tipo (projeto_id, tipo)
 ) ENGINE=InnoDB;
+-- Bancos que já tinham a tabela antes de 'planilha_quantidades'/'lista_compras'
+-- existirem (o CREATE acima só roda em banco novo) precisam desse ALTER pra
+-- ampliar o ENUM. Idempotente - rodar de novo com os mesmos valores não tem efeito.
+ALTER TABLE projetos_templates MODIFY COLUMN tipo
+    ENUM('lista_materiais', 'registro_documentos', 'planilha_quantidades', 'lista_compras') NOT NULL;
 
 -- =========================================================
 -- ÁREAS (disciplinas: Engenharia Elétrica, Mecânica, Civil, etc.)

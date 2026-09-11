@@ -206,10 +206,10 @@
 
       <!-- ABA: LISTA DE MATERIAL POR DESENHO -->
       <div id="subtab-pd-desenho" class="subtab-pd ativo">
-        <!-- Linha 4: ferramentas da lista (filtrar / definir o molde de impressão). -->
+        <!-- Linha 4: ferramentas da lista (filtrar / definir o template de impressão). -->
         <div class="pd-toolbar">
           <input type="search" id="busca-listas" class="pd-busca" placeholder="Buscar por número, cliente ou título..." autocomplete="off">
-          <button class="btn-molde somente-admin" id="btn-upload-template" type="button"></button>
+          <button class="btn-template somente-admin" id="btn-template-desenho" data-tipo="lista_materiais" type="button"></button>
         </div>
         <!-- Linha 5: ação principal da tela, isolada, logo acima da tabela. -->
         <h3 class="subtitulo-arvore">Listas de Materiais Cadastrados</h3>
@@ -221,6 +221,10 @@
 
       <!-- ABA: PLANILHA DE QUANTIDADES -->
       <div id="subtab-pd-pq" class="subtab-pd">
+        <div class="pd-toolbar">
+          <input type="search" id="busca-pq" class="pd-busca" placeholder="Buscar por versão ou responsável..." autocomplete="off">
+          <button class="btn-template somente-admin" id="btn-template-pq" data-tipo="planilha_quantidades" type="button"></button>
+        </div>
         <h3 class="subtitulo-arvore">Histórico de Versões</h3>
         <div class="pd-acao-primaria">
           <button class="btn-primario somente-admin" id="btn-criar-pq">+ Criar Nova Planilha de Quantidades</button>
@@ -232,6 +236,10 @@
 
       <!-- ABA: LISTA DE COMPRAS -->
       <div id="subtab-pd-compras" class="subtab-pd">
+        <div class="pd-toolbar">
+          <input type="search" id="busca-compras" class="pd-busca" placeholder="Buscar por versão ou responsável..." autocomplete="off">
+          <button class="btn-template somente-admin" id="btn-template-compras" data-tipo="lista_compras" type="button"></button>
+        </div>
         <h3 class="subtitulo-arvore">Histórico de Versões</h3>
         <div class="pd-acao-primaria">
           <button class="btn-primario somente-admin" id="btn-criar-compras">+ Criar Nova Lista de Compras</button>

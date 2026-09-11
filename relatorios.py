@@ -333,10 +333,10 @@ def _data_emissao_exibicao(lista, versao):
 
 
 # =========================================================
-# LISTA POR DESENHO - preenchimento do molde exato do cliente
+# LISTA POR DESENHO - preenchimento do template exato do cliente
 # =========================================================
-# Cada cliente manda o próprio molde de Excel (upload em Clientes -> Molde
-# de impressão), com layout próprio, e mapeia uma vez onde cada campo nosso
+# Cada cliente manda o próprio template de Excel (upload em Lista por
+# Desenho -> Template), com layout próprio, e mapeia uma vez onde cada campo nosso
 # vai (tela de mapeamento). O motor abaixo é genérico - só sabe escrever
 # "este campo vai nesta célula" e "esta tabela repete a partir desta linha",
 # conforme o JSON de mapeamento salvo; não tem nenhuma coordenada de cliente
@@ -351,7 +351,7 @@ def _titulo_aba_valido(texto):
 
 def _duplicar_linha_estilo(ws, linha_origem, linha_destino, colunas):
     """Copia formatação (fonte/borda/preenchimento/alinhamento) e mesclagens
-    de uma linha do molde pra uma linha nova - usado quando a lista tem mais
+    de uma linha do template pra uma linha nova - usado quando a lista tem mais
     itens/revisões do que as linhas já prontas no arquivo do cliente."""
     ws.row_dimensions[linha_destino].height = ws.row_dimensions[linha_origem].height
     for _, col_ini, col_fim in colunas:
@@ -383,7 +383,7 @@ def _escrever_linha_grade(ws, linha, colunas, valores):
 
 def _definir_com_quebra(ws, coord, valor, tamanho_min=9, limite_caracteres=40):
     """Escreve o valor mantendo o resto do estilo da célula, mas ligando
-    quebra de linha automática - o molde costuma vir sem isso, então texto
+    quebra de linha automática - o template costuma vir sem isso, então texto
     mais longo que o esperado (ex.: nome de projeto grande) vazava pra fora
     da caixa em vez de quebrar dentro dela. Se mesmo quebrando o texto for
     comprido demais, reduz um pouco a fonte em vez de deixar cortado."""
@@ -415,7 +415,7 @@ def _preencher_tabela(ws, tabela_cfg, linhas_dados):
     linha_final_molde, linha_estilo, colunas ([nome, col_ini, col_fim]),
     col_direita_impressao. linhas_dados é a lista de dicts (um por item, por
     exemplo) a escrever a partir da linha_inicial, duplicando o estilo da
-    linha_estilo quando precisar de mais linhas que o molde já tem prontas."""
+    linha_estilo quando precisar de mais linhas que o template já tem prontas."""
     colunas = [tuple(c) for c in tabela_cfg["colunas"]]
     linha = tabela_cfg["linha_inicial"]
     linha_final_molde = tabela_cfg["linha_final_molde"]
@@ -427,14 +427,14 @@ def _preencher_tabela(ws, tabela_cfg, linhas_dados):
         linha += 1
     ultima_linha = max(linha_final_molde, linha - 1)
     # "canto_superior_impressao" é opcional no mapeamento (default A1) - só
-    # existe pra preservar moldes migrados cuja área de impressão original
+    # existe pra preservar templates migrados cuja área de impressão original
     # não começava no canto absoluto da planilha (ex.: linha/coluna 1 em
-    # branco de propósito, fora da área impressa do molde do cliente).
+    # branco de propósito, fora da área impressa do template do cliente).
     _ajustar_area_impressao(ws, tabela_cfg.get("canto_superior_impressao", "A1"), ultima_linha, tabela_cfg["col_direita_impressao"])
 
 
 def _ajustar_area_impressao(ws, canto_superior, ultima_linha, col_direita):
-    """O molde costuma vir com área e escala de impressão fixas pro tamanho
+    """O template costuma vir com área e escala de impressão fixas pro tamanho
     original. Se a lista tiver mais linhas que isso, a área de impressão
     precisa crescer junto - senão as linhas extras existem na planilha mas
     não aparecem ao imprimir/exportar (ficam "cortadas"). Troca a escala
@@ -487,11 +487,58 @@ def _linhas_revisoes(lista, versao, historico):
     return linhas
 
 
-def _molde_projeto(projeto_id, tipo):
-    """Busca o molde mapeado desse projeto/tipo. Devolve None se o projeto
-    não tiver nenhum molde desse tipo mapeado ainda. O molde é do PROJETO,
-    não do cliente - um mesmo cliente pode ter templates diferentes em
-    projetos diferentes, então não dá pra compartilhar por cliente."""
+# ---------- Campos pro template opcional de Planilha de Quantidades ----------
+# Mesmos nomes de campo que a tela de mapeamento oferece pro tipo
+# "planilha_quantidades" (ver CAMPOS_MAPEAMENTO_POR_TIPO no app.js).
+def _campos_planilha_pq(projeto, versao):
+    return {
+        "projeto": f"{projeto['codigo']} — {projeto['nome']}",
+        "cliente": projeto.get("cliente_nome") or "",
+        "rev": str(versao["versao"]) if versao else "-",
+        "data": versao["criado_em"].strftime("%d/%m/%Y") if versao else "-",
+    }
+
+
+def _linhas_itens_pq(itens):
+    linhas = []
+    for idx, item in enumerate(itens, start=1):
+        linhas.append({
+            "item": idx, "codigo": item["codigo"], "descricao": item["descricao"],
+            "referencia": item["fabricante"] or "", "complemento": item["bitola"] or "",
+            "unidade": item["unidade"], "quantidade_base": float(item["quantidade_base"]),
+            "percentual": f"{float(item['percentual']):g}%",
+            "quantidade_atualizada": float(item["quantidade_atualizada"]),
+        })
+    return linhas
+
+
+# ---------- Campos pro template opcional de Lista de Compras ----------
+def _campos_lista_compras(projeto, versao):
+    return {
+        "projeto": f"{projeto['codigo']} — {projeto['nome']}",
+        "cliente": projeto.get("cliente_nome") or "",
+        "rev": str(versao["versao"]) if versao else "-",
+        "data": versao["criado_em"].strftime("%d/%m/%Y") if versao else "-",
+    }
+
+
+def _linhas_itens_compras(itens):
+    linhas = []
+    for idx, item in enumerate(itens, start=1):
+        linhas.append({
+            "item": idx, "codigo": item["codigo"], "descricao": item["descricao"],
+            "referencia": item["fabricante"] or "", "complemento": item["bitola"] or "",
+            "unidade": item["unidade"], "quantidade": float(item["quantidade"]),
+        })
+    return linhas
+
+
+def _template_projeto(projeto_id, tipo):
+    """Busca o template mapeado desse projeto/tipo. Devolve None se o
+    projeto não tiver nenhum template desse tipo mapeado ainda. O template é
+    do PROJETO, não do cliente - um mesmo cliente pode ter templates
+    diferentes em projetos diferentes, então não dá pra compartilhar por
+    cliente."""
     if not projeto_id:
         return None
     row = db.query_one(
@@ -506,15 +553,15 @@ def _molde_projeto(projeto_id, tipo):
     return row["arquivo"], mapeamento
 
 
-def _preencher_molde_generico(arquivo_bytes, mapeamento, dados_por_fonte):
-    """Abre o molde do cliente (bytes do banco) e devolve o Workbook com os
-    dados preenchidos nas células que o mapeamento indica - sem tocar em
+def _preencher_template_generico(arquivo_bytes, mapeamento, dados_por_fonte):
+    """Abre o template do cliente (bytes do banco) e devolve o Workbook com
+    os dados preenchidos nas células que o mapeamento indica - sem tocar em
     nenhuma formatação que já vem no próprio arquivo."""
     wb = openpyxl.load_workbook(io.BytesIO(arquivo_bytes))
     campos_valores = dados_por_fonte.get("_campos", {})
     for aba_cfg in mapeamento.get("abas", []):
         if aba_cfg["origem"] >= len(wb.worksheets):
-            continue  # molde foi substituído por um com menos abas depois do mapeamento
+            continue  # template foi substituído por um com menos abas depois do mapeamento
         ws = wb.worksheets[aba_cfg["origem"]]
         _preencher_campos(ws, aba_cfg.get("campos", {}), campos_valores)
         for tabela_cfg in aba_cfg.get("tabelas", []):
@@ -522,7 +569,7 @@ def _preencher_molde_generico(arquivo_bytes, mapeamento, dados_por_fonte):
             _preencher_tabela(ws, tabela_cfg, linhas_dados)
             # A aba com a tabela de itens é a "principal" do arquivo - renomeá-la
             # pro número do desenho facilita identificar o arquivo baixado
-            # (mesmo comportamento de quando isso era fixo pro molde da Ausenco).
+            # (mesmo comportamento de quando isso era fixo pro template da Ausenco).
             if tabela_cfg["fonte_dados"] == "itens" and campos_valores.get("numero_desenho"):
                 ws.title = _titulo_aba_valido(campos_valores["numero_desenho"])
     return wb
@@ -539,32 +586,32 @@ def relatorio_excel(lista_id):
         return jsonify({"erro": "Lista não encontrada"}), 404
     lista, versao, itens, historico = ctx["lista"], ctx["versao"], ctx["itens"], ctx["historico"]
 
-    molde = _molde_projeto(lista.get("projeto_id"), "lista_materiais")
-    if not molde:
+    template = _template_projeto(lista.get("projeto_id"), "lista_materiais")
+    if not template:
         return jsonify({
-            "erro": "Este projeto ainda não tem um molde de Lista de Materiais mapeado. "
-                    "Vá na Lista por Desenho do projeto e use \"Upload de Template\" pra enviar e mapear o molde dele."
+            "erro": "Este projeto ainda não tem um template de Lista de Materiais mapeado. "
+                    "Vá na Lista por Desenho do projeto e use o botão \"Template\" pra enviar e mapear o dele."
         }), 400
-    arquivo_bytes, mapeamento = molde
+    arquivo_bytes, mapeamento = template
     dados_por_fonte = {
         "_campos": _campos_lista(lista, versao),
         "itens": _linhas_itens(itens),
         "revisoes": _linhas_revisoes(lista, versao, historico),
     }
     try:
-        wb = _preencher_molde_generico(arquivo_bytes, mapeamento, dados_por_fonte)
+        wb = _preencher_template_generico(arquivo_bytes, mapeamento, dados_por_fonte)
         buf = io.BytesIO()
         wb.save(buf)
     except Exception:
-        # Molde do cliente com algo que o mapeamento não previu (célula
+        # Template do cliente com algo que o mapeamento não previu (célula
         # mesclada de um jeito inesperado, aba removida depois de mapeada,
         # etc.) - melhor um erro claro pra rever o mapeamento do que a
         # pessoa cair numa tela de erro genérica do servidor.
         import traceback
         traceback.print_exc()
         return jsonify({
-            "erro": "Não foi possível gerar o Excel com o molde mapeado desse cliente. "
-                    "Reveja o mapeamento em Lista por Desenho → Upload de Template, ou avise o suporte."
+            "erro": "Não foi possível gerar o Excel com o template mapeado desse cliente. "
+                    "Reveja o mapeamento em Lista por Desenho → Template, ou avise o suporte."
         }), 500
     buf.seek(0)
     nome_arquivo = f"lista_{lista['numero_desenho']}_rev{versao['versao'] if versao else 0}.xlsx"
@@ -789,6 +836,27 @@ def relatorio_lista_pq_excel(projeto_id):
     projeto, config = ctx["projeto"], ctx["config"]
     versao, itens = _carregar_versao_itens(projeto, request.args.get("versao_id", type=int), "pq")
 
+    # Template do cliente é opcional aqui (diferente da Lista por Desenho) -
+    # sem um mapeado, cai no layout padrão de sempre logo abaixo.
+    template = _template_projeto(projeto_id, "planilha_quantidades")
+    if template:
+        arquivo_bytes, mapeamento = template
+        dados_por_fonte = {"_campos": _campos_planilha_pq(projeto, versao), "itens": _linhas_itens_pq(itens)}
+        try:
+            wb = _preencher_template_generico(arquivo_bytes, mapeamento, dados_por_fonte)
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            return send_file(buf, as_attachment=True, download_name=f"lista_pq_{projeto['codigo']}.xlsx",
+                              mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                "erro": "Não foi possível gerar o Excel com o template mapeado. "
+                        "Reveja o mapeamento em Planilha de Quantidades → Template, ou avise o suporte."
+            }), 500
+
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Planilha de Quantidades"
@@ -887,6 +955,27 @@ def relatorio_lista_compras_excel(projeto_id):
         return jsonify({"erro": "Projeto não encontrado"}), 404
     projeto, config = ctx["projeto"], ctx["config"]
     versao, itens = _carregar_versao_itens(projeto, request.args.get("versao_id", type=int), "compras")
+
+    # Template do cliente é opcional aqui - sem um mapeado, cai no layout
+    # padrão de sempre logo abaixo.
+    template = _template_projeto(projeto_id, "lista_compras")
+    if template:
+        arquivo_bytes, mapeamento = template
+        dados_por_fonte = {"_campos": _campos_lista_compras(projeto, versao), "itens": _linhas_itens_compras(itens)}
+        try:
+            wb = _preencher_template_generico(arquivo_bytes, mapeamento, dados_por_fonte)
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            return send_file(buf, as_attachment=True, download_name=f"lista_compras_{projeto['codigo']}.xlsx",
+                              mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                "erro": "Não foi possível gerar o Excel com o template mapeado. "
+                        "Reveja o mapeamento em Lista de Compras → Template, ou avise o suporte."
+            }), 500
 
     wb = openpyxl.Workbook()
     ws = wb.active

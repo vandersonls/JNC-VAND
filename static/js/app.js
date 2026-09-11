@@ -5,7 +5,7 @@ const state = {
   projetos: [],
   areas: [],
   projetoAtual: null,
-  moldeListaMateriaisMapeado: null, // null = ainda não sabe / não se aplica; true/false = já checou
+  templateListaMateriaisMapeado: null, // null = ainda não sabe / não se aplica; true/false = já checou
 };
 
 async function garantirAreasCarregadas() {
@@ -740,40 +740,54 @@ async function excluirCliente(id) {
 
 document.getElementById("btn-novo-cliente").addEventListener("click", () => modalCliente());
 
-// ---------- MOLDES DE EXCEL POR PROJETO ----------
-// Cada PROJETO pode ter um molde de "Lista de Materiais" - o Excel exato
+// ---------- TEMPLATES DE EXCEL POR PROJETO ----------
+// Cada PROJETO pode ter um template de "Lista de Materiais" - o Excel exato
 // que o cliente manda pro projetista, com o layout dele mesmo (nada a ver
 // com o nosso). É por projeto, não por cliente, porque um mesmo cliente
 // pode mandar templates diferentes em projetos diferentes (o padrão dele
 // muda com o tempo, ou disciplinas diferentes usam layouts diferentes) -
-// compartilhar por cliente faria um projeto "herdar" por engano o molde
+// compartilhar por cliente faria um projeto "herdar" por engano o template
 // mapeado de outro. Fluxo: enviar o arquivo em branco -> mapear os campos
-// uma vez (associar cada dado nosso a uma célula do molde) -> daí em
-// diante o relatório da Lista por Desenho desse projeto sai nesse molde.
-const ROTULO_TIPO_TEMPLATE = { lista_materiais: "Lista de Materiais", registro_documentos: "Registro de Documentos" };
+// uma vez (associar cada dado nosso a uma célula do template) -> daí em
+// diante o relatório correspondente desse projeto sai nesse template.
+// "lista_materiais" é obrigatório (Lista por Desenho não tem layout padrão);
+// "planilha_quantidades" e "lista_compras" são opcionais - sem um template
+// mapeado, o relatório sai no layout padrão de sempre.
+const ROTULO_TIPO_TEMPLATE = {
+  lista_materiais: "Lista de Materiais",
+  planilha_quantidades: "Planilha de Quantidades",
+  lista_compras: "Lista de Compras",
+  registro_documentos: "Registro de Documentos",
+};
 
-async function abrirTemplatesProjeto(projetoId) {
-  const projeto = state.projetos.find((p) => p.id === projetoId);
+async function abrirTemplatesProjeto(projetoId, tipo) {
+  const projeto = state.projetos.find((p) => p.id === projetoId) || state.projetoAtual;
   const templates = await api(`/api/projetos/${projetoId}/templates`);
-  renderModalTemplatesProjeto(projetoId, projeto, templates);
+  renderModalTemplatesProjeto(projetoId, projeto, templates, tipo);
 }
 
-function renderModalTemplatesProjeto(projetoId, projeto, templates) {
-  const t = templates.find((x) => x.tipo === "lista_materiais");
+function renderModalTemplatesProjeto(projetoId, projeto, templates, tipo) {
+  const t = templates.find((x) => x.tipo === tipo);
   const status = !t ? "Não enviado" : (t.mapeado ? "Mapeado" : "Enviado — aguardando mapeamento");
   const classeStatus = !t ? "" : (t.mapeado ? "ok" : "pendente");
   const rotuloProjeto = projeto ? `${esc(projeto.codigo)} — ${esc(projeto.nome)}${projeto.cliente_nome ? ` (${esc(projeto.cliente_nome)})` : ""}` : "Projeto";
+  const rotuloTipo = ROTULO_TIPO_TEMPLATE[tipo];
+  // A Lista por Desenho não tem layout padrão (sempre precisou de um
+  // template mapeado); Planilha de Quantidades e Lista de Compras já têm um
+  // layout pronto, então o template aqui é só uma opção pra usar o do cliente.
+  const opcional = tipo !== "lista_materiais";
 
   abrirModal(`
-    <h3>Molde de impressão — ${rotuloProjeto}</h3>
+    <h3>Template de impressão — ${rotuloProjeto}</h3>
     <p style="color:var(--cinza); font-size:13px;">
-      Envie o modelo de Excel em branco que o cliente desse projeto manda pro preenchimento da Lista de Materiais.
-      Depois de enviado, mapeie os campos uma vez pra ele passar a ser usado no preenchimento automático. O molde
-      vale só pra este projeto - se o cliente tiver outro padrão em outro projeto, envie e mapeie separadamente lá.
+      Envie o modelo de Excel em branco que o cliente desse projeto manda pro preenchimento de ${esc(rotuloTipo)}.
+      Depois de enviado, mapeie os campos uma vez pra ele passar a ser usado no preenchimento automático.
+      ${opcional ? `Sem template mapeado, o relatório continua saindo no layout padrão normalmente. ` : ""}
+      O template vale só pra este projeto - se o cliente tiver outro padrão em outro projeto, envie e mapeie separadamente lá.
     </p>
     <div class="templates-cliente-grid">
       <div class="card-template-cliente">
-        <h4>${esc(ROTULO_TIPO_TEMPLATE.lista_materiais)}</h4>
+        <h4>${esc(rotuloTipo)}</h4>
         <p class="status-template ${classeStatus}">${status}</p>
         ${t ? `<p class="arvore-sub">${esc(t.nome_arquivo)}</p>` : ""}
         <div class="acoes-linha somente-admin">
@@ -781,8 +795,8 @@ function renderModalTemplatesProjeto(projetoId, projeto, templates) {
             ${t ? "Substituir arquivo" : "Enviar arquivo"}
             <input type="file" accept=".xlsx" class="input-template-cliente" style="display:none">
           </label>
-          ${t ? `<button class="btn-secundario" onclick="abrirMapeamentoTemplate(${projetoId}, ${t.id})">${t.mapeado ? "Editar mapeamento" : "Mapear campos"}</button>` : ""}
-          ${t ? `<button class="btn-perigo somente-master" onclick="excluirTemplateProjeto(${projetoId}, ${t.id})">Remover</button>` : ""}
+          ${t ? `<button class="btn-secundario" onclick="abrirMapeamentoTemplate(${projetoId}, ${t.id}, '${tipo}')">${t.mapeado ? "Editar mapeamento" : "Mapear campos"}</button>` : ""}
+          ${t ? `<button class="btn-perigo somente-master" onclick="excluirTemplateProjeto(${projetoId}, ${t.id}, '${tipo}')">Remover</button>` : ""}
         </div>
       </div>
     </div>
@@ -796,74 +810,123 @@ function renderModalTemplatesProjeto(projetoId, projeto, templates) {
     const arquivo = e.target.files[0];
     if (!arquivo) return;
     const formData = new FormData();
-    formData.append("tipo", "lista_materiais");
+    formData.append("tipo", tipo);
     formData.append("arquivo", arquivo);
     try {
       await api(`/api/projetos/${projetoId}/templates`, { method: "POST", body: formData });
-      toast("Molde enviado");
-      abrirTemplatesProjeto(projetoId);
-      _atualizarStatusMoldeLista().then(renderArvoreListas);
+      toast("Template enviado");
+      abrirTemplatesProjeto(projetoId, tipo);
+      _atualizarStatusTemplates();
     } catch (err) { toast(err.message, "erro"); }
   });
 }
 
-async function excluirTemplateProjeto(projetoId, templateId) {
-  if (!(await confirmarPersonalizado("Remover este molde? Será preciso enviar e mapear de novo se precisar dele outra vez."))) return;
+async function excluirTemplateProjeto(projetoId, templateId, tipo) {
+  if (!(await confirmarPersonalizado("Remover este template? Será preciso enviar e mapear de novo se precisar dele outra vez."))) return;
   try {
     await api(`/api/projetos/${projetoId}/templates/${templateId}`, { method: "DELETE" });
-    toast("Molde removido");
-    abrirTemplatesProjeto(projetoId);
-    _atualizarStatusMoldeLista().then(renderArvoreListas);
+    toast("Template removido");
+    abrirTemplatesProjeto(projetoId, tipo);
+    _atualizarStatusTemplates();
   } catch (err) { toast(err.message, "erro"); }
 }
 
-// Campos canônicos que o motor de preenchimento (relatorios.py) sabe usar -
-// mesmos nomes que já existiam fixos no código pro molde antigo da Ausenco.
-// "chaves" são os termos (sem acento, minúsculo) que o mapeamento automático
-// procura no texto das células do molde pra sugerir cada campo. Cada grupo
-// (unicos / itens / revisoes) é buscado separadamente, então uma mesma
-// palavra (ex.: "rev") pode aparecer em mais de um grupo sem se confundir.
-const CAMPOS_MAPEAMENTO_LISTA_MATERIAIS = {
-  unicos: [
-    { campo: "projeto", rotulo: "Nome do Projeto", chaves: ["nome do projeto"] },
-    { campo: "subtitulo", rotulo: "Subtítulo (linha 1 do carimbo)", chaves: ["subtitulo"] },
-    { campo: "area", rotulo: "Área (linha 2 do carimbo)", chaves: ["area/departamento", "area", "arca"] },
-    { campo: "disciplina", rotulo: "Disciplina (linha 3 do carimbo)", chaves: ["disciplina"] },
-    { campo: "titulo", rotulo: "Título do Documento (linha 4)", chaves: ["titulo"] },
-    { campo: "numero_cliente", rotulo: "Número do Cliente", chaves: ["n jaguar", "numero do cliente", "n do cliente", "n cliente", "no cliente"] },
-    { campo: "numero_projetista", rotulo: "Número do Projetista", chaves: ["numero do projetista", "n fornecedor", "numero do fornecedor", "n do fornecedor"] },
-    { campo: "rev", rotulo: "Revisão", chaves: ["rev.:", "rev:"] },
-    { campo: "numero_desenho", rotulo: "Número do Desenho de Referência", chaves: ["numero do desenho", "n do documento", "n:"] },
-    { campo: "referencia_desenho", rotulo: "Nº do Desenho, com rótulo (\"DESENHO DE REFERÊNCIA : X\")", chaves: [] },
-  ],
-  tabelas: [
-    {
-      fonte_dados: "itens", rotulo: "Tabela de Itens",
-      colunas: [
-        { campo: "item", rotulo: "Item (nº sequencial)", chaves: ["item"] },
-        { campo: "codigo", rotulo: "Código", chaves: ["codigo", "cod. sap", "cod sap"] },
-        { campo: "descricao", rotulo: "Descrição", chaves: ["descricao"] },
-        { campo: "referencia", rotulo: "Fabricante/Referência", chaves: ["fabricante", "referencia"] },
-        { campo: "complemento", rotulo: "Bitola/Complemento", chaves: ["bitola", "complemento"] },
-        { campo: "unidade", rotulo: "Unidade", chaves: ["unidade", "unid.", "unid", "un."] },
-        { campo: "quant_atual", rotulo: "Quantidade", chaves: ["quantidade", "qtd", "qte"] },
-        { campo: "quant_anterior", rotulo: "Quantidade Anterior", chaves: ["quantidade anterior", "qtd anterior"] },
-      ],
-    },
-    {
-      fonte_dados: "revisoes", rotulo: "Tabela de Revisões",
-      colunas: [
-        { campo: "rev", rotulo: "Rev.", chaves: ["rev."] },
-        { campo: "te", rotulo: "TE (tipo de emissão)", chaves: ["te", "status"] },
-        { campo: "descricao", rotulo: "Descrição da Revisão", chaves: ["descricao da revisao", "descricao"] },
-        { campo: "por", rotulo: "Elaborado por", chaves: ["preparado por", "elaborado por", "elaborador"] },
-        { campo: "ver", rotulo: "Verificado por", chaves: ["checado", "verificado por", "verificador"] },
-        { campo: "apr", rotulo: "Aprovado por", chaves: ["aprovado por", "aprovador"] },
-        { campo: "aut", rotulo: "Autorizado por", chaves: ["autorizado por", "autorizador"] },
-        { campo: "data", rotulo: "Data", chaves: ["data"] },
-      ],
-    },
-  ],
+// Campos canônicos que o motor de preenchimento (relatorios.py) sabe usar
+// pra cada tipo de template - mesmos nomes que _campos_lista/_linhas_itens
+// (e as variantes _pq/_compras) devolvem lá. "chaves" são os termos (sem
+// acento, minúsculo) que o mapeamento automático procura no texto das
+// células do template pra sugerir cada campo. Cada grupo (unicos / itens /
+// revisoes) é buscado separadamente, então uma mesma palavra (ex.: "rev")
+// pode aparecer em mais de um grupo sem se confundir.
+const CAMPOS_MAPEAMENTO_POR_TIPO = {
+  lista_materiais: {
+    unicos: [
+      { campo: "projeto", rotulo: "Nome do Projeto", chaves: ["nome do projeto"] },
+      { campo: "subtitulo", rotulo: "Subtítulo (linha 1 do carimbo)", chaves: ["subtitulo"] },
+      { campo: "area", rotulo: "Área (linha 2 do carimbo)", chaves: ["area/departamento", "area", "arca"] },
+      { campo: "disciplina", rotulo: "Disciplina (linha 3 do carimbo)", chaves: ["disciplina"] },
+      { campo: "titulo", rotulo: "Título do Documento (linha 4)", chaves: ["titulo"] },
+      { campo: "numero_cliente", rotulo: "Número do Cliente", chaves: ["n jaguar", "numero do cliente", "n do cliente", "n cliente", "no cliente"] },
+      { campo: "numero_projetista", rotulo: "Número do Projetista", chaves: ["numero do projetista", "n fornecedor", "numero do fornecedor", "n do fornecedor"] },
+      { campo: "rev", rotulo: "Revisão", chaves: ["rev.:", "rev:"] },
+      { campo: "numero_desenho", rotulo: "Número do Desenho de Referência", chaves: ["numero do desenho", "n do documento", "n:"] },
+      { campo: "referencia_desenho", rotulo: "Nº do Desenho, com rótulo (\"DESENHO DE REFERÊNCIA : X\")", chaves: [] },
+    ],
+    tabelas: [
+      {
+        fonte_dados: "itens", rotulo: "Tabela de Itens",
+        colunas: [
+          { campo: "item", rotulo: "Item (nº sequencial)", chaves: ["item"] },
+          { campo: "codigo", rotulo: "Código", chaves: ["codigo", "cod. sap", "cod sap"] },
+          { campo: "descricao", rotulo: "Descrição", chaves: ["descricao"] },
+          { campo: "referencia", rotulo: "Fabricante/Referência", chaves: ["fabricante", "referencia"] },
+          { campo: "complemento", rotulo: "Bitola/Complemento", chaves: ["bitola", "complemento"] },
+          { campo: "unidade", rotulo: "Unidade", chaves: ["unidade", "unid.", "unid", "un."] },
+          { campo: "quant_atual", rotulo: "Quantidade", chaves: ["quantidade", "qtd", "qte"] },
+          { campo: "quant_anterior", rotulo: "Quantidade Anterior", chaves: ["quantidade anterior", "qtd anterior"] },
+        ],
+      },
+      {
+        fonte_dados: "revisoes", rotulo: "Tabela de Revisões",
+        colunas: [
+          { campo: "rev", rotulo: "Rev.", chaves: ["rev."] },
+          { campo: "te", rotulo: "TE (tipo de emissão)", chaves: ["te", "status"] },
+          { campo: "descricao", rotulo: "Descrição da Revisão", chaves: ["descricao da revisao", "descricao"] },
+          { campo: "por", rotulo: "Elaborado por", chaves: ["preparado por", "elaborado por", "elaborador"] },
+          { campo: "ver", rotulo: "Verificado por", chaves: ["checado", "verificado por", "verificador"] },
+          { campo: "apr", rotulo: "Aprovado por", chaves: ["aprovado por", "aprovador"] },
+          { campo: "aut", rotulo: "Autorizado por", chaves: ["autorizado por", "autorizador"] },
+          { campo: "data", rotulo: "Data", chaves: ["data"] },
+        ],
+      },
+    ],
+  },
+  planilha_quantidades: {
+    unicos: [
+      { campo: "projeto", rotulo: "Projeto (código — nome)", chaves: ["projeto"] },
+      { campo: "cliente", rotulo: "Cliente", chaves: ["cliente"] },
+      { campo: "rev", rotulo: "Revisão", chaves: ["rev.:", "rev:", "revisao"] },
+      { campo: "data", rotulo: "Data", chaves: ["data"] },
+    ],
+    tabelas: [
+      {
+        fonte_dados: "itens", rotulo: "Tabela de Itens",
+        colunas: [
+          { campo: "item", rotulo: "Item (nº sequencial)", chaves: ["item"] },
+          { campo: "codigo", rotulo: "Código", chaves: ["codigo", "cod. sap", "cod sap"] },
+          { campo: "descricao", rotulo: "Descrição", chaves: ["descricao"] },
+          { campo: "referencia", rotulo: "Fabricante/Referência", chaves: ["fabricante", "referencia"] },
+          { campo: "complemento", rotulo: "Bitola/Complemento", chaves: ["bitola", "complemento"] },
+          { campo: "unidade", rotulo: "Unidade", chaves: ["unidade", "unid.", "unid", "un."] },
+          { campo: "quantidade_base", rotulo: "Quantidade Base", chaves: ["quantidade base", "qtd base"] },
+          { campo: "percentual", rotulo: "% Aplicado", chaves: ["percentual", "% aplicado", "aplicado"] },
+          { campo: "quantidade_atualizada", rotulo: "Quantidade Atualizada", chaves: ["quantidade atualizada", "qtd atualizada"] },
+        ],
+      },
+    ],
+  },
+  lista_compras: {
+    unicos: [
+      { campo: "projeto", rotulo: "Projeto (código — nome)", chaves: ["projeto"] },
+      { campo: "cliente", rotulo: "Cliente", chaves: ["cliente"] },
+      { campo: "rev", rotulo: "Revisão", chaves: ["rev.:", "rev:", "revisao"] },
+      { campo: "data", rotulo: "Data", chaves: ["data"] },
+    ],
+    tabelas: [
+      {
+        fonte_dados: "itens", rotulo: "Tabela de Itens",
+        colunas: [
+          { campo: "item", rotulo: "Item (nº sequencial)", chaves: ["item"] },
+          { campo: "codigo", rotulo: "Código", chaves: ["codigo", "cod. sap", "cod sap"] },
+          { campo: "descricao", rotulo: "Descrição", chaves: ["descricao"] },
+          { campo: "referencia", rotulo: "Fabricante/Referência", chaves: ["fabricante", "referencia"] },
+          { campo: "complemento", rotulo: "Bitola/Complemento", chaves: ["bitola", "complemento"] },
+          { campo: "unidade", rotulo: "Unidade", chaves: ["unidade", "unid.", "unid", "un."] },
+          { campo: "quantidade", rotulo: "Quantidade", chaves: ["quantidade", "qtd", "qte"] },
+        ],
+      },
+    ],
+  },
 };
 
 // Estado da tela de mapeamento em edição (existe só enquanto o modal está
@@ -872,10 +935,10 @@ const CAMPOS_MAPEAMENTO_LISTA_MATERIAIS = {
 let _mapeamentoEmEdicao = null;
 let _mapeamentoArmado = null;
 
-async function abrirMapeamentoTemplate(projetoId, templateId) {
+async function abrirMapeamentoTemplate(projetoId, templateId, tipo) {
   const preview = await api(`/api/projetos/${projetoId}/templates/${templateId}/preview`);
   _mapeamentoEmEdicao = {
-    projetoId, templateId, abas: preview.abas, abaAtiva: 0,
+    projetoId, templateId, tipo, abas: preview.abas, abaAtiva: 0,
     camposUnicos: {}, tabelas: {},
     secaoAtiva: "unicos", // qual grupo de campos (cabeçalho / uma das tabelas) está em foco no painel
     zoom: 1, // 100% por padrão - legível de cara. "Ver folha inteira" (null) é uma ação manual, não o padrão.
@@ -907,15 +970,15 @@ function _secoesMapeamento(cfg) {
 }
 
 function renderMapeamentoTemplate() {
-  const cfg = CAMPOS_MAPEAMENTO_LISTA_MATERIAIS;
+  const cfg = CAMPOS_MAPEAMENTO_POR_TIPO[_mapeamentoEmEdicao.tipo];
   const abaAtiva = _mapeamentoEmEdicao.abaAtiva;
   const secaoAtiva = _mapeamentoEmEdicao.secaoAtiva;
 
   abrirModal(`
-    <h3>Mapear campos — Lista de Materiais</h3>
+    <h3>Mapear campos — ${esc(ROTULO_TIPO_TEMPLATE[_mapeamentoEmEdicao.tipo])}</h3>
     <div class="mapeamento-aviso">
-      Clique num campo à direita e depois na célula correspondente no molde. Campos sem
-      correspondência no molde do cliente podem ficar sem mapear — o preenchimento simplesmente
+      Clique num campo à direita e depois na célula correspondente no template. Campos sem
+      correspondência no template do cliente podem ficar sem mapear — o preenchimento simplesmente
       pula esse campo, sem erro.
       <div style="margin-top:8px;">
         <button type="button" class="btn-secundario" onclick="_mapeamentoAutomatico()">✨ Mapeamento automático</button>
@@ -926,7 +989,7 @@ function renderMapeamentoTemplate() {
         <button type="button" class="mapeamento-secao-btn ${s.id === secaoAtiva ? "ativa" : ""}" onclick="_trocarSecaoMapeamento('${s.id}')">${esc(s.rotulo)}</button>
       `).join("")}
     </div>
-    <div class="mapeamento-molde">
+    <div class="mapeamento-template">
       <div class="mapeamento-preview">
         <div class="mapeamento-preview-abas">
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -1007,7 +1070,7 @@ function _centralizarPreviewEm(origem, linha, coluna) {
 // cada clique de mapeamento pra não perder a posição de scroll da prévia.
 function _atualizarPainelCampos() {
   const painel = document.getElementById("mapeamento-campos-painel");
-  if (painel) painel.innerHTML = _htmlPainelCampos(CAMPOS_MAPEAMENTO_LISTA_MATERIAIS);
+  if (painel) painel.innerHTML = _htmlPainelCampos(CAMPOS_MAPEAMENTO_POR_TIPO[_mapeamentoEmEdicao.tipo]);
 }
 
 function _htmlBotaoCampoMapeamento(grupo, tabela, campo, rotulo) {
@@ -1068,11 +1131,11 @@ function _campoPorPalavraChave(textoNormalizado, campos) {
 }
 
 // Mapeamento automático: sugere associações prováveis a partir do texto das
-// próprias células do molde, mas NUNCA sobrescreve um campo que a pessoa já
+// próprias células do template, mas NUNCA sobrescreve um campo que a pessoa já
 // mapeou manualmente - só preenche o que ainda está "não definido". Sempre
 // revisável/corrigível depois, como qualquer mapeamento manual.
 function _mapeamentoAutomatico() {
-  const cfg = CAMPOS_MAPEAMENTO_LISTA_MATERIAIS;
+  const cfg = CAMPOS_MAPEAMENTO_POR_TIPO[_mapeamentoEmEdicao.tipo];
   let contagem = 0;
 
   // Índice plano de todas as células de todas as abas, com texto normalizado -
@@ -1136,7 +1199,7 @@ function _mapeamentoAutomatico() {
       linhaCabecalho = melhor.linha;
 
       // A linha de exemplo/dados normalmente fica logo ABAIXO do cabeçalho,
-      // mas alguns moldes (ex.: tabela de revisões da Jaguar) têm layout
+      // mas alguns templates (ex.: tabela de revisões da Jaguar) têm layout
       // invertido - dado ACIMA, rótulo embaixo. Decide pelo lado que
       // realmente parece ter valor preenchido (célula não-vazia e que não é
       // ela mesma uma palavra-chave de rótulo) nas colunas do cabeçalho achado.
@@ -1169,7 +1232,7 @@ function _mapeamentoAutomatico() {
   _renderPreviewAbaMapeamento(_mapeamentoEmEdicao.abaAtiva);
   toast(contagem
     ? `${contagem} campo(s) preenchido(s) automaticamente - confira e complete o que faltar.`
-    : "Não encontrei correspondências óbvias no molde - mapeie manualmente.");
+    : "Não encontrei correspondências óbvias no template - mapeie manualmente.");
 }
 
 function _trocarAbaMapeamento(origem) {
@@ -1385,7 +1448,7 @@ async function _salvarMapeamentoTemplate() {
     });
     fecharModal();
     toast("Mapeamento salvo");
-    _atualizarStatusMoldeLista().then(renderArvoreListas);
+    _atualizarStatusTemplates();
   } catch (err) { toast(err.message, "erro"); }
 }
 
@@ -1477,52 +1540,65 @@ async function abrirProjeto(id) {
   document.getElementById("projeto-detalhe-titulo").textContent = `${state.projetoAtual.codigo} — ${state.projetoAtual.nome}`;
   ativarTabInterna("projeto-detalhe");
   ativarSubtabPD("pd-desenho");
-  await _atualizarStatusMoldeLista();
+  await _atualizarStatusTemplates();
   await carregarListas(id);
 }
 
-// Estado do molde de impressão do projeto atual, refletido no botão único
-// "Molde de impressão" (cor + ícone dizem o estado, sem selo separado):
+// Estado dos templates de impressão do projeto atual (um por tipo, ver
+// CAMPOS_MAPEAMENTO_POR_TIPO), refletido nos botões únicos "Template" de
+// cada aba (cor + ícone dizem o estado, sem selo separado):
 //  - nenhum: nada enviado ainda
 //  - pendente: enviado, mas zero campos mapeados ainda (o backend só usa o
-//    molde quando pelo menos 1 campo foi mapeado - mapeamento parcial já
+//    template quando pelo menos 1 campo foi mapeado - mapeamento parcial já
 //    conta como utilizável, então não existe um estado "mapeado pela
 //    metade" à parte: ou não tem nada mapeado (pendente), ou tem pelo
 //    menos algo mapeado e já funciona (mapeado/verde)
 //  - mapeado: pelo menos um campo mapeado - já é usado no download
 //  - erro: não deu pra consultar o servidor agora
-// Também é usado pra desabilitar o ícone de baixar de cada lista
-// (renderNoLista) enquanto não houver molde utilizável. É por projeto, não
-// por cliente - dois projetos do mesmo cliente podem ter moldes diferentes.
-async function _atualizarStatusMoldeLista() {
+// O de "lista_materiais" também é usado pra desabilitar o ícone de baixar
+// de cada lista (renderNoLista) enquanto não houver template utilizável -
+// só ele é obrigatório; os outros dois são só uma opção de layout.
+async function _atualizarStatusTemplates() {
   const projetoId = state.projetoAtual?.id;
-  let status = "nenhum";
-  if (!projetoId) {
-    state.moldeListaMateriaisMapeado = null;
-  } else {
-    try {
-      const templates = await api(`/api/projetos/${projetoId}/templates`);
-      const molde = templates.find((t) => t.tipo === "lista_materiais");
-      state.moldeListaMateriaisMapeado = !!(molde && molde.mapeado);
-      status = !molde ? "nenhum" : molde.mapeado ? "mapeado" : "pendente";
-    } catch (err) {
-      state.moldeListaMateriaisMapeado = null; // não sabemos - não bloqueia o download, só o botão fica em "erro"
-      status = "erro";
-    }
+  let templates = null;
+  let erro = false;
+  if (projetoId) {
+    try { templates = await api(`/api/projetos/${projetoId}/templates`); }
+    catch (err) { erro = true; }
   }
-  const btn = document.getElementById("btn-upload-template");
-  if (!btn) return;
+  const templateListaMateriais = templates && templates.find((t) => t.tipo === "lista_materiais");
+  state.templateListaMateriaisMapeado = !projetoId ? null : erro ? null : !!(templateListaMateriais && templateListaMateriais.mapeado);
+
+  document.querySelectorAll(".btn-template[data-tipo]").forEach((btn) => {
+    const tipo = btn.dataset.tipo;
+    let status;
+    if (!projetoId) status = "nenhum";
+    else if (erro) status = "erro";
+    else {
+      const t = templates.find((x) => x.tipo === tipo);
+      status = !t ? "nenhum" : t.mapeado ? "mapeado" : "pendente";
+    }
+    _pintarBotaoTemplate(btn, tipo, status);
+  });
+}
+
+function _pintarBotaoTemplate(btn, tipo, status) {
+  const rotulo = ROTULO_TIPO_TEMPLATE[tipo];
   const config = {
-    nenhum: { icone: ICONE_MOLDE_UPLOAD, texto: "Molde de impressão", titulo: "Nenhum molde de Lista de Materiais enviado ainda - clique para enviar" },
-    pendente: { icone: ICONE_MOLDE_ALERTA, texto: "Molde sem mapear", titulo: "Molde enviado, mas ainda sem nenhum campo mapeado - clique para mapear" },
-    mapeado: { icone: ICONE_MOLDE_OK, texto: "Molde mapeado", titulo: "Molde ativo - o download em Excel de cada lista usa ele" },
-    erro: { icone: ICONE_MOLDE_ERRO, texto: "Molde de impressão", titulo: "Não foi possível verificar o molde agora - clique para tentar de novo" },
+    nenhum: { icone: ICONE_TEMPLATE_UPLOAD, texto: "Template", titulo: `Nenhum template de ${rotulo} enviado ainda - clique para enviar` },
+    pendente: { icone: ICONE_TEMPLATE_ALERTA, texto: "Template sem mapear", titulo: `Template de ${rotulo} enviado, mas ainda sem nenhum campo mapeado - clique para mapear` },
+    mapeado: { icone: ICONE_TEMPLATE_OK, texto: "Template mapeado", titulo: `Template de ${rotulo} ativo - o download em Excel usa ele` },
+    erro: { icone: ICONE_TEMPLATE_ERRO, texto: "Template", titulo: "Não foi possível verificar o template agora - clique para tentar de novo" },
   }[status];
-  btn.className = `btn-molde somente-admin status-${status}`;
+  btn.className = `btn-template somente-admin status-${status}`;
   btn.title = config.titulo;
   btn.setAttribute("aria-label", config.titulo);
   btn.innerHTML = `${config.icone}<span>${config.texto}</span>`;
 }
+
+document.querySelectorAll(".btn-template[data-tipo]").forEach((btn) => {
+  btn.addEventListener("click", () => abrirTemplatesProjeto(state.projetoAtual.id, btn.dataset.tipo));
+});
 
 document.querySelectorAll(".subnav-item-pd").forEach((btn) => {
   btn.addEventListener("click", () => ativarSubtabPD(btn.dataset.subtabPd));
@@ -1637,12 +1713,12 @@ const ICONE_IMPRIMIR = `<svg viewBox="0 0 20 20" fill="none"><path d="M6.3 3.3h7
 const ICONE_EXCLUIR = `<svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
 const ICONE_PDF = `<svg viewBox="0 0 20 20" fill="none"><path d="M6 2.5h6l3 3v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M12 2.5V6h3" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M6.8 11h1.1a1.1 1.1 0 1 1 0 2.2H6.8V11Zm0 0v3.6M10.3 14.6V11h1.3a1.8 1.8 0 0 1 0 3.6h-1.3Zm4-3.6h1.6M14.3 11v3.6m0-1.8h1.4" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
-// Ícones do botão único "Molde de impressão" - a cor+ícone já diz o estado,
-// sem precisar de um selo à parte (ver _atualizarStatusMoldeLista).
-const ICONE_MOLDE_UPLOAD = `<svg viewBox="0 0 20 20" fill="none"><path d="M10 13V4M6.5 7.5 10 4l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 13.5v1.7a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-const ICONE_MOLDE_ALERTA = `<svg viewBox="0 0 20 20" fill="none"><path d="M10 3.2 17.5 16h-15L10 3.2Z" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 8.3v3.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10" cy="13.5" r=".9" fill="currentColor"/></svg>`;
-const ICONE_MOLDE_OK = `<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.3" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.5"/><path d="M6.8 10.2l2.1 2.1 4.3-4.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-const ICONE_MOLDE_ERRO = `<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.3" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.5"/><path d="M7.5 7.5l5 5M12.5 7.5l-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
+// Ícones do botão único "Template" - a cor+ícone já diz o estado, sem
+// precisar de um selo à parte (ver _atualizarStatusTemplates).
+const ICONE_TEMPLATE_UPLOAD = `<svg viewBox="0 0 20 20" fill="none"><path d="M10 13V4M6.5 7.5 10 4l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 13.5v1.7a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const ICONE_TEMPLATE_ALERTA = `<svg viewBox="0 0 20 20" fill="none"><path d="M10 3.2 17.5 16h-15L10 3.2Z" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 8.3v3.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10" cy="13.5" r=".9" fill="currentColor"/></svg>`;
+const ICONE_TEMPLATE_OK = `<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.3" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.5"/><path d="M6.8 10.2l2.1 2.1 4.3-4.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const ICONE_TEMPLATE_ERRO = `<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.3" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.5"/><path d="M7.5 7.5l5 5M12.5 7.5l-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
 
 function renderNoLista(l) {
   const aberta = arvoreState.expandidas.has(l.id);
@@ -1660,8 +1736,8 @@ function renderNoLista(l) {
         </span>
         <span class="arvore-acoes">
           <button class="link-acao" onclick="abrirEditorMateriais(${l.id})">Editar materiais</button>
-          ${state.moldeListaMateriaisMapeado === false
-            ? `<span class="acao-icone desabilitado" title="Projeto sem molde de Lista de Materiais mapeado - use o botão &quot;Molde de impressão&quot; acima" aria-label="Baixar Excel (indisponível, sem molde mapeado)">${ICONE_IMPRIMIR}</span>`
+          ${state.templateListaMateriaisMapeado === false
+            ? `<span class="acao-icone desabilitado" title="Projeto sem template de Lista de Materiais mapeado - use o botão &quot;Template&quot; acima" aria-label="Baixar Excel (indisponível, sem template mapeado)">${ICONE_IMPRIMIR}</span>`
             : `<a class="acao-icone" href="/api/listas/${l.id}/relatorio/excel" target="_blank" title="Baixar Excel" aria-label="Baixar Excel">${ICONE_IMPRIMIR}</a>`}
           <button class="acao-icone somente-admin" onclick="abrirEditorDados(${l.id})" title="Editar dados" aria-label="Editar dados">${ICONE_LAPIS}</button>
           <button class="acao-icone acao-perigo somente-master" onclick="excluirLista(${l.id})" title="Excluir" aria-label="Excluir">${ICONE_EXCLUIR}</button>
@@ -1749,10 +1825,6 @@ document.getElementById("btn-nova-lista").addEventListener("click", async () => 
   if (!state.materiais.length) state.materiais = await api("/api/materiais");
   window._itensEditor = [];
   renderCabecalhoLista(null, {});
-});
-
-document.getElementById("btn-upload-template").addEventListener("click", () => {
-  abrirTemplatesProjeto(state.projetoAtual?.id);
 });
 
 // Monta o rótulo de um material com código e bitola em destaque (linha 1)
@@ -2220,8 +2292,11 @@ function formatarQuantidade(valor, unidade) {
 
 // ---------- ÁRVORE DE VERSÕES (compartilhado entre Lista PQ e Lista de Compras) ----------
 // PQ e Compras têm shape de dados diferente (origens em lista plana vs. PQ→origens
-// aninhado), então só a mecânica de expandir/renderizar o container é compartilhada;
-// a montagem de cada nó (renderNoPQ/renderNoCompras) continua separada.
+// aninhado), então só a mecânica de expandir/renderizar/filtrar o container é
+// compartilhada; a montagem de cada nó (renderNoPQ/renderNoCompras) continua
+// separada. "todas" guarda a lista cheia vinda do servidor; "versoes" é só o
+// que está desenhado agora (já filtrado) - _toggleArvore usa esse último pra
+// expandir/recolher sem perder a busca em andamento.
 function _renderArvore(containerId, mensagemVazia, versoes, estado, renderNoFn) {
   estado.versoes = versoes;
   const cont = document.getElementById(containerId);
@@ -2233,25 +2308,42 @@ function _renderArvore(containerId, mensagemVazia, versoes, estado, renderNoFn) 
 function _toggleArvore(estado, versaoId, renderArvoreFn) {
   if (estado.expandidas.has(versaoId)) estado.expandidas.delete(versaoId);
   else estado.expandidas.add(versaoId);
-  renderArvoreFn(estado.versoes);
+  renderArvoreFn();
+}
+
+// Filtro de busca comum a PQ/Compras: nº da versão, quem criou, data, e -
+// via camposOrigem(v) - os desenhos/planilha de origem daquela versão.
+function _filtrarVersoes(todas, termo, camposOrigem) {
+  if (!termo) return todas;
+  return todas.filter((v) => {
+    const base = [String(v.versao), v.criado_por_nome, new Date(v.criado_em).toLocaleDateString("pt-BR")];
+    if (base.some((c) => (c || "").toLowerCase().includes(termo))) return true;
+    return camposOrigem(v).some((c) => (c || "").toLowerCase().includes(termo));
+  });
 }
 
 // ---------- LISTA PQ ----------
-const pqArvoreState = { versoes: [], expandidas: new Set() };
+const pqArvoreState = { todas: [], versoes: [], expandidas: new Set() };
 
 async function carregarListaPQ() {
   const [versoes, rascunho] = await Promise.all([
     api(`/api/projetos/${state.projetoAtual.id}/lista-pq/versoes`),
     api(`/api/projetos/${state.projetoAtual.id}/lista-pq/rascunho`),
   ]);
-  renderArvorePQ(versoes);
+  pqArvoreState.todas = versoes;
+  renderArvorePQ();
   window._pqRascunho = rascunho.versao ? rascunho : null;
   document.getElementById("btn-continuar-rascunho-pq").classList.toggle("oculto", !window._pqRascunho);
 }
 
-function renderArvorePQ(versoes) {
-  _renderArvore("arvore-pq", "Nenhuma versão da Planilha de Quantidades salva ainda.", versoes, pqArvoreState, renderNoPQ);
+function renderArvorePQ() {
+  const termo = (document.getElementById("busca-pq")?.value || "").trim().toLowerCase();
+  const versoes = _filtrarVersoes(pqArvoreState.todas, termo, (v) => (v.origens || []).flatMap((o) => [o.numero_desenho, o.titulo]));
+  const mensagem = termo ? `Nenhuma versão encontrada para "${esc(termo)}".` : "Nenhuma versão da Planilha de Quantidades salva ainda.";
+  _renderArvore("arvore-pq", mensagem, versoes, pqArvoreState, renderNoPQ);
 }
+
+document.getElementById("busca-pq").addEventListener("input", renderArvorePQ);
 
 function renderNoPQ(v) {
   const aberta = pqArvoreState.expandidas.has(v.id);
@@ -2406,21 +2498,27 @@ async function salvarVersaoPQ(status) {
 }
 
 // ---------- LISTA DE COMPRAS ----------
-const comprasArvoreState = { versoes: [], expandidas: new Set() };
+const comprasArvoreState = { todas: [], versoes: [], expandidas: new Set() };
 
 async function carregarListaCompras() {
   const [versoes, rascunho] = await Promise.all([
     api(`/api/projetos/${state.projetoAtual.id}/lista-compras/versoes`),
     api(`/api/projetos/${state.projetoAtual.id}/lista-compras/rascunho`),
   ]);
-  renderArvoreCompras(versoes);
+  comprasArvoreState.todas = versoes;
+  renderArvoreCompras();
   window._comprasRascunho = rascunho.versao ? rascunho : null;
   document.getElementById("btn-continuar-rascunho-compras").classList.toggle("oculto", !window._comprasRascunho);
 }
 
-function renderArvoreCompras(versoes) {
-  _renderArvore("arvore-compras", "Nenhuma versão da Lista de Compras salva ainda.", versoes, comprasArvoreState, renderNoCompras);
+function renderArvoreCompras() {
+  const termo = (document.getElementById("busca-compras")?.value || "").trim().toLowerCase();
+  const versoes = _filtrarVersoes(comprasArvoreState.todas, termo, (v) => ((v.origem_pq && v.origem_pq.origens) || []).flatMap((o) => [o.numero_desenho, o.titulo]));
+  const mensagem = termo ? `Nenhuma versão encontrada para "${esc(termo)}".` : "Nenhuma versão da Lista de Compras salva ainda.";
+  _renderArvore("arvore-compras", mensagem, versoes, comprasArvoreState, renderNoCompras);
 }
+
+document.getElementById("busca-compras").addEventListener("input", renderArvoreCompras);
 
 function renderNoCompras(v) {
   const aberta = comprasArvoreState.expandidas.has(v.id);

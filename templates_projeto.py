@@ -1,12 +1,17 @@
-"""Moldes de Excel por projeto: upload, prévia (pra tela de mapeamento) e
+"""Templates de Excel por projeto: upload, prévia (pra tela de mapeamento) e
 o mapeamento de campos em si. O preenchimento de verdade (usar o
 mapeamento pra gerar um relatório) fica em relatorios.py.
 
-Moldes são vinculados ao PROJETO, não ao cliente - um mesmo cliente pode
+Templates são vinculados ao PROJETO, não ao cliente - um mesmo cliente pode
 enviar templates diferentes em projetos diferentes (ex.: o padrão mudou
 entre um projeto e outro, ou disciplinas diferentes usam layouts
 diferentes), então compartilhar por cliente causaria um projeto "herdar"
-por engano o molde mapeado de outro."""
+por engano o template mapeado de outro.
+
+Três tipos hoje: 'lista_materiais' (obrigatório - a Lista por Desenho não
+tem layout padrão, só sai em Excel com um template mapeado),
+'planilha_quantidades' e 'lista_compras' (opcionais - sem template mapeado,
+o relatório sai no layout padrão embutido no código, em relatorios.py)."""
 import base64
 import io
 import json
@@ -22,8 +27,8 @@ import db
 
 templates_projeto_bp = Blueprint("templates_projeto", __name__)
 
-TIPOS_VALIDOS = ("lista_materiais", "registro_documentos")
-TAMANHO_MAXIMO = 10 * 1024 * 1024  # 10 MB - um molde de Excel real é bem menor que isso
+TIPOS_VALIDOS = ("lista_materiais", "registro_documentos", "planilha_quantidades", "lista_compras")
+TAMANHO_MAXIMO = 10 * 1024 * 1024  # 10 MB - um template de Excel real é bem menor que isso
 
 
 @templates_projeto_bp.get("/api/projetos/<int:projeto_id>/templates")
@@ -55,13 +60,13 @@ def enviar_template(projeto_id):
 
     tipo = request.form.get("tipo")
     if tipo not in TIPOS_VALIDOS:
-        return jsonify({"erro": "Tipo de molde inválido"}), 400
+        return jsonify({"erro": "Tipo de template inválido"}), 400
 
     arquivo = request.files.get("arquivo")
     if not arquivo or not arquivo.filename:
         return jsonify({"erro": "Selecione um arquivo"}), 400
     if not arquivo.filename.lower().endswith(".xlsx"):
-        return jsonify({"erro": "O molde precisa ser um arquivo .xlsx"}), 400
+        return jsonify({"erro": "O template precisa ser um arquivo .xlsx"}), 400
 
     conteudo = arquivo.read()
     if len(conteudo) > TAMANHO_MAXIMO:
@@ -90,7 +95,7 @@ def enviar_template(projeto_id):
         )
         acao = "criar"
 
-    registrar(acao, "projeto_template", template_id, f"Enviou molde ({tipo}) para o projeto #{projeto_id}: {arquivo.filename}")
+    registrar(acao, "projeto_template", template_id, f"Enviou template ({tipo}) para o projeto #{projeto_id}: {arquivo.filename}")
     return jsonify({"id": template_id}), 201
 
 
@@ -254,7 +259,7 @@ def preview_template(projeto_id, template_id):
         "SELECT arquivo, mapeamento FROM projetos_templates WHERE id = %s AND projeto_id = %s", (template_id, projeto_id)
     )
     if not row:
-        return jsonify({"erro": "Molde não encontrado"}), 404
+        return jsonify({"erro": "Template não encontrado"}), 404
     try:
         wb = openpyxl.load_workbook(io.BytesIO(row["arquivo"]), data_only=True)
     except Exception:
@@ -285,7 +290,7 @@ def salvar_mapeamento(projeto_id, template_id):
         "SELECT id FROM projetos_templates WHERE id = %s AND projeto_id = %s", (template_id, projeto_id)
     )
     if not row:
-        return jsonify({"erro": "Molde não encontrado"}), 404
+        return jsonify({"erro": "Template não encontrado"}), 404
     mapeamento = request.get_json(force=True) or {}
     if not mapeamento.get("abas"):
         return jsonify({"erro": "Mapeamento vazio - associe ao menos um campo antes de salvar"}), 400
@@ -294,7 +299,7 @@ def salvar_mapeamento(projeto_id, template_id):
         "UPDATE projetos_templates SET mapeamento = %s WHERE id = %s",
         (json.dumps(mapeamento, ensure_ascii=False), template_id),
     )
-    registrar("editar", "projeto_template", template_id, f"Salvou o mapeamento de campos do molde #{template_id}")
+    registrar("editar", "projeto_template", template_id, f"Salvou o mapeamento de campos do template #{template_id}")
     return jsonify({"ok": True})
 
 
@@ -307,7 +312,7 @@ def excluir_template(projeto_id, template_id):
         "SELECT nome_arquivo FROM projetos_templates WHERE id = %s AND projeto_id = %s", (template_id, projeto_id)
     )
     if not row:
-        return jsonify({"erro": "Molde não encontrado"}), 404
+        return jsonify({"erro": "Template não encontrado"}), 404
     db.execute("DELETE FROM projetos_templates WHERE id = %s", (template_id,))
-    registrar("excluir", "projeto_template", template_id, f"Removeu o molde {row['nome_arquivo']} do projeto #{projeto_id}")
+    registrar("excluir", "projeto_template", template_id, f"Removeu o template {row['nome_arquivo']} do projeto #{projeto_id}")
     return jsonify({"ok": True})
