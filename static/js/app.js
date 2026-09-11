@@ -1475,42 +1475,53 @@ document.getElementById("btn-voltar-projetos").addEventListener("click", () => a
 async function abrirProjeto(id) {
   state.projetoAtual = state.projetos.find((p) => p.id === id);
   document.getElementById("projeto-detalhe-titulo").textContent = `${state.projetoAtual.codigo} — ${state.projetoAtual.nome}`;
-  document.getElementById("link-relatorio-pq-excel").href = `/api/projetos/${id}/lista-pq/relatorio/excel`;
-  document.getElementById("link-relatorio-pq-pdf").href = `/api/projetos/${id}/lista-pq/relatorio/pdf`;
-  document.getElementById("link-relatorio-compras-excel").href = `/api/projetos/${id}/lista-compras/relatorio/excel`;
-  document.getElementById("link-relatorio-compras-pdf").href = `/api/projetos/${id}/lista-compras/relatorio/pdf`;
   ativarTabInterna("projeto-detalhe");
   ativarSubtabPD("pd-desenho");
   await _atualizarStatusMoldeLista();
   await carregarListas(id);
 }
 
-// Mostra, na Lista por Desenho, se o PROJETO atual já tem o molde de Lista
-// de Materiais mapeado - sem isso a pessoa só descobria clicando em
-// "Baixar Excel" e caindo num erro. Também usado pra desabilitar o ícone de
-// baixar de cada lista (renderNoLista) enquanto não houver molde mapeado.
-// É por projeto, não por cliente - dois projetos do mesmo cliente podem ter
-// moldes diferentes (ou um ter e o outro não).
+// Estado do molde de impressão do projeto atual, refletido no botão único
+// "Molde de impressão" (cor + ícone dizem o estado, sem selo separado):
+//  - nenhum: nada enviado ainda
+//  - pendente: enviado, mas zero campos mapeados ainda (o backend só usa o
+//    molde quando pelo menos 1 campo foi mapeado - mapeamento parcial já
+//    conta como utilizável, então não existe um estado "mapeado pela
+//    metade" à parte: ou não tem nada mapeado (pendente), ou tem pelo
+//    menos algo mapeado e já funciona (mapeado/verde)
+//  - mapeado: pelo menos um campo mapeado - já é usado no download
+//  - erro: não deu pra consultar o servidor agora
+// Também é usado pra desabilitar o ícone de baixar de cada lista
+// (renderNoLista) enquanto não houver molde utilizável. É por projeto, não
+// por cliente - dois projetos do mesmo cliente podem ter moldes diferentes.
 async function _atualizarStatusMoldeLista() {
   const projetoId = state.projetoAtual?.id;
-  if (!projetoId) { state.moldeListaMateriaisMapeado = null; }
-  else {
+  let status = "nenhum";
+  if (!projetoId) {
+    state.moldeListaMateriaisMapeado = null;
+  } else {
     try {
       const templates = await api(`/api/projetos/${projetoId}/templates`);
       const molde = templates.find((t) => t.tipo === "lista_materiais");
       state.moldeListaMateriaisMapeado = !!(molde && molde.mapeado);
+      status = !molde ? "nenhum" : molde.mapeado ? "mapeado" : "pendente";
     } catch (err) {
-      state.moldeListaMateriaisMapeado = null; // não sabemos - não bloqueia nada, só não mostra o selo
+      state.moldeListaMateriaisMapeado = null; // não sabemos - não bloqueia o download, só o botão fica em "erro"
+      status = "erro";
     }
   }
-  const badge = document.getElementById("status-molde-lista");
-  if (badge) {
-    badge.innerHTML = state.moldeListaMateriaisMapeado === true
-      ? `<span class="status-molde-badge ok" title="O download em Excel de cada lista usa esse molde">✓ Molde mapeado</span>`
-      : state.moldeListaMateriaisMapeado === false
-        ? `<span class="status-molde-badge alerta" title="Sem molde mapeado, o download em Excel de cada lista fica indisponível">⚠ Sem molde de Lista de Materiais</span>`
-        : "";
-  }
+  const btn = document.getElementById("btn-upload-template");
+  if (!btn) return;
+  const config = {
+    nenhum: { icone: ICONE_MOLDE_UPLOAD, texto: "Molde de impressão", titulo: "Nenhum molde de Lista de Materiais enviado ainda - clique para enviar" },
+    pendente: { icone: ICONE_MOLDE_ALERTA, texto: "Molde sem mapear", titulo: "Molde enviado, mas ainda sem nenhum campo mapeado - clique para mapear" },
+    mapeado: { icone: ICONE_MOLDE_OK, texto: "Molde mapeado", titulo: "Molde ativo - o download em Excel de cada lista usa ele" },
+    erro: { icone: ICONE_MOLDE_ERRO, texto: "Molde de impressão", titulo: "Não foi possível verificar o molde agora - clique para tentar de novo" },
+  }[status];
+  btn.className = `btn-molde somente-admin status-${status}`;
+  btn.title = config.titulo;
+  btn.setAttribute("aria-label", config.titulo);
+  btn.innerHTML = `${config.icone}<span>${config.texto}</span>`;
 }
 
 document.querySelectorAll(".subnav-item-pd").forEach((btn) => {
@@ -1624,6 +1635,14 @@ const ICONE_SETA = `<svg viewBox="0 0 12 12" fill="none"><path d="M4 2.5 8 6l-4 
 const ICONE_LAPIS = `<svg viewBox="0 0 20 20" fill="none"><path d="M13.4 3.3a1.6 1.6 0 0 1 2.3 0l1 1a1.6 1.6 0 0 1 0 2.3L7.4 15.9l-4 .8.8-4 9.2-9.4Z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M11.9 4.8l3.3 3.3" stroke="currentColor" stroke-width="1.3"/></svg>`;
 const ICONE_IMPRIMIR = `<svg viewBox="0 0 20 20" fill="none"><path d="M6.3 3.3h7.4v4H6.3z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><rect x="3" y="7.3" width="14" height="6.7" rx="1.3" fill="currentColor" fill-opacity=".06" stroke="currentColor" stroke-width="1.25"/><rect x="6.3" y="10.6" width="7.4" height="5.7" fill="currentColor" fill-opacity=".08" stroke="currentColor" stroke-width="1.15"/><circle cx="14.1" cy="9.5" r=".75" fill="currentColor"/></svg>`;
 const ICONE_EXCLUIR = `<svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
+const ICONE_PDF = `<svg viewBox="0 0 20 20" fill="none"><path d="M6 2.5h6l3 3v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M12 2.5V6h3" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M6.8 11h1.1a1.1 1.1 0 1 1 0 2.2H6.8V11Zm0 0v3.6M10.3 14.6V11h1.3a1.8 1.8 0 0 1 0 3.6h-1.3Zm4-3.6h1.6M14.3 11v3.6m0-1.8h1.4" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+// Ícones do botão único "Molde de impressão" - a cor+ícone já diz o estado,
+// sem precisar de um selo à parte (ver _atualizarStatusMoldeLista).
+const ICONE_MOLDE_UPLOAD = `<svg viewBox="0 0 20 20" fill="none"><path d="M10 13V4M6.5 7.5 10 4l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 13.5v1.7a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const ICONE_MOLDE_ALERTA = `<svg viewBox="0 0 20 20" fill="none"><path d="M10 3.2 17.5 16h-15L10 3.2Z" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 8.3v3.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10" cy="13.5" r=".9" fill="currentColor"/></svg>`;
+const ICONE_MOLDE_OK = `<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.3" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.5"/><path d="M6.8 10.2l2.1 2.1 4.3-4.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const ICONE_MOLDE_ERRO = `<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.3" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.5"/><path d="M7.5 7.5l5 5M12.5 7.5l-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
 
 function renderNoLista(l) {
   const aberta = arvoreState.expandidas.has(l.id);
@@ -1642,7 +1661,7 @@ function renderNoLista(l) {
         <span class="arvore-acoes">
           <button class="link-acao" onclick="abrirEditorMateriais(${l.id})">Editar materiais</button>
           ${state.moldeListaMateriaisMapeado === false
-            ? `<span class="acao-icone desabilitado" title="Cliente sem molde de Lista de Materiais mapeado - vá em &quot;Upload de Template&quot;" aria-label="Baixar Excel (indisponível, sem molde mapeado)">${ICONE_IMPRIMIR}</span>`
+            ? `<span class="acao-icone desabilitado" title="Projeto sem molde de Lista de Materiais mapeado - use o botão &quot;Molde de impressão&quot; acima" aria-label="Baixar Excel (indisponível, sem molde mapeado)">${ICONE_IMPRIMIR}</span>`
             : `<a class="acao-icone" href="/api/listas/${l.id}/relatorio/excel" target="_blank" title="Baixar Excel" aria-label="Baixar Excel">${ICONE_IMPRIMIR}</a>`}
           <button class="acao-icone somente-admin" onclick="abrirEditorDados(${l.id})" title="Editar dados" aria-label="Editar dados">${ICONE_LAPIS}</button>
           <button class="acao-icone acao-perigo somente-master" onclick="excluirLista(${l.id})" title="Excluir" aria-label="Excluir">${ICONE_EXCLUIR}</button>
@@ -2259,6 +2278,8 @@ function renderNoPQ(v) {
         </span>
         <span class="arvore-acoes">
           <button class="link-acao" onclick="verVersaoPQ(${v.id})">Ver</button>
+          <a class="acao-icone" href="/api/projetos/${state.projetoAtual.id}/lista-pq/relatorio/excel?versao_id=${v.id}" target="_blank" title="Baixar Excel" aria-label="Baixar Excel desta versão">${ICONE_IMPRIMIR}</a>
+          <a class="acao-icone" href="/api/projetos/${state.projetoAtual.id}/lista-pq/relatorio/pdf?versao_id=${v.id}" target="_blank" title="Baixar PDF" aria-label="Baixar PDF desta versão">${ICONE_PDF}</a>
         </span>
       </div>
       <div class="arvore-filhos ${aberta ? "" : "oculto"}">${aberta ? filhosHtml : ""}</div>
@@ -2435,6 +2456,8 @@ function renderNoCompras(v) {
         </span>
         <span class="arvore-acoes">
           <button class="link-acao" onclick="verVersaoCompras(${v.id})">Ver</button>
+          <a class="acao-icone" href="/api/projetos/${state.projetoAtual.id}/lista-compras/relatorio/excel?versao_id=${v.id}" target="_blank" title="Baixar Excel" aria-label="Baixar Excel desta versão">${ICONE_IMPRIMIR}</a>
+          <a class="acao-icone" href="/api/projetos/${state.projetoAtual.id}/lista-compras/relatorio/pdf?versao_id=${v.id}" target="_blank" title="Baixar PDF" aria-label="Baixar PDF desta versão">${ICONE_PDF}</a>
         </span>
       </div>
       <div class="arvore-filhos ${aberta ? "" : "oculto"}">${aberta ? filhosHtml : ""}</div>

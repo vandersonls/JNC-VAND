@@ -185,75 +185,59 @@
 
     <!-- PROJETO DETALHE -->
     <section id="tab-projeto-detalhe" class="tab">
-      <div class="tab-header">
-        <button class="btn-secundario" id="btn-voltar-projetos">&larr; Projetos</button>
-        <h2 id="projeto-detalhe-titulo">Projeto</h2>
+      <!-- Linha 1: navegação estrutural, sozinha e discreta pra não ser
+           clicada por engano ao ler o título logo abaixo. -->
+      <div class="projeto-voltar-linha">
+        <button class="btn-icone-voltar" id="btn-voltar-projetos" title="Voltar para Projetos" aria-label="Voltar para Projetos">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M12.5 4.5 6.5 10l6 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <!-- Linha 2: contexto - o projeto em que a pessoa está. -->
+      <h2 id="projeto-detalhe-titulo" class="projeto-titulo">Projeto</h2>
+
+      <!-- Linha 3: navegação interna entre as 3 visões, alinhada à esquerda
+           logo abaixo do título (leitura em "F": contexto primeiro, depois
+           as opções, só então o conteúdo). Compartilhada pelas 3 abas. -->
+      <div class="subnav-pd">
+        <button class="subnav-item-pd ativo" data-subtab-pd="pd-desenho">Lista de Material por Desenho</button>
+        <button class="subnav-item-pd" data-subtab-pd="pd-pq">Planilha de Quantidades</button>
+        <button class="subnav-item-pd" data-subtab-pd="pd-compras">Lista de Compras</button>
       </div>
 
       <!-- ABA: LISTA DE MATERIAL POR DESENHO -->
       <div id="subtab-pd-desenho" class="subtab-pd ativo">
-        <div class="tab-header">
-          <div class="acoes">
-            <button class="btn-primario somente-admin" id="btn-nova-lista">+ Nova Lista por Desenho</button>
-            <button class="btn-secundario somente-admin" id="btn-upload-template">Upload de Template</button>
-            <span id="status-molde-lista"></span>
-            <input type="search" id="busca-listas" placeholder="Buscar por número, cliente ou título..." autocomplete="off" style="margin-left:auto">
-          </div>
+        <!-- Linha 4: ferramentas da lista (filtrar / definir o molde de impressão). -->
+        <div class="pd-toolbar">
+          <input type="search" id="busca-listas" class="pd-busca" placeholder="Buscar por número, cliente ou título..." autocomplete="off">
+          <button class="btn-molde somente-admin" id="btn-upload-template" type="button"></button>
         </div>
-        <div class="subnav-pd-linha">
-          <h3 class="subtitulo-arvore">Listas de Materiais Cadastrados</h3>
-          <div class="subnav-pd">
-            <button class="subnav-item-pd ativo" data-subtab-pd="pd-desenho">Lista de Material por Desenho</button>
-            <button class="subnav-item-pd" data-subtab-pd="pd-pq">Planilha de Quantidades</button>
-            <button class="subnav-item-pd" data-subtab-pd="pd-compras">Lista de Compras</button>
-          </div>
+        <!-- Linha 5: ação principal da tela, isolada, logo acima da tabela. -->
+        <h3 class="subtitulo-arvore">Listas de Materiais Cadastrados</h3>
+        <div class="pd-acao-primaria">
+          <button class="btn-primario somente-admin" id="btn-nova-lista">+ Nova Lista por Desenho</button>
         </div>
         <div class="arvore" id="arvore-listas"></div>
       </div>
 
       <!-- ABA: PLANILHA DE QUANTIDADES -->
       <div id="subtab-pd-pq" class="subtab-pd">
-        <div class="tab-header">
-          <div class="acoes">
-            <a class="btn-secundario" id="link-relatorio-pq-excel" href="#" target="_blank">Relatório Excel</a>
-            <a class="btn-secundario" id="link-relatorio-pq-pdf" href="#" target="_blank">Relatório PDF</a>
-            <button class="btn-primario somente-admin" id="btn-criar-pq">+ Criar Nova Planilha de Quantidades</button>
-            <button class="btn-primario somente-admin oculto" id="btn-revisar-pq">Revisar lista</button>
-            <button class="btn-secundario somente-admin oculto" id="btn-continuar-rascunho-pq">Continuar rascunho</button>
-          </div>
-        </div>
-        <div class="subnav-pd-linha">
-          <h3 class="subtitulo-arvore">Planilha de Quantidades</h3>
-          <div class="subnav-pd">
-            <button class="subnav-item-pd" data-subtab-pd="pd-desenho">Lista de Material por Desenho</button>
-            <button class="subnav-item-pd ativo" data-subtab-pd="pd-pq">Planilha de Quantidades</button>
-            <button class="subnav-item-pd" data-subtab-pd="pd-compras">Lista de Compras</button>
-          </div>
-        </div>
         <h3 class="subtitulo-arvore">Histórico de Versões</h3>
+        <div class="pd-acao-primaria">
+          <button class="btn-primario somente-admin" id="btn-criar-pq">+ Criar Nova Planilha de Quantidades</button>
+          <button class="btn-primario somente-admin oculto" id="btn-revisar-pq">Revisar lista</button>
+          <button class="btn-secundario somente-admin oculto" id="btn-continuar-rascunho-pq">Continuar rascunho</button>
+        </div>
         <div class="arvore" id="arvore-pq"></div>
       </div>
 
       <!-- ABA: LISTA DE COMPRAS -->
       <div id="subtab-pd-compras" class="subtab-pd">
-        <div class="tab-header">
-          <div class="acoes">
-            <a class="btn-secundario" id="link-relatorio-compras-excel" href="#" target="_blank">Relatório Excel</a>
-            <a class="btn-secundario" id="link-relatorio-compras-pdf" href="#" target="_blank">Relatório PDF</a>
-            <button class="btn-primario somente-admin" id="btn-criar-compras">+ Criar Nova Lista de Compras</button>
-            <button class="btn-primario somente-admin oculto" id="btn-revisar-compras">Revisar lista</button>
-            <button class="btn-secundario somente-admin oculto" id="btn-continuar-rascunho-compras">Continuar rascunho</button>
-          </div>
-        </div>
-        <div class="subnav-pd-linha">
-          <h3 class="subtitulo-arvore">Lista de Compras</h3>
-          <div class="subnav-pd">
-            <button class="subnav-item-pd" data-subtab-pd="pd-desenho">Lista de Material por Desenho</button>
-            <button class="subnav-item-pd" data-subtab-pd="pd-pq">Planilha de Quantidades</button>
-            <button class="subnav-item-pd ativo" data-subtab-pd="pd-compras">Lista de Compras</button>
-          </div>
-        </div>
         <h3 class="subtitulo-arvore">Histórico de Versões</h3>
+        <div class="pd-acao-primaria">
+          <button class="btn-primario somente-admin" id="btn-criar-compras">+ Criar Nova Lista de Compras</button>
+          <button class="btn-primario somente-admin oculto" id="btn-revisar-compras">Revisar lista</button>
+          <button class="btn-secundario somente-admin oculto" id="btn-continuar-rascunho-compras">Continuar rascunho</button>
+        </div>
         <div class="arvore" id="arvore-compras"></div>
       </div>
     </section>

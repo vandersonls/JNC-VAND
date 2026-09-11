@@ -137,9 +137,7 @@ body {
 .subtab.ativo { display: block; }
 .subtab-pd { display: none; }
 .subtab-pd.ativo { display: block; }
-.subnav-pd-linha { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 24px 0 10px; }
-.subnav-pd-linha .subtitulo-arvore { margin: 0; }
-.subnav-pd { display: flex; border: 1px solid var(--azul); border-radius: 8px; overflow: hidden; }
+.subnav-pd { display: flex; width: fit-content; border: 1px solid var(--azul); border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
 .subnav-item-pd {
   background: var(--branco); border: none; border-right: 1px solid var(--azul); padding: 8px 18px;
   font-size: 13px; cursor: pointer; color: var(--azul); min-width: 150px; text-align: center;
@@ -238,8 +236,43 @@ h2 { margin-top: 0; color: var(--azul); }
 }
 .tab-header h2 { flex: 1; }
 .acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-#busca-listas { width: 260px; }
 .filtro-duplicados { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--cinza); cursor: pointer; white-space: nowrap; }
+
+/* ---------- CABEÇALHO DO PROJETO (detalhe) ---------- */
+/* Botão de voltar isolado numa linha só, com respiro embaixo, pra não ficar
+   colado no título e ser clicado sem querer ao ler/interagir com ele. */
+.projeto-voltar-linha { margin-bottom: 10px; }
+.btn-icone-voltar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border: 1px solid var(--borda); border-radius: 8px;
+  background: var(--branco); color: var(--azul); cursor: pointer; padding: 0;
+}
+.btn-icone-voltar svg { width: 16px; height: 16px; }
+.btn-icone-voltar:hover { background: #eef1f6; border-color: var(--azul); }
+.projeto-titulo { margin: 0 0 20px; font-size: 22px; }
+
+/* Linha 4 da aba "Lista de Material por Desenho": busca + molde de impressão. */
+.pd-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+.pd-busca { width: 390px; max-width: 100%; } /* +50% sobre os 260px originais */
+
+/* Linha 5: ação principal isolada, sempre à esquerda, logo acima da tabela/histórico. */
+.pd-acao-primaria { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+
+/* Botão único de molde de impressão: a cor já diz o estado, sem precisar
+   de um selo à parte. Clique sempre abre a mesma tela de upload/mapeamento. */
+.btn-molde {
+  display: inline-flex; align-items: center; gap: 8px; border-radius: 8px; padding: 0 14px; height: 38px;
+  font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--borda); background: transparent;
+  color: var(--cinza); white-space: nowrap; transition: background .15s, border-color .15s, color .15s;
+}
+.btn-molde svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.btn-molde:hover { border-color: var(--azul); color: var(--azul); }
+.btn-molde.status-pendente { background: #fff3e0; border-color: #f0c98a; color: #b9720a; }
+.btn-molde.status-pendente:hover { border-color: #b9720a; }
+.btn-molde.status-mapeado { background: #e6f4ea; border-color: #a9d8b4; color: var(--sucesso); }
+.btn-molde.status-mapeado:hover { border-color: var(--sucesso); }
+.btn-molde.status-erro { background: #fdecea; border-color: #f3b4ae; color: var(--erro); }
+.btn-molde.status-erro:hover { border-color: var(--erro); }
 
 .tabela tr.linha-duplicada td { background: #fff6e0; }
 .tabela tr.linha-duplicada:hover td { background: #ffefc4; }
@@ -395,12 +428,6 @@ input[type="number"], select, textarea {
 .status-template.pendente { color: #b9720a; }
 .status-template.ok { color: var(--sucesso); }
 
-/* Selo ao lado de "Upload de Template" na Lista por Desenho - indica se o
-   cliente do projeto já tem molde de Lista de Materiais mapeado, sem
-   precisar clicar em "Baixar Excel" pra descobrir. */
-.status-molde-badge { font-size: 12.5px; font-weight: 600; padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
-.status-molde-badge.ok { color: var(--sucesso); background: #e6f4ea; }
-.status-molde-badge.alerta { color: #b9720a; background: #fff3e0; }
 .card-template-cliente .acoes-linha { margin-top: 10px; gap: 8px; }
 
 /* Tela cheia de verdade (não só "modal grande") - o editor de mapeamento
