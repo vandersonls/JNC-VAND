@@ -48,42 +48,31 @@ def _adicionar_planilha(wb, titulo, colunas, linhas):
         ws.append([linha.get(c, "") for c in colunas])
 
 
+# Fonte única do que entra no backup completo - reaproveitada pelo painel de
+# "Bancos de Dados" (bancos.py) pra gerar o mesmo backup contra QUALQUER
+# banco cadastrado ali, não só o principal que este arquivo usa.
+PLANILHAS_BACKUP = [
+    ("Materiais", ["id", "codigo", "descricao", "fabricante", "bitola", "unidade", "area_id"],
+     "SELECT id, codigo, descricao, fabricante, bitola, unidade, area_id FROM materiais WHERE ativo = 1 ORDER BY codigo"),
+    ("Clientes", ["id", "razao_social", "nome_fantasia", "cnpj_cpf", "contato", "telefone", "email", "endereco"],
+     "SELECT id, razao_social, nome_fantasia, cnpj_cpf, contato, telefone, email, endereco FROM clientes WHERE ativo = 1 ORDER BY razao_social"),
+    ("Projetos", ["id", "codigo", "nome", "cliente_id", "status", "numero_cliente", "numero_fornecedor", "area_id"],
+     "SELECT id, codigo, nome, cliente_id, status, numero_cliente, numero_fornecedor, area_id FROM projetos ORDER BY codigo"),
+    ("Areas", ["id", "nome"], "SELECT id, nome FROM areas ORDER BY nome"),
+    ("Usuarios", ["id", "nome", "email", "perfil", "ativo"],
+     "SELECT id, nome, email, perfil, ativo FROM usuarios ORDER BY nome"),
+    ("Listas por Desenho", ["id", "projeto_id", "numero_desenho", "titulo", "versao_atual_id"],
+     "SELECT id, projeto_id, numero_desenho, titulo, versao_atual_id FROM listas_desenho ORDER BY projeto_id, numero_desenho"),
+]
+
+
 @config_bp.get("/api/backup/excel")
 @perfis_permitidos("master")
 def backup_excel():
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
-
-    _adicionar_planilha(
-        wb, "Materiais",
-        ["id", "codigo", "descricao", "fabricante", "bitola", "unidade", "area_id"],
-        db.query_all("SELECT id, codigo, descricao, fabricante, bitola, unidade, area_id FROM materiais WHERE ativo = 1 ORDER BY codigo"),
-    )
-    _adicionar_planilha(
-        wb, "Clientes",
-        ["id", "razao_social", "nome_fantasia", "cnpj_cpf", "contato", "telefone", "email", "endereco"],
-        db.query_all("SELECT id, razao_social, nome_fantasia, cnpj_cpf, contato, telefone, email, endereco FROM clientes WHERE ativo = 1 ORDER BY razao_social"),
-    )
-    _adicionar_planilha(
-        wb, "Projetos",
-        ["id", "codigo", "nome", "cliente_id", "status", "numero_cliente", "numero_fornecedor", "area_id"],
-        db.query_all("SELECT id, codigo, nome, cliente_id, status, numero_cliente, numero_fornecedor, area_id FROM projetos ORDER BY codigo"),
-    )
-    _adicionar_planilha(
-        wb, "Areas",
-        ["id", "nome"],
-        db.query_all("SELECT id, nome FROM areas ORDER BY nome"),
-    )
-    _adicionar_planilha(
-        wb, "Usuarios",
-        ["id", "nome", "email", "perfil", "ativo"],
-        db.query_all("SELECT id, nome, email, perfil, ativo FROM usuarios ORDER BY nome"),
-    )
-    _adicionar_planilha(
-        wb, "Listas por Desenho",
-        ["id", "projeto_id", "numero_desenho", "titulo", "versao_atual_id"],
-        db.query_all("SELECT id, projeto_id, numero_desenho, titulo, versao_atual_id FROM listas_desenho ORDER BY projeto_id, numero_desenho"),
-    )
+    for titulo, colunas, sql in PLANILHAS_BACKUP:
+        _adicionar_planilha(wb, titulo, colunas, db.query_all(sql))
 
     buffer = io.BytesIO()
     wb.save(buffer)

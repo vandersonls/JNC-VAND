@@ -421,7 +421,20 @@ input[type="number"], select, textarea {
 .card-risco { border: 1px solid #fde2e2; margin-bottom: 16px; }
 #risco-confirmacao-texto { width: 100%; margin: 8px 0 4px; }
 
-/* ---------- MOLDES DE EXCEL POR CLIENTE ---------- */
+/* ---------- BANCOS DE DADOS (painel de backup manual) ---------- */
+.lista-bancos { display: flex; flex-direction: column; gap: 12px; }
+.card-banco {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  background: var(--branco); border: 1px solid var(--borda); border-radius: 10px; padding: 14px 18px;
+}
+.card-banco-info h4 { margin: 0 0 4px; color: var(--azul); display: flex; align-items: center; gap: 8px; }
+.card-banco .acoes-linha { gap: 8px; flex-wrap: wrap; }
+.badge-banco-status { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.badge-banco-status.ok { color: var(--sucesso); background: #e6f4ea; }
+.badge-banco-status.erro { color: var(--erro); background: #fdecea; }
+.badge-banco-status.desconhecido { color: var(--cinza); background: #eef1f6; }
+
+/* ---------- TEMPLATES DE EXCEL POR PROJETO ---------- */
 .templates-cliente-grid { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
 .card-template-cliente { border: 1px solid var(--borda); border-radius: 10px; padding: 14px 16px; }
 .card-template-cliente h4 { margin: 0 0 6px; color: var(--azul); }

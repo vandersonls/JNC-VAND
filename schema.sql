@@ -507,3 +507,29 @@ ALTER TABLE auditoria MODIFY COLUMN acao ENUM('criar', 'editar', 'excluir', 'imp
 
 -- Usuário master inicial (senha: admin123 - troque após o primeiro login)
 -- Hash gerado com werkzeug.security.generate_password_hash em tempo de execução (ver seed.py)
+
+-- =========================================================
+-- BANCOS DE DADOS MONITORADOS (painel de backup manual)
+-- =========================================================
+-- Motivo de existir: em 2026-09-18 o MySQL de produção do Railway ficou
+-- inacessível (assinatura vencida) sem nenhum backup completo salvo fora
+-- dele - só existiam extrações parciais e antigas. Este painel deixa
+-- registrado, de dentro do próprio sistema, quais bancos existem (o
+-- principal, que o app já usa, e quaisquer outros - ex.: produção Railway,
+-- mesmo enquanto o app roda local) pra poder testar se cada um está no ar e
+-- baixar um backup completo (Excel) de qualquer um deles com um clique, sem
+-- precisar lembrar a connection string na hora do aperto.
+-- A senha fica em texto simples na coluna (mesmo nível de proteção que
+-- MYSQL_URL/DB_PASSWORD já têm hoje, como variável de ambiente) - só
+-- master vê e mexe nessa tela (ver perfis_permitidos("master") nas rotas).
+CREATE TABLE IF NOT EXISTS bancos_monitorados (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    host VARCHAR(255) NOT NULL,
+    porta INT NOT NULL DEFAULT 3306,
+    usuario VARCHAR(100) NOT NULL,
+    senha VARCHAR(255) NOT NULL,
+    banco VARCHAR(100) NOT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;

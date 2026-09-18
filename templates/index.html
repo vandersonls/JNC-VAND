@@ -260,7 +260,7 @@
         <button class="subnav-item" data-subtab="config-usuarios">Usuário</button>
         <button class="subnav-item" data-subtab="config-areas">Áreas</button>
         <button class="subnav-item" data-subtab="config-auditoria">Auditoria</button>
-        <button class="subnav-item" data-subtab="config-backup">Backup</button>
+        <button class="subnav-item" data-subtab="config-bancos">Bancos de Dados</button>
         <button class="subnav-item" data-subtab="config-risco">Zona de Risco</button>
       </div>
 
@@ -324,12 +324,18 @@
         </div>
       </div>
 
-      <div id="subtab-config-backup" class="subtab">
-        <div class="card-backup">
-          <h3>Backup Completo dos Dados</h3>
-          <p>Gera um arquivo Excel com todos os materiais, clientes, projetos, áreas, usuários e listas por desenho cadastrados no sistema — uma cópia de segurança para guardar fora do sistema.</p>
-          <a class="btn-primario somente-master" href="/api/backup/excel" target="_blank">⬇ Baixar Backup Completo (Excel)</a>
+      <div id="subtab-config-bancos" class="subtab">
+        <div class="tab-header">
+          <div class="acoes">
+            <button class="btn-primario somente-master" id="btn-novo-banco">+ Adicionar Banco</button>
+          </div>
         </div>
+        <p style="color:var(--cinza); font-size:13px; margin:-8px 0 16px;">
+          Teste se cada banco está no ar e baixe uma cópia completa (Excel) com um clique — backup
+          manual, útil principalmente pra bancos externos (ex.: produção), pra ter uma cópia guardada
+          fora do sistema. "Este servidor" é sempre o banco que o próprio app está usando agora.
+        </p>
+        <div id="lista-bancos" class="lista-bancos"></div>
       </div>
 
       <div id="subtab-config-risco" class="subtab">

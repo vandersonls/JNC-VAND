@@ -251,6 +251,7 @@ function ativarSubtab(nome) {
   if (nome === "config-auditoria") carregarAuditoria(true);
   if (nome === "config-areas") carregarAreas();
   if (nome === "config-usuarios") carregarUsuarios();
+  if (nome === "config-bancos") carregarBancos();
 }
 
 function ativarTabInterna(nome) {
@@ -2816,6 +2817,110 @@ document.getElementById("form-configuracoes").addEventListener("submit", async (
     toast("Configurações salvas");
   } catch (err) { toast(err.message, "erro"); }
 });
+
+// ---------- BANCOS DE DADOS (painel de backup manual) ----------
+// Nasceu do episódio de 2026-09-18: o MySQL de produção do Railway ficou
+// inacessível (assinatura vencida) sem nenhum backup completo salvo fora
+// dele. Esta tela deixa cadastrado, dentro do próprio sistema, quais bancos
+// existem (o principal, que o app já usa, e quaisquer outros - ex.: um
+// banco de produção, mesmo enquanto o app roda local) pra testar se cada um
+// está no ar e baixar um backup completo (Excel) de qualquer um com um clique.
+const _statusBancos = {}; // cache em memória (id -> true/false); só dura enquanto a aba está aberta
+
+function _badgeBancoStatus(status) {
+  if (status === true) return `<span class="badge-banco-status ok">● No ar</span>`;
+  if (status === false) return `<span class="badge-banco-status erro">● Inacessível</span>`;
+  return `<span class="badge-banco-status desconhecido">○ Não testado</span>`;
+}
+
+async function carregarBancos() {
+  const bancos = await api("/api/bancos");
+  renderListaBancos(bancos);
+}
+
+function renderListaBancos(bancos) {
+  window._bancosCache = bancos;
+  document.getElementById("lista-bancos").innerHTML = bancos.map((b) => `
+    <div class="card-banco">
+      <div class="card-banco-info">
+        <h4>${esc(b.nome)} ${_badgeBancoStatus(_statusBancos[b.id])}</h4>
+        <p class="arvore-sub">${esc(b.host)}:${b.porta} — banco "${esc(b.banco)}"</p>
+      </div>
+      <div class="acoes-linha">
+        <button class="btn-secundario" onclick="testarBanco('${b.id}')">Testar conexão</button>
+        <a class="btn-primario" href="/api/bancos/${b.id}/backup/excel" target="_blank">⬇ Backup (Excel)</a>
+        ${b.editavel ? `
+          <button class="btn-secundario" onclick='modalBanco(${JSON.stringify(b)})'>Editar</button>
+          <button class="btn-perigo" onclick="excluirBanco(${b.id})">Remover</button>
+        ` : ""}
+      </div>
+    </div>`).join("");
+}
+
+async function testarBanco(id) {
+  try {
+    const r = await api(`/api/bancos/${id}/testar`, { method: "POST" });
+    _statusBancos[id] = !!r.ok;
+    toast(r.ok ? "Conectou normalmente" : `Não conectou: ${r.erro || "erro desconhecido"}`, r.ok ? "sucesso" : "erro");
+  } catch (err) {
+    _statusBancos[id] = false;
+    toast(err.message, "erro");
+  }
+  renderListaBancos(window._bancosCache);
+}
+
+function modalBanco(banco = null) {
+  abrirModal(`
+    <h3>${banco ? "Editar" : "Adicionar"} Banco de Dados</h3>
+    <div class="form-grid">
+      <label>Nome</label>
+      <input id="banco-nome" value="${banco ? esc(banco.nome) : ""}" placeholder="Ex.: Produção (Railway)">
+      <div class="campo-dupla">
+        <div><label>Host</label><input id="banco-host" value="${banco ? esc(banco.host) : ""}" placeholder="ex.: algo.proxy.rlwy.net"></div>
+        <div><label>Porta</label><input id="banco-porta" type="number" value="${banco ? banco.porta : 3306}"></div>
+      </div>
+      <label>Usuário</label>
+      <input id="banco-usuario" value="${banco ? esc(banco.usuario) : ""}">
+      <label>Senha${banco ? " (deixe em branco pra manter a atual)" : ""}</label>
+      <input id="banco-senha" type="password" autocomplete="new-password">
+      <label>Nome do banco (schema)</label>
+      <input id="banco-banco" value="${banco ? esc(banco.banco) : ""}">
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
+      <button class="btn-primario" onclick="salvarBanco(${banco ? `'${banco.id}'` : "null"})">Salvar</button>
+    </div>
+  `);
+}
+
+async function salvarBanco(id) {
+  const payload = {
+    nome: document.getElementById("banco-nome").value.trim(),
+    host: document.getElementById("banco-host").value.trim(),
+    porta: document.getElementById("banco-porta").value.trim(),
+    usuario: document.getElementById("banco-usuario").value.trim(),
+    senha: document.getElementById("banco-senha").value,
+    banco: document.getElementById("banco-banco").value.trim(),
+  };
+  try {
+    if (id) await api(`/api/bancos/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+    else await api("/api/bancos", { method: "POST", body: JSON.stringify(payload) });
+    fecharModal();
+    toast("Banco salvo");
+    carregarBancos();
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+async function excluirBanco(id) {
+  if (!(await confirmarPersonalizado("Remover este banco da lista? Isso não apaga nem afeta o banco de dados em si, só tira ele do painel."))) return;
+  try {
+    await api(`/api/bancos/${id}`, { method: "DELETE" });
+    toast("Banco removido do painel");
+    carregarBancos();
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+document.getElementById("btn-novo-banco").addEventListener("click", () => modalBanco());
 
 // ---------- ZONA DE RISCO ----------
 function confirmarAcaoRisco(titulo, mensagem, palavra, aoConfirmar) {
