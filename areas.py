@@ -9,9 +9,11 @@ areas_bp = Blueprint("areas", __name__)
 
 
 def areas_permitidas(usuario):
-    """Retorna None se o usuário enxerga todas as áreas (perfil master),
-    ou a lista de IDs de área que ele tem permissão de acessar."""
-    if usuario.perfil == "master":
+    """Retorna None se o usuário enxerga todas as áreas (perfil master ou
+    moderador - moderador é hierarquicamente acima de master, ver
+    auth.py:perfis_permitidos), ou a lista de IDs de área que ele tem
+    permissão de acessar."""
+    if usuario.perfil in ("master", "moderador"):
         return None
     rows = db.query_all("SELECT area_id FROM usuario_areas WHERE usuario_id = %s", (usuario.id,))
     return [r["area_id"] for r in rows]

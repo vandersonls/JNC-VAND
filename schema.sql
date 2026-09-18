@@ -12,11 +12,18 @@ CREATE TABLE IF NOT EXISTS usuarios (
     nome VARCHAR(150) NOT NULL,
     email VARCHAR(150) NOT NULL UNIQUE,
     senha_hash VARCHAR(255) NOT NULL,
-    perfil ENUM('master', 'administrador', 'visualizador') NOT NULL DEFAULT 'visualizador',
+    perfil ENUM('moderador', 'master', 'administrador', 'visualizador') NOT NULL DEFAULT 'visualizador',
     ativo TINYINT(1) NOT NULL DEFAULT 1,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
+-- "moderador" foi adicionado em 2026-09-18 (acima de master - ver Painel
+-- NJC/bancos.py): enxerga tudo que master enxerga, mais a administração da
+-- própria plataforma (bancos de dados, credenciais de infra), que não devia
+-- ficar visível pra todo mundo com perfil master. ALTER idempotente - se
+-- rodar de novo com os mesmos valores não há problema.
+ALTER TABLE usuarios MODIFY COLUMN perfil ENUM('moderador', 'master', 'administrador', 'visualizador') NOT NULL DEFAULT 'visualizador';
 
 SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'usuarios' AND COLUMN_NAME = 'sessao_ultima_atividade');

@@ -1,13 +1,21 @@
-"""Painel de "Bancos de Dados" (Configurações -> Bancos de Dados, só master):
-registra outras instâncias de MySQL (ex.: produção no Railway, mesmo
-enquanto o app roda local pra teste) pra poder, com um clique, testar se
-cada uma está no ar e baixar um backup completo (Excel) dela.
+"""Painel "NJC" (aba própria no menu, fora de Configurações e de qualquer
+projeto de usuário, só pra quem tem perfil "moderador"): registra outras
+instâncias de MySQL (ex.: produção no Railway, mesmo enquanto o app roda
+local pra teste) pra poder, com um clique, testar se cada uma está no ar e
+baixar um backup completo (Excel) dela.
 
 Nasceu do episódio de 2026-09-18: o MySQL de produção do Railway ficou
 inacessível (assinatura vencida) e não existia nenhum backup completo salvo
 fora dele - só extrações parciais e antigas. Esta tela deixa o backup manual
 de qualquer banco monitorado a um clique de distância, sem precisar guardar
 a connection string em outro lugar (bloco de notas, chat, etc.).
+
+"moderador" é deliberadamente MAIS restrito que "master" aqui - master é
+quem administra o negócio (usuários, áreas, clientes/projetos), moderador é
+quem administra a própria plataforma NJC (infraestrutura, credenciais de
+banco). Um master comum não deveria ver connection string de produção só
+por ser master; daí essa tela cobrar perfis_permitidos("moderador"), não
+"master" (ver auth.py:perfis_permitidos pra como os dois níveis se relacionam).
 
 O banco "principal" (o que o próprio app já está usando, via DB_CONFIG em
 app.py) sempre aparece como a primeira entrada da lista, mas não é uma linha
@@ -17,8 +25,8 @@ configuração salva no banco.
 
 A senha de cada banco cadastrado fica em texto simples na coluna - mesmo
 nível de proteção que MYSQL_URL/DB_PASSWORD já têm hoje como variável de
-ambiente. Só master enxerga e mexe nessa tela; a senha nunca volta pro
-front depois de salva (só um marcador indicando que existe)."""
+ambiente. A senha nunca volta pro front depois de salva (só um marcador
+indicando que existe)."""
 import io
 from datetime import datetime
 
@@ -51,7 +59,7 @@ def _conectar(banco):
 
 
 @bancos_bp.get("/api/bancos")
-@perfis_permitidos("master")
+@perfis_permitidos("moderador")
 def listar_bancos():
     linhas = db.query_all(
         "SELECT id, nome, host, porta, usuario, banco, atualizado_em FROM bancos_monitorados ORDER BY nome"
@@ -62,7 +70,7 @@ def listar_bancos():
 
 
 @bancos_bp.post("/api/bancos")
-@perfis_permitidos("master")
+@perfis_permitidos("moderador")
 def criar_banco():
     d = request.get_json(force=True) or {}
     obrigatorios = ("nome", "host", "usuario", "senha", "banco")
@@ -81,7 +89,7 @@ def criar_banco():
 
 
 @bancos_bp.put("/api/bancos/<int:banco_id>")
-@perfis_permitidos("master")
+@perfis_permitidos("moderador")
 def editar_banco(banco_id):
     row = db.query_one("SELECT id FROM bancos_monitorados WHERE id = %s", (banco_id,))
     if not row:
@@ -112,7 +120,7 @@ def editar_banco(banco_id):
 
 
 @bancos_bp.delete("/api/bancos/<int:banco_id>")
-@perfis_permitidos("master")
+@perfis_permitidos("moderador")
 def excluir_banco(banco_id):
     row = db.query_one("SELECT nome FROM bancos_monitorados WHERE id = %s", (banco_id,))
     if not row:
@@ -123,7 +131,7 @@ def excluir_banco(banco_id):
 
 
 @bancos_bp.post("/api/bancos/<banco_id>/testar")
-@perfis_permitidos("master")
+@perfis_permitidos("moderador")
 def testar_banco(banco_id):
     """Só tenta abrir e fechar uma conexão - não roda nenhuma query. Serve
     pra mostrar o selo verde/vermelho na tela sem esperar um backup inteiro."""
@@ -157,7 +165,7 @@ def _montar_workbook(query_fn):
 
 
 @bancos_bp.get("/api/bancos/<banco_id>/backup/excel")
-@perfis_permitidos("master")
+@perfis_permitidos("moderador")
 def backup_banco_excel(banco_id):
     if banco_id == "principal":
         wb = _montar_workbook(db.query_all)

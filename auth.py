@@ -65,11 +65,20 @@ def unauthorized():
 
 
 def perfis_permitidos(*perfis):
+    """"moderador" é hierarquicamente acima de "master" - enxerga tudo que
+    master enxerga (Configurações, templates, zona de risco...), mais a
+    administração da própria plataforma (Painel NJC). Por isso uma rota
+    marcada perfis_permitidos("master") também deixa passar quem é
+    moderador, mesmo sem "moderador" estar explícito na lista - já uma rota
+    perfis_permitidos("moderador") (ex.: bancos.py) fica exclusiva dele,
+    já que master não deve ver credencial de banco de dados."""
     def decorator(fn):
         @wraps(fn)
         @login_required
         def wrapper(*args, **kwargs):
-            if current_user.perfil not in perfis:
+            perfil = current_user.perfil
+            permitido = perfil in perfis or (perfil == "moderador" and "master" in perfis)
+            if not permitido:
                 return jsonify({"erro": "Sem permissão para esta ação"}), 403
             return fn(*args, **kwargs)
         return wrapper

@@ -85,12 +85,19 @@ async function verificarNovaVersao() {
 document.getElementById("btn-recarregar-versao").addEventListener("click", () => location.reload());
 setInterval(verificarNovaVersao, 5 * 60 * 1000);
 
+// "moderador" é hierarquicamente acima de master (ver auth.py:perfis_permitidos)
+// - enxerga tudo que master/administrador enxergam, mais o Painel NJC
+// (ehModerador, exclusivo dele - master comum não vê).
 function ehAdmin() {
-  return state.usuario && (state.usuario.perfil === "master" || state.usuario.perfil === "administrador");
+  return state.usuario && ["master", "administrador", "moderador"].includes(state.usuario.perfil);
 }
 
 function ehMaster() {
-  return state.usuario && state.usuario.perfil === "master";
+  return state.usuario && (state.usuario.perfil === "master" || state.usuario.perfil === "moderador");
+}
+
+function ehModerador() {
+  return state.usuario && state.usuario.perfil === "moderador";
 }
 
 function aplicarPermissoes() {
@@ -99,6 +106,9 @@ function aplicarPermissoes() {
   });
   document.querySelectorAll(".somente-master").forEach((el) => {
     el.style.display = ehMaster() ? "" : "none";
+  });
+  document.querySelectorAll(".somente-moderador").forEach((el) => {
+    el.style.display = ehModerador() ? "" : "none";
   });
 }
 
@@ -216,9 +226,10 @@ function mostrarApp() {
   aplicarPermissoes();
 
   const tabsAdmin = new Set(["configuracoes"]);
+  const tabsModerador = new Set(["painel-njc"]);
   let tabInicial = localStorage.getItem(CHAVE_ULTIMA_TAB) || "dashboard";
   const tabExiste = !!document.querySelector(`.nav-item[data-tab="${tabInicial}"]`);
-  if (!tabExiste || (tabsAdmin.has(tabInicial) && !ehAdmin())) tabInicial = "dashboard";
+  if (!tabExiste || (tabsAdmin.has(tabInicial) && !ehAdmin()) || (tabsModerador.has(tabInicial) && !ehModerador())) tabInicial = "dashboard";
 
   ativarTab(tabInicial);
 }
@@ -238,6 +249,7 @@ function ativarTab(nome) {
   if (nome === "clientes") carregarClientes();
   if (nome === "projetos") carregarProjetos();
   if (nome === "configuracoes") carregarConfiguracoes();
+  if (nome === "painel-njc") carregarBancos();
 }
 
 document.querySelectorAll(".subnav-item").forEach((btn) => {
@@ -251,7 +263,6 @@ function ativarSubtab(nome) {
   if (nome === "config-auditoria") carregarAuditoria(true);
   if (nome === "config-areas") carregarAreas();
   if (nome === "config-usuarios") carregarUsuarios();
-  if (nome === "config-bancos") carregarBancos();
 }
 
 function ativarTabInterna(nome) {
@@ -2653,18 +2664,26 @@ async function salvarVersaoCompras(status) {
 async function carregarUsuarios() {
   const usuarios = await api("/api/usuarios");
   const tbody = document.getElementById("tbody-usuarios");
-  tbody.innerHTML = usuarios.map((u) => `
+  // Conta de moderador só é mexida por outro moderador - pra um master
+  // comum a linha mostra só a informação, sem ações (o backend já barraria
+  // mesmo que o botão aparecesse, mas nem faz sentido oferecer o clique).
+  tbody.innerHTML = usuarios.map((u) => {
+    const bloqueado = u.perfil === "moderador" && !ehModerador();
+    return `
     <tr>
       <td>${esc(u.nome)}</td><td>${esc(u.email)}</td><td>${esc(u.perfil)}</td><td>${u.ativo ? "Sim" : "Não"}</td>
       <td>${u.sessao_ativa ? '<span class="badge-rascunho" style="background:#eaf1fb;color:var(--azul);">Ativa</span>' : "-"}</td>
       <td class="acoes-linha">
-        <button class="link-acao" onclick='editarUsuario(${esc(JSON.stringify(u))})'>Editar</button>
-        ${u.sessao_ativa ? `<button class="link-acao somente-master" onclick="encerrarSessaoUsuario(${u.id}, '${esc(u.nome)}')">Encerrar sessão</button>` : ""}
-        ${u.ativo
-          ? `<button class="link-acao" onclick="excluirUsuario(${u.id})">Desativar</button>`
-          : `<button class="link-acao" onclick='ativarUsuario(${esc(JSON.stringify(u))})'>Ativar</button>`}
+        ${bloqueado ? '<span style="color:var(--cinza); font-size:12.5px;">Só moderador gerencia</span>' : `
+          <button class="link-acao" onclick='editarUsuario(${esc(JSON.stringify(u))})'>Editar</button>
+          ${u.sessao_ativa ? `<button class="link-acao somente-master" onclick="encerrarSessaoUsuario(${u.id}, '${esc(u.nome)}')">Encerrar sessão</button>` : ""}
+          ${u.ativo
+            ? `<button class="link-acao" onclick="excluirUsuario(${u.id})">Desativar</button>`
+            : `<button class="link-acao" onclick='ativarUsuario(${esc(JSON.stringify(u))})'>Ativar</button>`}
+        `}
       </td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
   aplicarPermissoes();
 }
 
@@ -2684,6 +2703,11 @@ async function ativarUsuario(u) {
   } catch (err) { toast(err.message, "erro"); }
 }
 
+// "master"/"moderador" não usam área (enxergam tudo) - só administrador/visualizador precisam do filtro.
+function _perfilSemAreas(perfil) {
+  return perfil === "master" || perfil === "moderador";
+}
+
 async function modalUsuario(usuario = null) {
   await garantirAreasCarregadas();
   const u = usuario || { nome: "", email: "", perfil: "visualizador", ativo: 1, areas: [] };
@@ -2692,6 +2716,10 @@ async function modalUsuario(usuario = null) {
     <label style="display:flex; align-items:center; gap:6px; font-weight:normal; margin:2px 0;">
       <input type="checkbox" class="usr-area" value="${a.id}" ${areasDoUsuario.has(a.id) ? "checked" : ""}> ${esc(a.nome)}
     </label>`).join("");
+  // Só quem já é moderador pode conceder esse perfil pra outra pessoa
+  // (o backend também recusa, isso aqui é só pra não nem oferecer a opção).
+  const perfisDisponiveis = ehModerador() ? ["moderador", "master", "administrador", "visualizador"] : ["master", "administrador", "visualizador"];
+  const rotuloPerfil = { moderador: "moderador (Painel NJC)", master: "master", administrador: "administrador", visualizador: "visualizador" };
 
   abrirModal(`
     <h3>${usuario ? "Editar" : "Novo"} Usuário</h3>
@@ -2700,11 +2728,11 @@ async function modalUsuario(usuario = null) {
       <label>Email</label><input id="usr-email" value="${esc(u.email)}" ${usuario ? "disabled" : ""}>
       <label>Perfil</label>
       <select id="usr-perfil">
-        ${["master", "administrador", "visualizador"].map((p) => `<option value="${p}" ${u.perfil === p ? "selected" : ""}>${p}</option>`).join("")}
+        ${perfisDisponiveis.map((p) => `<option value="${p}" ${u.perfil === p ? "selected" : ""}>${esc(rotuloPerfil[p])}</option>`).join("")}
       </select>
       <label>Senha ${usuario ? "(deixe em branco para não alterar)" : ""}</label>
       ${campoSenhaHtml("usr-senha")}
-      <div id="usr-areas-wrap" class="${u.perfil === "master" ? "oculto" : ""}">
+      <div id="usr-areas-wrap" class="${_perfilSemAreas(u.perfil) ? "oculto" : ""}">
         <label>Áreas autorizadas</label>
         <div style="border:1px solid var(--borda); border-radius:8px; padding:8px 12px; max-height:160px; overflow-y:auto;">
           ${opcoesAreas || "<span style='color:var(--cinza); font-size:13px;'>Nenhuma área cadastrada ainda.</span>"}
@@ -2727,7 +2755,7 @@ async function modalUsuario(usuario = null) {
   aplicarPermissoes();
 
   document.getElementById("usr-perfil").addEventListener("change", (e) => {
-    document.getElementById("usr-areas-wrap").classList.toggle("oculto", e.target.value === "master");
+    document.getElementById("usr-areas-wrap").classList.toggle("oculto", _perfilSemAreas(e.target.value));
   });
 }
 

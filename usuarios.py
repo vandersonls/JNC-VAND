@@ -16,6 +16,14 @@ def _definir_areas_usuario(usuario_id, area_ids):
         db.execute("INSERT INTO usuario_areas (usuario_id, area_id) VALUES (%s, %s)", (usuario_id, area_id))
 
 
+# "moderador" é um nível acima de master (ver auth.py:perfis_permitidos) -
+# só quem já é moderador pode conceder esse perfil pra alguém ou mexer na
+# conta de quem já é moderador, pra um master comum não conseguir se
+# autopromover nem desativar/rebaixar o único moderador por engano ou má-fé.
+def _pode_gerenciar(perfil_alvo):
+    return current_user.perfil == "moderador" or perfil_alvo != "moderador"
+
+
 @usuarios_bp.get("/api/usuarios")
 @perfis_permitidos("master", "administrador")
 def listar_usuarios():
@@ -62,8 +70,10 @@ def criar_usuario():
     erro_senha = validar_forca_senha(senha)
     if erro_senha:
         return jsonify({"erro": erro_senha}), 400
-    if perfil not in ("master", "administrador", "visualizador"):
+    if perfil not in ("moderador", "master", "administrador", "visualizador"):
         return jsonify({"erro": "Perfil inválido"}), 400
+    if not _pode_gerenciar(perfil):
+        return jsonify({"erro": "Só um moderador pode conceder o perfil de moderador"}), 403
     existente = db.query_one("SELECT id FROM usuarios WHERE email = %s", (email,))
     if existente:
         return jsonify({"erro": "Já existe um usuário com este email"}), 409
@@ -71,7 +81,7 @@ def criar_usuario():
         "INSERT INTO usuarios (nome, email, senha_hash, perfil) VALUES (%s, %s, %s, %s)",
         (nome, email, hash_senha(senha), perfil),
     )
-    if perfil != "master":
+    if perfil not in ("master", "moderador"):
         _definir_areas_usuario(novo_id, areas)
     registrar("criar", "usuario", novo_id, f"Criou o usuário {email} (perfil {perfil})",
               depois={"nome": nome, "email": email, "perfil": perfil, "areas": areas})
@@ -84,7 +94,7 @@ def editar_usuario(usuario_id):
     data = request.get_json(force=True) or {}
     nome, perfil, ativo = data.get("nome"), data.get("perfil"), data.get("ativo", 1)
     areas = data.get("areas") or []
-    if not nome or perfil not in ("master", "administrador", "visualizador"):
+    if not nome or perfil not in ("moderador", "master", "administrador", "visualizador"):
         return jsonify({"erro": "Nome e perfil válidos são obrigatórios"}), 400
     if current_user.id == usuario_id and not ativo:
         return jsonify({"erro": "Você não pode desativar seu próprio usuário"}), 400
@@ -94,6 +104,11 @@ def editar_usuario(usuario_id):
             return jsonify({"erro": erro_senha}), 400
 
     antes = db.query_one("SELECT nome, email, perfil, ativo FROM usuarios WHERE id = %s", (usuario_id,))
+    # Protege quem já é moderador de ser editado (perfil rebaixado, senha
+    # trocada, desativado...) por um master comum, e barra a autopromoção -
+    # só quem já é moderador mexe em quem já é moderador ou concede o perfil.
+    if antes and not (_pode_gerenciar(antes["perfil"]) and _pode_gerenciar(perfil)):
+        return jsonify({"erro": "Só um moderador pode gerenciar essa conta"}), 403
     senha_alterada = bool(data.get("senha"))
 
     if senha_alterada:
@@ -107,7 +122,7 @@ def editar_usuario(usuario_id):
             (nome, perfil, ativo, usuario_id),
         )
 
-    if perfil == "master":
+    if perfil in ("master", "moderador"):
         _definir_areas_usuario(usuario_id, [])
     else:
         _definir_areas_usuario(usuario_id, areas)
@@ -127,7 +142,9 @@ def editar_usuario(usuario_id):
 def excluir_usuario(usuario_id):
     if current_user.id == usuario_id:
         return jsonify({"erro": "Você não pode desativar seu próprio usuário"}), 400
-    antes = db.query_one("SELECT nome, email FROM usuarios WHERE id = %s", (usuario_id,))
+    antes = db.query_one("SELECT nome, email, perfil FROM usuarios WHERE id = %s", (usuario_id,))
+    if antes and not _pode_gerenciar(antes["perfil"]):
+        return jsonify({"erro": "Só um moderador pode desativar essa conta"}), 403
     db.execute("UPDATE usuarios SET ativo = 0 WHERE id = %s", (usuario_id,))
     if antes:
         registrar("excluir", "usuario", usuario_id, f"Desativou o usuário {antes['email']}", antes=antes)
@@ -146,6 +163,8 @@ def excluir_usuario_permanente(usuario_id):
     antes = db.query_one("SELECT nome, email, perfil FROM usuarios WHERE id = %s", (usuario_id,))
     if not antes:
         return jsonify({"erro": "Usuário não encontrado"}), 404
+    if not _pode_gerenciar(antes["perfil"]):
+        return jsonify({"erro": "Só um moderador pode excluir essa conta"}), 403
     db.execute("DELETE FROM usuarios WHERE id = %s", (usuario_id,))
     registrar("excluir", "usuario", usuario_id, f"Excluiu permanentemente o usuário {antes['email']}", antes=antes)
     return jsonify({"ok": True})
