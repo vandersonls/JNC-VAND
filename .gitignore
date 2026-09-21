@@ -16,3 +16,8 @@ dump/
 cookies_teste.txt
 iniciar_servidor.bat
 backup_clientes_templates_*.json
+njc_iniciar_oculto.vbs
+njc_parar_oculto.vbs
+_njc_iniciar.ps1
+_njc_parar.ps1
+njc_servidor.pid
