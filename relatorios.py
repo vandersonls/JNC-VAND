@@ -426,11 +426,39 @@ def _preencher_tabela(ws, tabela_cfg, linhas_dados):
         _escrever_linha_grade(ws, linha, colunas, dados)
         linha += 1
     ultima_linha = max(linha_final_molde, linha - 1)
+    # col_direita_impressao vem só do que foi MAPEADO - mas o template do
+    # cliente às vezes tem colunas com borda além disso (ex.: "Valor
+    # Unitário"/"Total" com fórmula própria) que ninguém mapeia porque o
+    # sistema não guarda esse dado, e mesmo assim são parte visual da
+    # tabela dele. Sem isso, essas colunas ficavam fora da área impressa -
+    # cortadas do Excel gerado mesmo tendo borda e cabeçalho no template
+    # original (é exatamente o que os prints do dia 2026-09-22 mostravam).
+    col_direita = _estender_ate_borda(ws, tabela_cfg["linha_estilo"], tabela_cfg["col_direita_impressao"])
     # "canto_superior_impressao" é opcional no mapeamento (default A1) - só
     # existe pra preservar templates migrados cuja área de impressão original
     # não começava no canto absoluto da planilha (ex.: linha/coluna 1 em
     # branco de propósito, fora da área impressa do template do cliente).
-    _ajustar_area_impressao(ws, tabela_cfg.get("canto_superior_impressao", "A1"), ultima_linha, tabela_cfg["col_direita_impressao"])
+    _ajustar_area_impressao(ws, tabela_cfg.get("canto_superior_impressao", "A1"), ultima_linha, col_direita)
+
+
+def _estender_ate_borda(ws, linha_referencia, col_direita_mapeada, limite_colunas_extra=30):
+    """A partir da última coluna mapeada, continua andando pra direita
+    enquanto a linha de referência (linha_estilo - uma linha real da
+    tabela no template, com a formatação de verdade) ainda tiver alguma
+    borda desenhada. Pára na primeira coluna sem borda nenhuma - ali a
+    tabela visual do template realmente acaba."""
+    col = col_direita_mapeada
+    for _ in range(limite_colunas_extra):
+        proxima = col + 1
+        borda = ws.cell(row=linha_referencia, column=proxima).border
+        tem_borda = borda and any([
+            borda.left and borda.left.style, borda.right and borda.right.style,
+            borda.top and borda.top.style, borda.bottom and borda.bottom.style,
+        ])
+        if not tem_borda:
+            break
+        col = proxima
+    return col
 
 
 def _ajustar_area_impressao(ws, canto_superior, ultima_linha, col_direita):
