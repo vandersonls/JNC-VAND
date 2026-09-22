@@ -1,6 +1,25 @@
 -- Schema do sistema de gerenciamento de materiais para Projetos de Engenharia Elétrica
 -- Banco: bmt
 
+-- NOMES DE FOREIGN KEY: de propósito SEM "CONSTRAINT nome_fixo" em nenhuma
+-- delas neste arquivo (2026-09-22). Descoberto ao criar um segundo banco
+-- local só pra testar o painel "Bancos de Dados": em MySQL 8.0.36 (pelo
+-- menos), dar o MESMO nome explícito de FK em bancos DIFERENTES do mesmo
+-- servidor colide com "ERROR 1826 - Duplicate foreign key constraint name",
+-- mesmo o segundo banco sendo novo e vazio - por baixo o nome vira único
+-- pro servidor inteiro, não só por banco, quando é dado explicitamente.
+-- Testado: nomes AUTO-GERADOS pelo MySQL (omitindo "CONSTRAINT nome") não
+-- têm esse problema - cada banco gera o seu por conta própria sem colidir.
+-- Por isso as FKs aqui usam só "FOREIGN KEY (coluna) REFERENCES ..." sem
+-- nome, e as migrações idempotentes (os blocos SET @fk_exists = ...)
+-- checam se a FK já existe pela COLUNA + tabela referenciada
+-- (information_schema.KEY_COLUMN_USAGE), não mais pelo nome da constraint -
+-- assim continuam funcionando tanto em bancos já existentes (que têm as FKs
+-- com os nomes antigos, de antes dessa mudança) quanto em bancos novos (que
+-- ganham nomes auto-gerados). Não foi preciso renomear nada nos bancos que
+-- já existem (bmt local, produção no Railway) - eles continuam com os
+-- nomes antigos e funcionam normalmente; só muda o que uma instalação NOVA
+-- do zero recebe a partir de agora.
 CREATE DATABASE IF NOT EXISTS bmt CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE bmt;
 
@@ -91,7 +110,7 @@ CREATE TABLE IF NOT EXISTS projetos_templates (
     mapeamento JSON NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT fk_template_projeto FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
+    FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
     UNIQUE KEY uq_projeto_tipo (projeto_id, tipo)
 ) ENGINE=InnoDB;
 -- Bancos que já tinham a tabela antes de 'planilha_quantidades'/'lista_compras'
@@ -139,10 +158,11 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 UPDATE materiais SET area_id = (SELECT id FROM areas WHERE nome = 'Engenharia Elétrica') WHERE area_id IS NULL;
 ALTER TABLE materiais MODIFY COLUMN area_id INT NOT NULL;
 
-SET @fk_exists = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
-                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'materiais' AND CONSTRAINT_NAME = 'fk_materiais_area');
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'materiais'
+                     AND COLUMN_NAME = 'area_id' AND REFERENCED_TABLE_NAME = 'areas');
 SET @sql = IF(@fk_exists = 0,
-    'ALTER TABLE materiais ADD CONSTRAINT fk_materiais_area FOREIGN KEY (area_id) REFERENCES areas(id)',
+    'ALTER TABLE materiais ADD FOREIGN KEY (area_id) REFERENCES areas(id)',
     'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
@@ -153,8 +173,8 @@ CREATE TABLE IF NOT EXISTS usuario_areas (
     usuario_id INT NOT NULL,
     area_id INT NOT NULL,
     PRIMARY KEY (usuario_id, area_id),
-    CONSTRAINT fk_usuario_areas_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
-    CONSTRAINT fk_usuario_areas_area FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE CASCADE
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+    FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- =========================================================
@@ -175,9 +195,9 @@ CREATE TABLE IF NOT EXISTS projetos (
     criado_por INT,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT fk_projetos_cliente FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL,
-    CONSTRAINT fk_projetos_usuario FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
-    CONSTRAINT fk_projetos_area FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE SET NULL
+    FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL,
+    FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
+    FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- Migrações idempotentes para bancos já existentes
@@ -196,9 +216,10 @@ SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
 SET @sql = IF(@col_exists = 0, 'ALTER TABLE projetos ADD COLUMN area_id INT NULL AFTER numero_fornecedor', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-SET @fk_exists = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
-                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND CONSTRAINT_NAME = 'fk_projetos_area');
-SET @sql = IF(@fk_exists = 0, 'ALTER TABLE projetos ADD CONSTRAINT fk_projetos_area FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE SET NULL', 'SELECT 1');
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos'
+                     AND COLUMN_NAME = 'area_id' AND REFERENCED_TABLE_NAME = 'areas');
+SET @sql = IF(@fk_exists = 0, 'ALTER TABLE projetos ADD FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE SET NULL', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
@@ -252,7 +273,7 @@ CREATE TABLE IF NOT EXISTS listas_desenho (
     autorizado_sigla VARCHAR(20),
     versao_atual_id INT NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_lista_projeto FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
+    FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
     UNIQUE KEY uq_projeto_desenho (projeto_id, numero_desenho)
 ) ENGINE=InnoDB;
 
@@ -351,8 +372,8 @@ CREATE TABLE IF NOT EXISTS lista_desenho_versoes (
     observacoes TEXT,
     criado_por INT,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_versao_lista FOREIGN KEY (lista_desenho_id) REFERENCES listas_desenho(id) ON DELETE CASCADE,
-    CONSTRAINT fk_versao_usuario FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
+    FOREIGN KEY (lista_desenho_id) REFERENCES listas_desenho(id) ON DELETE CASCADE,
+    FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
     UNIQUE KEY uq_lista_versao (lista_desenho_id, versao)
 ) ENGINE=InnoDB;
 
@@ -361,8 +382,15 @@ SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
 SET @sql = IF(@col_exists = 0, "ALTER TABLE lista_desenho_versoes ADD COLUMN tipo_emissao ENUM('A','B','C','D','E','F','G','H') NULL AFTER status", 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-ALTER TABLE listas_desenho
-    ADD CONSTRAINT fk_lista_versao_atual FOREIGN KEY (versao_atual_id) REFERENCES lista_desenho_versoes(id) ON DELETE SET NULL;
+-- Sem nome fixo de propósito, e com guarda (antes não tinha nenhuma) - ver
+-- o comentário no topo do arquivo sobre nomes de FK e colisão entre bancos.
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listas_desenho'
+                     AND COLUMN_NAME = 'versao_atual_id' AND REFERENCED_TABLE_NAME = 'lista_desenho_versoes');
+SET @sql = IF(@fk_exists = 0,
+    'ALTER TABLE listas_desenho ADD FOREIGN KEY (versao_atual_id) REFERENCES lista_desenho_versoes(id) ON DELETE SET NULL',
+    'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- =========================================================
 -- ITENS DE CADA VERSÃO DA LISTA (materiais utilizados no desenho)
@@ -373,8 +401,8 @@ CREATE TABLE IF NOT EXISTS lista_desenho_itens (
     material_id INT NOT NULL,
     quantidade DECIMAL(12,3) NOT NULL DEFAULT 0,
     observacao VARCHAR(255),
-    CONSTRAINT fk_item_versao FOREIGN KEY (versao_id) REFERENCES lista_desenho_versoes(id) ON DELETE CASCADE,
-    CONSTRAINT fk_item_material FOREIGN KEY (material_id) REFERENCES materiais(id)
+    FOREIGN KEY (versao_id) REFERENCES lista_desenho_versoes(id) ON DELETE CASCADE,
+    FOREIGN KEY (material_id) REFERENCES materiais(id)
 ) ENGINE=InnoDB;
 
 -- =========================================================
@@ -389,8 +417,8 @@ CREATE TABLE IF NOT EXISTS lista_pq_versoes (
     observacoes TEXT,
     criado_por INT,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_pq_versao_projeto FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
-    CONSTRAINT fk_pq_versao_usuario FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
+    FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
+    FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
     UNIQUE KEY uq_pq_projeto_versao (projeto_id, versao)
 ) ENGINE=InnoDB;
 
@@ -402,14 +430,15 @@ CREATE TABLE IF NOT EXISTS lista_pq_itens (
     percentual DECIMAL(7,3) NOT NULL DEFAULT 0,
     quantidade_atualizada DECIMAL(12,3) NOT NULL DEFAULT 0,
     observacao VARCHAR(255),
-    CONSTRAINT fk_pq_item_versao FOREIGN KEY (versao_id) REFERENCES lista_pq_versoes(id) ON DELETE CASCADE,
-    CONSTRAINT fk_pq_item_material FOREIGN KEY (material_id) REFERENCES materiais(id)
+    FOREIGN KEY (versao_id) REFERENCES lista_pq_versoes(id) ON DELETE CASCADE,
+    FOREIGN KEY (material_id) REFERENCES materiais(id)
 ) ENGINE=InnoDB;
 
-SET @fk_exists = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
-                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND CONSTRAINT_NAME = 'fk_projetos_pq_versao');
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos'
+                     AND COLUMN_NAME = 'pq_versao_atual_id' AND REFERENCED_TABLE_NAME = 'lista_pq_versoes');
 SET @sql = IF(@fk_exists = 0,
-    'ALTER TABLE projetos ADD CONSTRAINT fk_projetos_pq_versao FOREIGN KEY (pq_versao_atual_id) REFERENCES lista_pq_versoes(id) ON DELETE SET NULL',
+    'ALTER TABLE projetos ADD FOREIGN KEY (pq_versao_atual_id) REFERENCES lista_pq_versoes(id) ON DELETE SET NULL',
     'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
@@ -423,9 +452,9 @@ CREATE TABLE IF NOT EXISTS lista_pq_origens (
     numero_desenho VARCHAR(100) NOT NULL,
     titulo VARCHAR(255),
     versao_numero INT NOT NULL,
-    CONSTRAINT fk_pq_origem_versao FOREIGN KEY (pq_versao_id) REFERENCES lista_pq_versoes(id) ON DELETE CASCADE,
-    CONSTRAINT fk_pq_origem_lista FOREIGN KEY (lista_desenho_id) REFERENCES listas_desenho(id) ON DELETE CASCADE,
-    CONSTRAINT fk_pq_origem_lista_versao FOREIGN KEY (lista_desenho_versao_id) REFERENCES lista_desenho_versoes(id) ON DELETE CASCADE
+    FOREIGN KEY (pq_versao_id) REFERENCES lista_pq_versoes(id) ON DELETE CASCADE,
+    FOREIGN KEY (lista_desenho_id) REFERENCES listas_desenho(id) ON DELETE CASCADE,
+    FOREIGN KEY (lista_desenho_versao_id) REFERENCES lista_desenho_versoes(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- =========================================================
@@ -440,8 +469,8 @@ CREATE TABLE IF NOT EXISTS lista_compras_versoes (
     criado_por INT,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     pq_versao_id INT NULL,
-    CONSTRAINT fk_compras_versao_projeto FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
-    CONSTRAINT fk_compras_versao_usuario FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
+    FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
+    FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
     UNIQUE KEY uq_compras_projeto_versao (projeto_id, versao)
 ) ENGINE=InnoDB;
 
@@ -450,10 +479,11 @@ SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
 SET @sql = IF(@col_exists = 0, 'ALTER TABLE lista_compras_versoes ADD COLUMN pq_versao_id INT NULL', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-SET @fk_exists = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
-                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lista_compras_versoes' AND CONSTRAINT_NAME = 'fk_compras_versao_pq');
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lista_compras_versoes'
+                     AND COLUMN_NAME = 'pq_versao_id' AND REFERENCED_TABLE_NAME = 'lista_pq_versoes');
 SET @sql = IF(@fk_exists = 0,
-    'ALTER TABLE lista_compras_versoes ADD CONSTRAINT fk_compras_versao_pq FOREIGN KEY (pq_versao_id) REFERENCES lista_pq_versoes(id) ON DELETE SET NULL',
+    'ALTER TABLE lista_compras_versoes ADD FOREIGN KEY (pq_versao_id) REFERENCES lista_pq_versoes(id) ON DELETE SET NULL',
     'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
@@ -463,14 +493,15 @@ CREATE TABLE IF NOT EXISTS lista_compras_itens (
     material_id INT NOT NULL,
     quantidade DECIMAL(12,3) NOT NULL DEFAULT 0,
     observacao VARCHAR(255),
-    CONSTRAINT fk_compras_item_versao FOREIGN KEY (versao_id) REFERENCES lista_compras_versoes(id) ON DELETE CASCADE,
-    CONSTRAINT fk_compras_item_material FOREIGN KEY (material_id) REFERENCES materiais(id)
+    FOREIGN KEY (versao_id) REFERENCES lista_compras_versoes(id) ON DELETE CASCADE,
+    FOREIGN KEY (material_id) REFERENCES materiais(id)
 ) ENGINE=InnoDB;
 
-SET @fk_exists = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
-                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND CONSTRAINT_NAME = 'fk_projetos_compras_versao');
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos'
+                     AND COLUMN_NAME = 'compras_versao_atual_id' AND REFERENCED_TABLE_NAME = 'lista_compras_versoes');
 SET @sql = IF(@fk_exists = 0,
-    'ALTER TABLE projetos ADD CONSTRAINT fk_projetos_compras_versao FOREIGN KEY (compras_versao_atual_id) REFERENCES lista_compras_versoes(id) ON DELETE SET NULL',
+    'ALTER TABLE projetos ADD FOREIGN KEY (compras_versao_atual_id) REFERENCES lista_compras_versoes(id) ON DELETE SET NULL',
     'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
@@ -504,7 +535,7 @@ CREATE TABLE IF NOT EXISTS auditoria (
     dados_antes JSON NULL,
     dados_depois JSON NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_auditoria_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL,
     INDEX idx_auditoria_entidade (entidade),
     INDEX idx_auditoria_criado_em (criado_em)
 ) ENGINE=InnoDB;
