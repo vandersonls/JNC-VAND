@@ -1836,7 +1836,16 @@ function excluirLista(id) {
 document.getElementById("btn-nova-lista").addEventListener("click", async () => {
   if (!state.materiais.length) state.materiais = await api("/api/materiais");
   window._itensEditor = [];
-  renderCabecalhoLista(null, {});
+  // Sugere os dados já cadastrados no projeto (evita redigitar o que já é
+  // conhecido) - a pessoa pode ajustar livremente, já que esses valores
+  // podem variar por desenho (ex.: numero_cliente aqui é o número do
+  // documento atribuído pelo cliente para ESTE desenho específico).
+  const p = state.projetoAtual || {};
+  renderCabecalhoLista(null, {
+    numero_cliente: p.numero_cliente || "",
+    numero_fornecedor: p.numero_fornecedor || "",
+    disciplina: p.area_nome || "",
+  });
 });
 
 // Monta o rótulo de um material com código e bitola em destaque (linha 1)
