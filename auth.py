@@ -88,10 +88,16 @@ def perfis_permitidos(*perfis):
 @auth_bp.post("/api/login")
 def login():
     data = request.get_json(force=True) or {}
-    email = (data.get("email") or "").strip().lower()
+    # A chave do JSON continua "email" por compatibilidade com o front, mas o
+    # valor é um identificador qualquer: pode ser e-mail ou nome de usuário
+    # (ex.: "yago.batista"). O sistema não envia e-mail pra ninguém, então a
+    # coluna nunca precisou ser um endereço de verdade.
+    # lower() aqui casa com o lower() do cadastro (usuarios.py), deixando o
+    # login insensível a maiúsculas dos dois lados.
+    identificador = (data.get("email") or "").strip().lower()
     senha = data.get("senha") or ""
 
-    row = db.query_one("SELECT * FROM usuarios WHERE email = %s AND ativo = 1", (email,))
+    row = db.query_one("SELECT * FROM usuarios WHERE email = %s AND ativo = 1", (identificador,))
 
     # Conta bloqueada por excesso de tentativas?
     if row:
@@ -112,7 +118,7 @@ def login():
                 )
             else:
                 db.execute("UPDATE usuarios SET login_falhas = %s WHERE id = %s", (falhas, row["id"]))
-        return jsonify({"erro": "Email ou senha inválidos"}), 401
+        return jsonify({"erro": "Usuário ou senha inválidos"}), 401
 
     # Login válido: zera o contador de falhas.
     db.execute("UPDATE usuarios SET login_falhas = 0, login_bloqueado_ate = NULL WHERE id = %s", (row["id"],))

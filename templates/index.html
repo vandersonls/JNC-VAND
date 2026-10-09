@@ -32,8 +32,18 @@
   <form id="form-login" class="card-login">
     <h1>NJC</h1>
     <p class="subtitulo">Gestão de Materiais — Projetos de Engenharia Elétrica</p>
-    <label>Email</label>
-    <input type="email" id="login-email" required autocomplete="username">
+    <!-- type="text", não "email": o identificador de login não precisa ser um
+         e-mail (ex.: "yago.batista"). Com type="email" o próprio navegador
+         bloqueava o envio do formulário antes de chegar no servidor, exigindo
+         "@". O sistema nunca enviou e-mail pra ninguém - a coluna "email" da
+         tabela usuarios sempre foi só um identificador, e o cadastro de
+         usuário já aceitava qualquer texto.
+         autocapitalize/autocorrect/spellcheck desligados porque o teclado de
+         celular capitaliza a primeira letra por padrão, e o backend compara em
+         minúsculas - "Yago.batista" não acharia o usuário. -->
+    <label>Email ou usuário</label>
+    <input type="text" id="login-email" required autocomplete="username"
+           autocapitalize="none" autocorrect="off" spellcheck="false">
     <label>Senha</label>
     <div class="campo-senha">
       <input type="password" id="login-senha" required autocomplete="current-password">

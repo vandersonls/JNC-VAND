@@ -2734,7 +2734,9 @@ async function modalUsuario(usuario = null) {
     <h3>${usuario ? "Editar" : "Novo"} Usuário</h3>
     <div class="form-grid">
       <label>Nome</label><input id="usr-nome" value="${esc(u.nome)}">
-      <label>Email</label><input id="usr-email" value="${esc(u.email)}" ${usuario ? "disabled" : ""}>
+      <label>Email ou usuário</label><input id="usr-email" value="${esc(u.email)}" ${usuario ? "disabled" : ""}
+        autocapitalize="none" autocorrect="off" spellcheck="false"
+        placeholder="maria@empresa.com ou maria.silva">
       <label>Perfil</label>
       <select id="usr-perfil">
         ${perfisDisponiveis.map((p) => `<option value="${p}" ${u.perfil === p ? "selected" : ""}>${esc(rotuloPerfil[p])}</option>`).join("")}

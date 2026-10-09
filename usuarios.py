@@ -66,7 +66,7 @@ def criar_usuario():
     perfil = data.get("perfil", "visualizador")
     areas = data.get("areas") or []
     if not nome or not email or not senha:
-        return jsonify({"erro": "Nome, email e senha são obrigatórios"}), 400
+        return jsonify({"erro": "Nome, email/usuário e senha são obrigatórios"}), 400
     erro_senha = validar_forca_senha(senha)
     if erro_senha:
         return jsonify({"erro": erro_senha}), 400
@@ -76,7 +76,7 @@ def criar_usuario():
         return jsonify({"erro": "Só um moderador pode conceder o perfil de moderador"}), 403
     existente = db.query_one("SELECT id FROM usuarios WHERE email = %s", (email,))
     if existente:
-        return jsonify({"erro": "Já existe um usuário com este email"}), 409
+        return jsonify({"erro": "Já existe um usuário com este email/usuário"}), 409
     novo_id = db.execute(
         "INSERT INTO usuarios (nome, email, senha_hash, perfil) VALUES (%s, %s, %s, %s)",
         (nome, email, hash_senha(senha), perfil),
