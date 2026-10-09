@@ -21,3 +21,9 @@ njc_parar_oculto.vbs
 _njc_iniciar.ps1
 _njc_parar.ps1
 njc_servidor.pid
+
+# scripts locais de inicializacao (nao versionados)
+configurar_local.ps1
+iniciar_servidor.ps1
+migrar_producao.py
+RUNBOOK-DEPLOY.md
