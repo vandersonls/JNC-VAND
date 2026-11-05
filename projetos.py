@@ -106,6 +106,17 @@ def obter_projeto(projeto_id):
     return jsonify(row)
 
 
+def _codigo_em_uso(codigo, ignorar_id=None):
+    """True se outro projeto já usa este código. O banco recusaria de
+    qualquer jeito (código é UNIQUE), mas com erro 500; aqui a pessoa recebe
+    um aviso claro."""
+    row = db.query_one(
+        "SELECT id FROM projetos WHERE codigo = %s AND id <> %s",
+        (codigo, ignorar_id or 0),
+    )
+    return row is not None
+
+
 @projetos_bp.post("/api/projetos")
 @perfis_permitidos("master", "administrador")
 def criar_projeto():
@@ -114,6 +125,8 @@ def criar_projeto():
         return jsonify({"erro": "Cliente, nome, código e área são obrigatórios"}), 400
     if not area_permitida(int(data["area_id"])):
         return jsonify({"erro": "Você não tem permissão para criar projetos nesta área"}), 403
+    if _codigo_em_uso(data["codigo"]):
+        return jsonify({"erro": f"Já existe um projeto com o código {data['codigo']}"}), 409
     novo_id = db.execute(
         """INSERT INTO projetos (codigo, nome, cliente_id, status, numero_cliente, numero_fornecedor, area_id, criado_por)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
@@ -137,6 +150,8 @@ def editar_projeto(projeto_id):
         return jsonify({"erro": "Você não tem permissão para editar este projeto"}), 403
     if not area_permitida(int(data["area_id"])):
         return jsonify({"erro": "Você não tem permissão para mover o projeto para esta área"}), 403
+    if _codigo_em_uso(data["codigo"], ignorar_id=projeto_id):
+        return jsonify({"erro": f"Já existe um projeto com o código {data['codigo']}"}), 409
     antes = db.query_one(
         "SELECT codigo, nome, cliente_id, status, numero_cliente, numero_fornecedor, area_id FROM projetos WHERE id = %s",
         (projeto_id,),

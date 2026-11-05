@@ -29,7 +29,7 @@ def _filtro_area_sql(alias=""):
         return "", ()
     prefixo = f"{alias}." if alias else ""
     if not permitidas:
-        return f" AND 1=0", ()
+        return " AND 1=0", ()
     placeholders = ", ".join(["%s"] * len(permitidas))
     return f" AND {prefixo}area_id IN ({placeholders})", tuple(permitidas)
 

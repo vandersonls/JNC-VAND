@@ -1,8 +1,15 @@
-"""Cria o usuário master inicial. Execute uma única vez: python seed.py"""
-from werkzeug.security import generate_password_hash
+"""Cria o usuário master inicial no banco LOCAL. Execute uma única vez:
+    .venv/bin/python scripts/seed.py
+(com as variáveis do banco carregadas: source .njc_local.env)"""
+import sys
+from pathlib import Path
 
-import db
-from app import DB_CONFIG
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # raiz do projeto
+
+from werkzeug.security import generate_password_hash  # noqa: E402
+
+import db  # noqa: E402
+from app import DB_CONFIG  # noqa: E402
 
 db.init_pool(DB_CONFIG)
 

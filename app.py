@@ -66,6 +66,10 @@ ASSET_VERSIONS = {
 def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "troque-esta-chave-em-producao")
+    if "SECRET_KEY" not in os.environ and (os.environ.get("MYSQL_URL") or os.environ.get("DATABASE_URL")):
+        # Em produção sem SECRET_KEY, a chave seria a padrão que está neste
+        # código público: qualquer um poderia forjar um login. Avisa no log.
+        print("[NJC] ATENÇÃO: SECRET_KEY não definida; usando a chave padrão do código. Defina SECRET_KEY no Railway.")
     # Flags de segurança do cookie de sessão:
     #  - Secure: só trafega em HTTPS (Railway serve HTTPS). Numa rede local
     #    sem HTTPS, deixar isso "True" faz o navegador descartar o cookie
@@ -138,4 +142,13 @@ def create_app():
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # Servidor de desenvolvimento (no Railway quem roda é o gunicorn, ver
+    # Procfile). Por padrão só aceita conexões deste computador e sem o modo
+    # debug: o depurador do Flask permite rodar código pelo navegador, então
+    # nunca deve ficar visível na rede. FLASK_DEBUG=1 liga o debug (o
+    # iniciar_local.sh faz isso); FLASK_HOST=0.0.0.0 abre para a rede local.
+    app.run(
+        host=os.environ.get("FLASK_HOST", "127.0.0.1"),
+        port=int(os.environ.get("FLASK_PORT", 5000)),
+        debug=os.environ.get("FLASK_DEBUG") == "1",
+    )

@@ -1,4 +1,6 @@
-"""Migra clientes_templates (molde por CLIENTE) -> projetos_templates
+"""JÁ APLICADO em produção (set/2026) - mantido só como histórico.
+
+Migra clientes_templates (molde por CLIENTE) -> projetos_templates
 (molde por PROJETO). Um mesmo cliente pode ter templates diferentes em
 projetos diferentes - compartilhar por cliente fazia um projeto "herdar"
 por engano o molde já mapeado de outro projeto do mesmo cliente.
@@ -10,7 +12,7 @@ Antes de alterar qualquer coisa, salva um backup em JSON de cada linha de
 clientes_templates (sem o blob do arquivo, só os metadados) num arquivo
 local - histórico pra conferência, não é usado para restaurar automaticamente.
 
-Uso: python migrar_templates_para_projeto.py "mysql://user:senha@host:porta/banco"
+Uso: python scripts/migrar_templates_para_projeto.py "mysql://user:senha@host:porta/banco"
 
 Se algum cliente tiver MAIS de um projeto, o script não adivinha pra qual
 projeto vai o molde - precisa de uma entrada explícita em OVERRIDES (id da
@@ -110,7 +112,7 @@ def migrar(conn):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        raise SystemExit('Uso: python migrar_templates_para_projeto.py "mysql://user:senha@host:porta/banco"')
+        raise SystemExit('Uso: python scripts/migrar_templates_para_projeto.py "mysql://user:senha@host:porta/banco"')
     conn = conectar(sys.argv[1])
     try:
         migrar(conn)

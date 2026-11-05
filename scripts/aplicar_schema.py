@@ -1,7 +1,7 @@
-"""Aplica schema.sql em um banco MySQL remoto (ex.: o MySQL do Railway).
+"""Aplica banco/schema.sql em um banco MySQL remoto (ex.: o MySQL do Railway).
 
 Uso:
-    python aplicar_schema.py "mysql://root:SENHA@HOST:PORTA/railway"
+    python scripts/aplicar_schema.py "mysql://root:SENHA@HOST:PORTA/railway"
 
 Pegue essa URL na aba Variables do serviço MySQL no Railway, na variável
 MYSQL_PUBLIC_URL (para conectar de fora da rede interna do Railway).
@@ -10,6 +10,7 @@ destino (ex.: "railway") já existe e já está selecionado pela própria URL.
 """
 import re
 import sys
+from pathlib import Path
 from urllib.parse import urlparse
 
 import mysql.connector
@@ -17,7 +18,7 @@ import mysql.connector
 
 def main():
     if len(sys.argv) != 2:
-        print('Uso: python aplicar_schema.py "mysql://user:senha@host:porta/banco"')
+        print('Uso: python scripts/aplicar_schema.py "mysql://user:senha@host:porta/banco"')
         sys.exit(1)
 
     url = urlparse(sys.argv[1])
@@ -31,7 +32,8 @@ def main():
     )
     cursor = conn.cursor()
 
-    with open("schema.sql", encoding="utf-8") as f:
+    schema = Path(__file__).resolve().parent.parent / "banco" / "schema.sql"
+    with open(schema, encoding="utf-8") as f:
         sql = f.read()
 
     sql = re.sub(r"^--.*$", "", sql, flags=re.MULTILINE)

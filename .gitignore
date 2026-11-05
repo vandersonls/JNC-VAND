@@ -27,3 +27,9 @@ configurar_local.ps1
 iniciar_servidor.ps1
 migrar_producao.py
 RUNBOOK-DEPLOY.md
+
+# configuracao e arquivos locais de cada computador
+.njc_local.env
+.njc_servidor.pid
+_organizacao/
+_arquivo_windows/
