@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -17,6 +18,22 @@ login_manager = LoginManager()
 # (e o login em outro local volta a ser permitido). 30 min é o padrão comum
 # em sistemas corporativos.
 SESSAO_TIMEOUT_MINUTOS = 30
+
+# Trava de sessão única: com ela ligada, entrar enquanto existe outra sessão
+# ativa do mesmo usuário é recusado (409) até a outra ficar 30 min parada.
+#
+# DESLIGÁVEL POR AMBIENTE (`SESSAO_UNICA=0`), e os scripts locais
+# (`ambiente_teste\rodar.bat` e `testar.bat`) desligam. Motivo: durante a
+# depuração, abrir o sistema no navegador e no script de teste prende o
+# login do usuário por meia hora, sem ele ter feito nada errado. O padrão
+# continua LIGADO, para produção não perder a trava por esquecimento - o
+# repositório é público e o deploy pode ser automático.
+#
+# ⚠️ Ligada ou desligada, isto aparece no console ao subir o app.
+SESSAO_UNICA = os.getenv("SESSAO_UNICA", "1").strip().lower() not in ("0", "false", "nao", "não", "off")
+if not SESSAO_UNICA:
+    print("[NJC] ATENCAO: trava de sessao unica DESLIGADA (SESSAO_UNICA=0). "
+          "So para depuracao local - religar antes de publicar.")
 
 # Proteção contra força bruta: após MAX_TENTATIVAS falhas seguidas, a conta
 # fica bloqueada por BLOQUEIO_MINUTOS. Uma janela evita bloqueio permanente.
@@ -124,7 +141,7 @@ def login():
     db.execute("UPDATE usuarios SET login_falhas = 0, login_bloqueado_ate = NULL WHERE id = %s", (row["id"],))
 
     ultima_atividade = row.get("sessao_ultima_atividade")
-    if ultima_atividade and datetime.now() - ultima_atividade < timedelta(minutes=SESSAO_TIMEOUT_MINUTOS):
+    if SESSAO_UNICA and ultima_atividade and datetime.now() - ultima_atividade < timedelta(minutes=SESSAO_TIMEOUT_MINUTOS):
         return jsonify({
             "erro": "Este usuário já possui uma sessão ativa em outro local. "
                     "Aguarde alguns minutos de inatividade da outra sessão ou saia dela e tente novamente."

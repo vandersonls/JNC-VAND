@@ -9,6 +9,12 @@ clientes_bp = Blueprint("clientes", __name__)
 
 CAMPOS = ["razao_social", "nome_fantasia", "cnpj_cpf", "contato", "telefone", "email", "endereco", "logo_url"]
 
+# A lista sai na ordem do nome que a tela mostra (fantasia, ou razão social
+# quando não há fantasia). Ordenar pela razão social juntava num bloco só
+# todos os clientes cujo cadastro traz "NÃO SE APLICA" nela, que é o que
+# acontece no cadastro real quando quem cadastrou não tinha o dado.
+ORDEM_EXIBICAO = "COALESCE(NULLIF(TRIM(nome_fantasia), ''), razao_social)"
+
 
 @clientes_bp.get("/api/clientes")
 @login_required
@@ -17,13 +23,13 @@ def listar_clientes():
     if busca:
         like = f"%{busca}%"
         rows = db.query_all(
-            """SELECT * FROM clientes WHERE ativo = 1
+            f"""SELECT * FROM clientes WHERE ativo = 1
                AND (razao_social LIKE %s OR nome_fantasia LIKE %s OR cnpj_cpf LIKE %s)
-               ORDER BY razao_social""",
+               ORDER BY {ORDEM_EXIBICAO}""",
             (like, like, like),
         )
     else:
-        rows = db.query_all("SELECT * FROM clientes WHERE ativo = 1 ORDER BY razao_social")
+        rows = db.query_all(f"SELECT * FROM clientes WHERE ativo = 1 ORDER BY {ORDEM_EXIBICAO}")
     return jsonify(rows)
 
 

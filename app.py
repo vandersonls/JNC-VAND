@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from flask import Flask, render_template
 
 import db
+import log_erros
 from auth import auth_bp, login_manager, gerenciar_sessao
 from materiais import materiais_bp
 from clientes import clientes_bp
@@ -100,6 +101,11 @@ def create_app():
     app.register_blueprint(lista_compras_bp)
     app.register_blueprint(templates_projeto_bp)
     app.register_blueprint(bancos_bp)
+
+    # Todo erro que escapar de uma rota fica gravado em logs/erros.log, com
+    # hora, rota e traceback. Sem isso, o motivo de um 500 some junto com a
+    # janela do console e sobra só a mensagem genérica da tela.
+    log_erros.registrar_erro_nao_tratado(app)
 
     @app.before_request
     def verificar_sessao():

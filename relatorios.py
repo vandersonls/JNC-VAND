@@ -21,7 +21,9 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image as PdfImage
 
 import db
+import log_erros
 from areas import projeto_permitido, projeto_da_lista
+from projetos import SQL_NOME_CLIENTE, TIPOS_EMISSAO
 
 relatorios_bp = Blueprint("relatorios", __name__)
 
@@ -189,8 +191,8 @@ def _tabela_quebravel(dados, col_widths, alinhar_direita=None, cor_cabecalho=Non
 
 def _carregar_contexto(lista_id, versao_id=None):
     lista = db.query_one(
-        """SELECT ld.*, p.codigo AS projeto_codigo, p.nome AS projeto_nome, p.cliente_id AS projeto_cliente_id,
-                  c.razao_social AS cliente_nome, c.logo_url AS cliente_logo_url
+        f"""SELECT ld.*, p.codigo AS projeto_codigo, p.nome AS projeto_nome, p.cliente_id AS projeto_cliente_id,
+                  {SQL_NOME_CLIENTE} AS cliente_nome, c.logo_url AS cliente_logo_url
            FROM listas_desenho ld
            JOIN projetos p ON p.id = ld.projeto_id
            LEFT JOIN clientes c ON c.id = p.cliente_id
@@ -260,7 +262,7 @@ def _carregar_contexto_projeto(projeto_id):
     if not projeto_permitido(projeto_id):
         return None
     projeto = db.query_one(
-        """SELECT p.*, c.razao_social AS cliente_nome
+        f"""SELECT p.*, {SQL_NOME_CLIENTE} AS cliente_nome
            FROM projetos p LEFT JOIN clientes c ON c.id = p.cliente_id
            WHERE p.id = %s""",
         (projeto_id,),
@@ -392,6 +394,15 @@ def _definir_com_quebra(ws, coord, valor, tamanho_min=9, limite_caracteres=40):
         # Mesmo motivo do guard em _escrever_linha_grade - célula mapeada é
         # parte de uma mesclagem, não a âncora. Pula em vez de travar.
         return
+    if _tem_formula(cel):
+        # Célula calculada pelo próprio template do cliente. Escrever aqui
+        # apaga a fórmula - e com ela a conferência que o cliente faz
+        # (decisão de 2026-10-26). Medido no template Jaguar, cujo
+        # mapeamento salvo aponta campos de carimbo para células com
+        # `='Capa '!B4`: com o campo vazio, a fórmula virava célula em
+        # branco; com valor, virava texto fixo. Em ambos os casos o
+        # espelhamento do cliente se perdia no arquivo entregue.
+        return
     cel.value = valor
     alin = cel.alignment
     cel.alignment = Alignment(horizontal=alin.horizontal, vertical=alin.vertical, wrap_text=True)
@@ -401,13 +412,161 @@ def _definir_com_quebra(ws, coord, valor, tamanho_min=9, limite_caracteres=40):
         cel.font = Font(name=fonte.name, size=novo_tamanho, bold=fonte.bold, italic=fonte.italic, color=fonte.color)
 
 
-def _preencher_campos(ws, campos, valores):
+def _preencher_campos(ws, campos, valores, reservadas=()):
     """campos: {nome_campo: "coordenada"} do mapeamento salvo. valores: dados
     de verdade (lista, versão etc.) já resolvidos. Campo mapeado sem valor
-    disponível, ou valor sem campo mapeado, é simplesmente ignorado."""
+    disponível, ou valor sem campo mapeado, é simplesmente ignorado.
+
+    `reservadas` são as células que o bloco de títulos já ocupou nesta aba.
+    Um campo do bloco apontado para lá seria escrito duas vezes - foi o que
+    aconteceu no template Jaguar, onde o mapeamento manda `titulo` para B7 e
+    o bloco começa em B4: o título saía em duas alturas do carimbo."""
     for campo, coord in campos.items():
-        if campo in valores:
-            _definir_com_quebra(ws, coord, valores[campo])
+        if campo not in valores:
+            continue
+        if campo in ORDEM_BLOCO_TITULOS and coord in reservadas:
+            continue
+        _definir_com_quebra(ws, coord, valores[campo])
+
+
+# ---------------------------------------------------------------------------
+# BLOCO DE TÍTULOS DO CARIMBO
+#
+# Todo template de cliente visto até aqui traz o rótulo "TÍTULO:" e, logo
+# abaixo dele, as linhas do carimbo. O que muda de um para outro é a FORMA:
+#
+#   CBA        rótulo em B6 (negrito), bloco em B7, UMA célula mesclada de
+#              B7 até J9, com 4 linhas de texto separadas por quebra;
+#   26512      rótulo em C5 (sem negrito), bloco em C6, mesclada C6:G8, 3 linhas;
+#   Jaguar     rótulo em B3 (sem negrito), uma célula POR linha: B4, B5, B6...
+#
+# Daí as regras abaixo, que valem para qualquer template novo sem ninguém
+# mapear nada: acha o rótulo, olha a célula de baixo, e escreve conforme ela
+# seja um bloco de várias linhas ou uma linha por célula. O negrito não entra
+# como condição - dois dos quatro templates não têm.
+# ---------------------------------------------------------------------------
+
+# Ordem em que os campos do cadastro caem no bloco, de cima para baixo. É a
+# mesma ordem que a tela de cadastro anuncia ("linha 1 do carimbo" ...).
+# Campo não preenchido não deixa buraco: os que vierem sobem.
+ORDEM_BLOCO_TITULOS = ("subtitulo", "area", "disciplina", "titulo")
+
+MAX_LINHAS_BLOCO = len(ORDEM_BLOCO_TITULOS)
+
+
+def _eh_rotulo_titulo(valor):
+    """"TÍTULO", "TÍTULO:", "Titulo do documento:" - sim. Um texto longo que
+    por acaso contém a palavra - não: aí é conteúdo, não rótulo."""
+    if not isinstance(valor, str):
+        return False
+    texto = valor.strip()
+    if not texto:
+        return False
+    sem_acento = (texto.replace("Í", "I").replace("í", "i")
+                      .replace("Ú", "U").replace("ú", "u").lower())
+    if "titulo" not in sem_acento:
+        return False
+    return texto.endswith(":") or len(texto) <= 20
+
+
+def _tem_formula(cel):
+    return isinstance(cel.value, str) and cel.value.startswith("=")
+
+
+def _faixa_mesclada(ws, coordenada):
+    for faixa in ws.merged_cells.ranges:
+        if coordenada in faixa:
+            return faixa
+    return None
+
+
+def _ancora_e_altura(ws, linha, coluna):
+    """Devolve (célula onde dá para escrever, quantas linhas ela ocupa).
+
+    Numa mesclagem só a âncora (canto superior esquerdo) aceita valor; as
+    outras são MergedCell e estouram ao receber escrita - foi o que já
+    gerou 500 antes."""
+    cel = ws.cell(row=linha, column=coluna)
+    faixa = _faixa_mesclada(ws, cel.coordinate)
+    if faixa is None:
+        return cel, 1
+    return ws.cell(row=faixa.min_row, column=faixa.min_col), faixa.max_row - faixa.min_row + 1
+
+
+def _eh_limite_do_bloco(cel):
+    """Onde o espaço do bloco acaba: o rótulo do campo seguinte, ou uma
+    célula com fórmula (que se preenche sozinha e não pode ser apagada)."""
+    if _tem_formula(cel):
+        return True
+    return isinstance(cel.value, str) and cel.value.strip().endswith(":")
+
+
+def _escrever_bloco(ws, linha_rotulo, coluna, linhas_texto):
+    """Escreve as linhas do carimbo logo abaixo do rótulo.
+
+    Devolve o conjunto de coordenadas que o bloco ocupa (escritas ou
+    reservadas), para o preenchimento por mapeamento não repetir conteúdo
+    ali. Conjunto vazio quer dizer que não dava para escrever."""
+    destino, altura = _ancora_e_altura(ws, linha_rotulo + 1, coluna)
+    if _tem_formula(destino):
+        # A célula se preenche sozinha a partir de outra aba (é o caso da
+        # aba de lista do template Jaguar, que espelha a capa). Escrever
+        # aqui apagaria a fórmula do cliente - decisão de 2026-10-26.
+        return set()
+
+    if altura > 1:
+        # Bloco de várias linhas numa célula só: vira um texto com quebras.
+        destino.value = "\n".join(linhas_texto)
+        alin = destino.alignment
+        destino.alignment = Alignment(horizontal=alin.horizontal, vertical=alin.vertical, wrap_text=True)
+        faixa = _faixa_mesclada(ws, destino.coordinate)
+        if faixa is None:
+            return {destino.coordinate}
+        return {c.coordinate for linha in ws[faixa.coord] for c in linha}
+
+    # Uma célula por linha, descendo a partir da primeira. A região fica
+    # reservada até onde o bloco caberia (não só até onde foi escrito):
+    # quem preencheu 2 dos 4 campos não deve ver o resto do carimbo
+    # repetido logo abaixo por um campo mapeado.
+    ocupadas = set()
+    linha = linha_rotulo + 1
+    restantes = list(linhas_texto)
+    for _ in range(MAX_LINHAS_BLOCO):
+        cel, passo = _ancora_e_altura(ws, linha, coluna)
+        if _eh_limite_do_bloco(cel):
+            break
+        ocupadas.add(cel.coordinate)
+        if restantes:
+            cel.value = restantes.pop(0)
+            alin = cel.alignment
+            cel.alignment = Alignment(horizontal=alin.horizontal, vertical=alin.vertical, wrap_text=True)
+        linha += passo
+    return ocupadas
+
+
+def _preencher_blocos_de_titulo(ws, valores):
+    """Preenche TODAS as ocorrências do bloco de títulos desta aba.
+
+    São várias de propósito: na aba "Lista de materiais" da CBA o carimbo se
+    repete a cada folha (linhas 6, 50, 94, 138 e 182). Preencher só a
+    primeira deixaria as folhas seguintes com "TÍTULO DO PROJETO" escrito ao
+    pé da letra."""
+    linhas_texto = [str(valores[c]).strip() for c in ORDEM_BLOCO_TITULOS
+                    if str(valores.get(c, "") or "").strip()]
+    if not linhas_texto:
+        # Ninguém preencheu nenhum dos campos: não há o que escrever, e
+        # apagar o texto de exemplo do cliente não é tarefa nossa.
+        return set()
+
+    # Os rótulos são colhidos antes de escrever: escrever dentro do laço
+    # mudaria a planilha que ele está percorrendo.
+    rotulos = [(cel.row, cel.column) for linha in ws.iter_rows() for cel in linha
+               if not isinstance(cel, MergedCell) and _eh_rotulo_titulo(cel.value)]
+
+    ocupadas = set()
+    for linha_rotulo, coluna in rotulos:
+        ocupadas |= _escrever_bloco(ws, linha_rotulo, coluna, linhas_texto[:MAX_LINHAS_BLOCO])
+    return ocupadas
 
 
 def _preencher_tabela(ws, tabela_cfg, linhas_dados):
@@ -482,13 +641,34 @@ def _linhas_itens(itens):
     return linhas
 
 
+def _descricao_revisao(v):
+    """Coluna DESCRIÇÃO do histórico de revisões.
+
+    Era a observação digitada na emissão - e ela quase nunca é digitada: no
+    banco, 28 das versões emitidas estão com a observação em branco, e a
+    coluna saía vazia no documento impresso. O que aquela linha de revisão
+    descreve é o **tipo de emissão** escolhido ao emitir (TE, obrigatório
+    desde sempre): "PARA APROVAÇÃO", "PARA CONSTRUÇÃO". A letra sozinha já
+    vai na coluna TE ao lado; aqui vai o que ela significa.
+
+    Havendo observação, ela entra depois do texto do TE: é informação que
+    alguém se deu ao trabalho de escrever, e sumir com ela seria perder
+    dado do documento."""
+    te = (v["tipo_emissao"] or "").strip().upper()
+    texto = TIPOS_EMISSAO.get(te, "")
+    observacao = (v["observacoes"] or "").strip()
+    if texto and observacao:
+        return f"{texto} — {observacao}"
+    return texto or observacao or "-"
+
+
 def _linhas_revisoes(lista, versao, historico):
     linhas = []
     for v in (h for h in historico if h["status"] == "salvo"):
         eh_atual = versao is not None and v["versao"] == versao["versao"]
         data_txt = _data_emissao_exibicao(lista, versao) if eh_atual else v["criado_em"].strftime("%d/%m/%Y")
         linhas.append({
-            "rev": v["versao"], "te": v["tipo_emissao"] or "-", "descricao": v["observacoes"] or "-",
+            "rev": v["versao"], "te": v["tipo_emissao"] or "-", "descricao": _descricao_revisao(v),
             "por": _assinatura_curta(lista, "elaborador_nome", "elaborador_sigla"),
             "ver": _assinatura_curta(lista, "verificador_nome", "verificador_sigla"),
             "apr": _assinatura_curta(lista, "aprovador_nome", "aprovador_sigla"),
@@ -570,11 +750,20 @@ def _preencher_template_generico(arquivo_bytes, mapeamento, dados_por_fonte):
     nenhuma formatação que já vem no próprio arquivo."""
     wb = openpyxl.load_workbook(io.BytesIO(arquivo_bytes))
     campos_valores = dados_por_fonte.get("_campos", {})
+
+    # O bloco de títulos vem ANTES dos campos mapeados, e em TODAS as abas,
+    # achado pelo próprio arquivo: é o que faz um template novo já sair
+    # preenchido no primeiro download, sem ninguém apontar célula. O que ele
+    # ocupa fica reservado, para um campo mapeado não repetir o mesmo texto
+    # noutra altura do carimbo.
+    reservadas = {ws.title: _preencher_blocos_de_titulo(ws, campos_valores) for ws in wb.worksheets}
+
     for aba_cfg in mapeamento.get("abas", []):
         if aba_cfg["origem"] >= len(wb.worksheets):
             continue  # template foi substituído por um com menos abas depois do mapeamento
         ws = wb.worksheets[aba_cfg["origem"]]
-        _preencher_campos(ws, aba_cfg.get("campos", {}), campos_valores)
+        _preencher_campos(ws, aba_cfg.get("campos", {}), campos_valores,
+                          reservadas=reservadas.get(ws.title, set()))
         for tabela_cfg in aba_cfg.get("tabelas", []):
             linhas_dados = dados_por_fonte.get(tabela_cfg["fonte_dados"], [])
             _preencher_tabela(ws, tabela_cfg, linhas_dados)
@@ -618,8 +807,7 @@ def relatorio_excel(lista_id):
         # mesclada de um jeito inesperado, aba removida depois de mapeada,
         # etc.) - melhor um erro claro pra rever o mapeamento do que a
         # pessoa cair numa tela de erro genérica do servidor.
-        import traceback
-        traceback.print_exc()
+        log_erros.registrar(f"Excel da Lista por Desenho (lista {lista_id})")
         return jsonify({
             "erro": "Não foi possível gerar o Excel com o template mapeado desse cliente. "
                     "Reveja o mapeamento em Lista por Desenho → Template, ou avise o suporte."
@@ -787,7 +975,7 @@ def _carregar_projeto_para_relatorio(projeto_id):
     if not projeto_permitido(projeto_id):
         return None
     projeto = db.query_one(
-        """SELECT p.*, c.razao_social AS cliente_nome, c.logo_url AS cliente_logo_url
+        f"""SELECT p.*, {SQL_NOME_CLIENTE} AS cliente_nome, c.logo_url AS cliente_logo_url
            FROM projetos p LEFT JOIN clientes c ON c.id = p.cliente_id
            WHERE p.id = %s""",
         (projeto_id,),
@@ -861,8 +1049,7 @@ def relatorio_lista_pq_excel(projeto_id):
             return send_file(buf, as_attachment=True, download_name=f"lista_pq_{projeto['codigo']}.xlsx",
                               mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         except Exception:
-            import traceback
-            traceback.print_exc()
+            log_erros.registrar(f"Excel da Planilha de Quantidades (projeto {projeto_id})")
             return jsonify({
                 "erro": "Não foi possível gerar o Excel com o template mapeado. "
                         "Reveja o mapeamento em Planilha de Quantidades → Template, ou avise o suporte."
@@ -981,8 +1168,7 @@ def relatorio_lista_compras_excel(projeto_id):
             return send_file(buf, as_attachment=True, download_name=f"lista_compras_{projeto['codigo']}.xlsx",
                               mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         except Exception:
-            import traceback
-            traceback.print_exc()
+            log_erros.registrar(f"Excel da Lista de Compras (projeto {projeto_id})")
             return jsonify({
                 "erro": "Não foi possível gerar o Excel com o template mapeado. "
                         "Reveja o mapeamento em Lista de Compras → Template, ou avise o suporte."

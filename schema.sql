@@ -154,6 +154,12 @@ CREATE TABLE IF NOT EXISTS projetos (
     numero_cliente VARCHAR(100),
     numero_fornecedor VARCHAR(100),
     area_id INT NULL,
+    -- Carimbo padrão do projeto: os mesmos campos do cabeçalho de uma Lista
+    -- por Desenho, preenchidos UMA vez ao montar o projeto para a unidade e
+    -- herdados por toda lista criada depois. JSON porque é a mesma estrutura
+    -- do cabeçalho da lista, que já mudou de forma ao longo do projeto -
+    -- como coluna a coluna, cada campo novo viraria outra migração.
+    cabecalho_padrao JSON NULL,
     pq_versao_atual_id INT NULL,
     compras_versao_atual_id INT NULL,
     criado_por INT,
@@ -184,6 +190,11 @@ SET @fk_exists = (SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos'
                      AND COLUMN_NAME = 'area_id' AND REFERENCED_TABLE_NAME = 'areas');
 SET @sql = IF(@fk_exists = 0, 'ALTER TABLE projetos ADD FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE SET NULL', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projetos' AND COLUMN_NAME = 'cabecalho_padrao');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE projetos ADD COLUMN cabecalho_padrao JSON NULL AFTER area_id', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS

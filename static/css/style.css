@@ -272,6 +272,11 @@ h2 { margin-top: 0; color: var(--azul); }
 .btn-template.status-pendente:hover { border-color: #b9720a; }
 .btn-template.status-mapeado { background: #e6f4ea; border-color: #a9d8b4; color: var(--sucesso); }
 .btn-template.status-mapeado:hover { border-color: var(--sucesso); }
+/* Reconhecido sozinho ao cadastrar a lista: já funciona (por isso o ícone
+   de OK), mas ninguém conferiu - fica na cor de atenção até alguém salvar
+   o mapeamento na tela. */
+.btn-template.status-reconhecido { background: #fff3e0; border-color: #f0c98a; color: #b9720a; }
+.btn-template.status-reconhecido:hover { border-color: #b9720a; }
 .btn-template.status-erro { background: #fdecea; border-color: #f3b4ae; color: var(--erro); }
 .btn-template.status-erro:hover { border-color: var(--erro); }
 
@@ -490,6 +495,47 @@ table.mapeamento-preview-tabela td {
 table.mapeamento-preview-tabela td:hover { outline: 1px solid var(--azul-claro); outline-offset: -1px; }
 table.mapeamento-preview-tabela td.celula-mapeada { box-shadow: inset 0 0 0 2px var(--dourado); }
 table.mapeamento-preview-tabela td.celula-vazia { color: #b7bcc4; }
+/* Célula de que o reconhecimento desconfiou: pisca enquanto a pergunta
+   correspondente está em foco no painel. É o "cursor piscando no campo" -
+   a pessoa vê exatamente de qual célula o app está falando. */
+table.mapeamento-preview-tabela td.celula-em-duvida {
+  animation: piscaCelulaDuvida 1.1s ease-in-out infinite;
+  position: relative; z-index: 1;
+}
+@keyframes piscaCelulaDuvida {
+  0%, 100% { box-shadow: inset 0 0 0 3px var(--erro); background: #fde9e9; }
+  50%      { box-shadow: inset 0 0 0 3px #f6b2b2; background: transparent; }
+}
+/* Célula calculada pelo próprio template (VLOOKUP e afins): o sistema não
+   escreve nela, e quem está mapeando precisa enxergar isso antes de tentar. */
+table.mapeamento-preview-tabela td.celula-formula {
+  background-image: repeating-linear-gradient(45deg, rgba(47,90,148,0.10) 0 4px, transparent 4px 8px);
+}
+
+.mapeamento-pendencias {
+  border: 1px solid #f0c9c9; background: #fdf4f4; border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 12px;
+}
+.mapeamento-pendencias strong { display: block; color: #a32020; font-size: 13px; }
+.mapeamento-pendencias p { margin: 4px 0 8px; font-size: 11.5px; color: var(--cinza); line-height: 1.35; }
+/* Preenchido, mas com dúvida: separado do que não foi preenchido, porque é
+   outra ação - conferir, não decidir. */
+.mapeamento-conferir {
+  border: 1px solid #f0deb0; background: #fff8ea; border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 12px;
+}
+.mapeamento-conferir strong { display: block; color: var(--dourado-escuro); font-size: 13px; }
+.mapeamento-conferir p { margin: 4px 0 8px; font-size: 11.5px; color: var(--cinza); line-height: 1.35; }
+.mapeamento-conferir .mapeamento-pendencia-item { border-color: #f0deb0; }
+.mapeamento-conferir .mapeamento-pendencia-item:hover { border-color: var(--dourado-escuro); }
+.mapeamento-pendencia-item {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 6px 10px; margin-bottom: 5px; border: 1px solid #f0c9c9;
+  border-radius: 6px; background: var(--branco);
+}
+.mapeamento-pendencia-item:hover { border-color: var(--erro); }
+.mapeamento-pendencia-item span { display: block; font-size: 12.5px; color: #1c1f26; }
+.mapeamento-pendencia-item small { display: block; font-size: 11px; color: var(--cinza); margin-top: 2px; }
 
 .mapeamento-campos { flex: 0 0 300px; height: calc(100vh - 330px); min-height: 320px; overflow-y: auto; }
 .mapeamento-campos h4 { margin: 14px 0 6px; color: var(--azul); font-size: 13px; }
@@ -549,6 +595,10 @@ table.mapeamento-preview-tabela td.celula-vazia { color: #b7bcc4; }
 .arvore-titulo { color: #1c1f26; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .arvore-linha-versao .arvore-titulo { font-variant-numeric: tabular-nums; color: #3a4150; }
 .arvore-sub { color: #9aa3b2; font-size: 11.5px; white-space: nowrap; }
+/* Data e separador do rótulo da lista: ficam mais claros que os números e o
+   título, para a leitura cair primeiro no que identifica a lista. */
+.arvore-data { color: #6b7483; font-variant-numeric: tabular-nums; }
+.arvore-separador { color: #c2c8d2; }
 
 .arvore-acoes { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
 .arvore-acoes .link-acao { margin: 0 8px; }

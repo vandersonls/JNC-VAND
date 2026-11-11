@@ -1,10 +1,12 @@
 import io
 import unicodedata
+from zipfile import BadZipFile
 
 from flask import Blueprint, request, jsonify, send_file
 from flask_login import login_required, current_user
 import openpyxl
 from openpyxl.utils import get_column_letter
+from openpyxl.utils.exceptions import InvalidFileException
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
@@ -282,8 +284,29 @@ def _ler_planilha(arquivo):
     """Lê e valida a planilha, devolvendo (total_linhas, ignoradas, linhas_validas).
     Cada item de linhas_validas é (numero_da_linha, codigo, descricao, fabricante, bitola, unidade).
     Lança ValueError com mensagem amigável se algo estiver errado."""
-    wb = openpyxl.load_workbook(arquivo, data_only=True)
+    # Abrir o arquivo é o passo que mais falha, e por motivo de quem usa, não
+    # de quem programou: planilha salva como .xls (Excel 97-2003), .csv
+    # renomeado, download pela metade. O openpyxl só lê .xlsx e avisa com
+    # InvalidFileException ou BadZipFile - que não são ValueError, escapavam
+    # daqui e viravam "500 Internal Server Error" na tela, sem dizer o que
+    # fazer. Viram ValueError, que a rota já traduz num 400 explicado.
+    try:
+        wb = openpyxl.load_workbook(arquivo, data_only=True)
+    except (InvalidFileException, BadZipFile):
+        raise ValueError(
+            "Este arquivo não é uma planilha .xlsx. Abra no Excel e use "
+            "\"Salvar como\" → \"Pasta de Trabalho do Excel (*.xlsx)\" - "
+            "formatos .xls, .csv e .ods não são lidos aqui."
+        )
+    except Exception:
+        raise ValueError(
+            "Não foi possível abrir esta planilha. O arquivo pode estar "
+            "corrompido ou ter sido baixado pela metade - gere o .xlsx de novo."
+        )
+
     ws = wb.active
+    if ws is None:
+        raise ValueError("A planilha não tem nenhuma aba para ler.")
 
     linhas = list(ws.iter_rows(values_only=True))
     if not linhas:

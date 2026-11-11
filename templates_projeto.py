@@ -31,6 +31,21 @@ TIPOS_VALIDOS = ("lista_materiais", "registro_documentos", "planilha_quantidades
 TAMANHO_MAXIMO = 10 * 1024 * 1024  # 10 MB - um template de Excel real é bem menor que isso
 
 
+def _mapeamento_dict(valor):
+    """Coluna JSON do MySQL volta como dict, texto cru ou bytes, dependendo
+    da versão do driver. Normaliza para dict (ou None)."""
+    if valor is None:
+        return None
+    if isinstance(valor, (bytes, bytearray)):
+        valor = valor.decode("utf-8")
+    if isinstance(valor, str):
+        try:
+            return json.loads(valor)
+        except ValueError:
+            return None
+    return valor if isinstance(valor, dict) else None
+
+
 @templates_projeto_bp.get("/api/projetos/<int:projeto_id>/templates")
 @perfis_permitidos("master", "administrador")
 def listar_templates(projeto_id):
@@ -43,6 +58,12 @@ def listar_templates(projeto_id):
     )
     for row in rows:
         row["mapeado"] = row["mapeamento"] is not None
+        # "automatico" = o mapeamento saiu do reconhecimento que roda ao
+        # cadastrar uma lista, e ninguém o conferiu ainda. Funciona igual
+        # (o download usa), mas a tela mostra isso numa cor diferente:
+        # palpite do sistema e mapeamento conferido não podem ter a mesma
+        # cara. Some assim que alguém salva o mapeamento na tela.
+        row["automatico"] = bool((_mapeamento_dict(row["mapeamento"]) or {}).get("origem_automatica"))
         # O mapeamento em si só é devolvido quando alguém for reabrir a tela
         # de edição (endpoint de preview) - aqui basta saber se já existe.
         del row["mapeamento"]
@@ -147,11 +168,29 @@ def _estilo_celula(cel):
     return estilo
 
 
-def _celulas_com_mesclagens(ws):
+def _coords_com_formula(ws, max_row, max_col):
+    """Coordenadas (linha, coluna) das células que guardam FÓRMULA, não valor.
+
+    Precisa de um workbook aberto com data_only=False - com data_only=True o
+    openpyxl devolve o último valor calculado e a fórmula desaparece. A
+    prévia marca essas células porque escrever por cima de uma fórmula apaga
+    o cálculo do cliente: o template da CBA tem 330 VLOOKUP que buscam
+    descrição e unidade a partir do código, e preencher essas colunas
+    destruiria a conferência que ele faz contra o cadastro dele."""
+    coords = set()
+    for row in ws.iter_rows(min_row=1, max_row=max_row, max_col=max_col):
+        for cel in row:
+            if isinstance(cel.value, str) and cel.value.startswith("="):
+                coords.add((cel.row, cel.column))
+    return coords
+
+
+def _celulas_com_mesclagens(ws, ws_formulas=None):
     """Devolve a lista de células com valor + estilo visual pra prévia, já
     com rowspan/colspan das mesclagens (célula-âncora carrega o span; o
     resto da mesclagem some da lista pra não duplicar na tabela HTML do
-    front)."""
+    front). "ws_formulas" é a MESMA aba num workbook aberto com
+    data_only=False, usada só pra marcar quais células são fórmula."""
     mesclado_por_ancora = {}
     celulas_dentro_de_mescla = set()
     for rng in ws.merged_cells.ranges:
@@ -164,6 +203,7 @@ def _celulas_com_mesclagens(ws):
     celulas = []
     max_row = min(ws.max_row, 300)  # prévia não precisa renderizar planilhas gigantes inteiras
     max_col = min(ws.max_column, 60)
+    coords_formula = _coords_com_formula(ws_formulas, max_row, max_col) if ws_formulas is not None else set()
     for row in ws.iter_rows(min_row=1, max_row=max_row, max_col=max_col):
         for cel in row:
             if (cel.row, cel.column) in celulas_dentro_de_mescla:
@@ -172,11 +212,14 @@ def _celulas_com_mesclagens(ws):
             valor = cel.value
             if valor is not None:
                 valor = str(valor)
-            celulas.append({
+            dados = {
                 "coord": cel.coordinate, "linha": cel.row, "coluna": cel.column,
                 "valor": valor, "rowspan": rowspan, "colspan": colspan,
                 "estilo": _estilo_celula(cel),
-            })
+            }
+            if (cel.row, cel.column) in coords_formula:
+                dados["formula"] = True
+            celulas.append(dados)
 
     # Largura das colunas (unidade Excel, ~7px por unidade) e altura das
     # linhas (pontos, 1pt ~= 1.33px) - sem isso a prévia fica toda com
@@ -262,23 +305,24 @@ def preview_template(projeto_id, template_id):
         return jsonify({"erro": "Template não encontrado"}), 404
     try:
         wb = openpyxl.load_workbook(io.BytesIO(row["arquivo"]), data_only=True)
+        # Segunda abertura, sem data_only, só pra enxergar as fórmulas - na
+        # primeira elas já viraram o último valor calculado.
+        wb_formulas = openpyxl.load_workbook(io.BytesIO(row["arquivo"]), data_only=False)
     except Exception:
         return jsonify({"erro": "Não foi possível abrir o arquivo salvo"}), 500
 
     abas = []
     for indice, nome in enumerate(wb.sheetnames):
         ws = wb[nome]
-        celulas, max_row, max_col, larguras_col, alturas_linha = _celulas_com_mesclagens(ws)
+        ws_formulas = wb_formulas[nome] if nome in wb_formulas.sheetnames else None
+        celulas, max_row, max_col, larguras_col, alturas_linha = _celulas_com_mesclagens(ws, ws_formulas)
         abas.append({
             "origem": indice, "nome": nome, "linhas": max_row, "colunas": max_col, "celulas": celulas,
             "larguras_col": larguras_col, "alturas_linha": alturas_linha,
             "imagens": _imagens_da_aba(ws, larguras_col, alturas_linha),
         })
 
-    mapeamento = row["mapeamento"]
-    if isinstance(mapeamento, str):  # driver pode devolver JSON como texto cru
-        mapeamento = json.loads(mapeamento)
-    return jsonify({"abas": abas, "mapeamento": mapeamento})
+    return jsonify({"abas": abas, "mapeamento": _mapeamento_dict(row["mapeamento"])})
 
 
 @templates_projeto_bp.put("/api/projetos/<int:projeto_id>/templates/<int:template_id>/mapeamento")
@@ -299,7 +343,14 @@ def salvar_mapeamento(projeto_id, template_id):
         "UPDATE projetos_templates SET mapeamento = %s WHERE id = %s",
         (json.dumps(mapeamento, ensure_ascii=False), template_id),
     )
-    registrar("editar", "projeto_template", template_id, f"Salvou o mapeamento de campos do template #{template_id}")
+    # Na auditoria, palpite do sistema e decisão de gente ficam distinguíveis:
+    # o reconhecimento automático (ao cadastrar uma lista) manda
+    # "origem_automatica"; a tela de mapeamento, não.
+    if mapeamento.get("origem_automatica"):
+        descricao = f"Reconheceu sozinho o mapeamento do template #{template_id} ao cadastrar uma lista"
+    else:
+        descricao = f"Salvou o mapeamento de campos do template #{template_id}"
+    registrar("editar", "projeto_template", template_id, descricao)
     return jsonify({"ok": True})
 
 

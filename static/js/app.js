@@ -31,7 +31,13 @@ async function api(url, options = {}) {
   let data = null;
   try { data = await resp.json(); } catch (_) { /* respostas binárias (excel/pdf) não chegam aqui */ }
   if (!resp.ok) {
-    throw new Error((data && data.erro) || `Erro ${resp.status}`);
+    // O erro leva junto o status e o corpo: quem chamou às vezes precisa
+    // distinguir "deu errado" de "precisa de confirmação" (ex.: o aviso de
+    // projeto repetido, que responde 409 com {duplicado: true}).
+    const erro = new Error((data && data.erro) || `Erro ${resp.status}`);
+    erro.status = resp.status;
+    erro.dados = data || {};
+    throw erro;
   }
   return data;
 }
@@ -639,6 +645,18 @@ async function carregarClientes(busca = "") {
   renderTabelaClientes();
 }
 
+// Como o cliente é CHAMADO na tela: o nome fantasia, que é por onde as
+// pessoas o conhecem (CBA, Jaguar), caindo na razão social quando não há
+// fantasia cadastrada. A razão social sozinha não serve de identificação:
+// no cadastro real há mais de um cliente com "NÃO SE APLICA" nela - quem
+// cadastrou não tinha o dado -, e a tela mostrava duas linhas iguais para
+// clientes diferentes. Mesmo critério que o seletor de cliente do projeto
+// já usava.
+function nomeDoCliente(c) {
+  if (!c) return "";
+  return (c.nome_fantasia || "").trim() || (c.razao_social || "").trim();
+}
+
 // Clientes com o dropdown de projetos aberto no momento (sobrevive a
 // re-renders da tabela, ex.: ao editar outro cliente).
 const clientesExpandidos = new Set();
@@ -653,8 +671,8 @@ function renderTabelaClientes() {
       </tr>` : "";
     return `
       <tr class="linha-clicavel" onclick="toggleProjetosDoCliente(${c.id})">
-        <td><span class="seta-expandir ${aberto ? "aberta" : ""}">${ICONE_SETA}</span>${esc(c.razao_social)}</td>
-        <td>${esc(c.nome_fantasia || "")}</td><td>${esc(c.cnpj_cpf || "")}</td>
+        <td><span class="seta-expandir ${aberto ? "aberta" : ""}">${ICONE_SETA}</span>${esc(nomeDoCliente(c))}</td>
+        <td>${esc(c.razao_social || "")}</td><td>${esc(c.cnpj_cpf || "")}</td>
         <td>${esc(c.contato || "")}</td><td>${esc(c.telefone || "")}</td>
         <td class="somente-admin">
           <button class="link-acao" onclick="event.stopPropagation(); editarCliente(${c.id})">Editar</button>
@@ -858,8 +876,14 @@ const CAMPOS_MAPEAMENTO_POR_TIPO = {
       { campo: "area", rotulo: "Área (linha 2 do carimbo)", chaves: ["area/departamento", "area", "arca"] },
       { campo: "disciplina", rotulo: "Disciplina (linha 3 do carimbo)", chaves: ["disciplina"] },
       { campo: "titulo", rotulo: "Título do Documento (linha 4)", chaves: ["titulo"] },
-      { campo: "numero_cliente", rotulo: "Número do Cliente", chaves: ["n jaguar", "numero do cliente", "n do cliente", "n cliente", "no cliente"] },
-      { campo: "numero_projetista", rotulo: "Número do Projetista", chaves: ["numero do projetista", "n fornecedor", "numero do fornecedor", "n do fornecedor"] },
+      // As chaves destes dois são PAPÉIS de contrato ("cliente", "contratada",
+      // "projetista"), nunca nomes de empresa. O nome do cliente entra em
+      // tempo de execução, vindo do cadastro - ver _chavesDoCampo. Foi daqui
+      // que saiu "n jaguar", que era o nome de um cliente escrito no código e
+      // contrariava a decisão de 2026-10-26: cliente novo não pode depender de
+      // alteração de código.
+      { campo: "numero_cliente", rotulo: "Número do Cliente", chaves: ["numero do cliente", "n do cliente", "n cliente", "no cliente", "contratante"] },
+      { campo: "numero_projetista", rotulo: "Número do Projetista", chaves: ["numero do projetista", "n projetista", "projetista", "n fornecedor", "numero do fornecedor", "n do fornecedor", "contratada", "n contratada"] },
       { campo: "rev", rotulo: "Revisão", chaves: ["rev.:", "rev:"] },
       { campo: "numero_desenho", rotulo: "Número do Desenho de Referência", chaves: ["numero do desenho", "n do documento", "n:"] },
       { campo: "referencia_desenho", rotulo: "Nº do Desenho, com rótulo (\"DESENHO DE REFERÊNCIA : X\")", chaves: [] },
@@ -884,10 +908,16 @@ const CAMPOS_MAPEAMENTO_POR_TIPO = {
           { campo: "rev", rotulo: "Rev.", chaves: ["rev."] },
           { campo: "te", rotulo: "TE (tipo de emissão)", chaves: ["te", "status"] },
           { campo: "descricao", rotulo: "Descrição da Revisão", chaves: ["descricao da revisao", "descricao"] },
-          { campo: "por", rotulo: "Elaborado por", chaves: ["preparado por", "elaborado por", "elaborador"] },
-          { campo: "ver", rotulo: "Verificado por", chaves: ["checado", "verificado por", "verificador"] },
-          { campo: "apr", rotulo: "Aprovado por", chaves: ["aprovado por", "aprovador"] },
-          { campo: "aut", rotulo: "Autorizado por", chaves: ["autorizado por", "autorizador"] },
+          // As abreviações ("Elab.", "Ver.", "Apr.", "Aut.") são o jeito mais
+          // comum de escrever essas colunas num carimbo apertado - o template
+          // da CBA usa só elas, e sem isto as 4 colunas ficavam de fora.
+          // Só valem agora que o casamento é por palavra inteira: com o
+          // includes() antigo, "ver" casaria dentro de "verificado", "aut"
+          // dentro de "autorizado", e tudo viraria sugestão duplicada.
+          { campo: "por", rotulo: "Elaborado por", chaves: ["preparado por", "elaborado por", "elaborador", "elab."] },
+          { campo: "ver", rotulo: "Verificado por", chaves: ["checado", "verificado por", "verificador", "ver."] },
+          { campo: "apr", rotulo: "Aprovado por", chaves: ["aprovado por", "aprovador", "apr."] },
+          { campo: "aut", rotulo: "Autorizado por", chaves: ["autorizado por", "autorizador", "aut."] },
           { campo: "data", rotulo: "Data", chaves: ["data"] },
         ],
       },
@@ -947,17 +977,42 @@ const CAMPOS_MAPEAMENTO_POR_TIPO = {
 let _mapeamentoEmEdicao = null;
 let _mapeamentoArmado = null;
 
-async function abrirMapeamentoTemplate(projetoId, templateId, tipo) {
-  const preview = await api(`/api/projetos/${projetoId}/templates/${templateId}/preview`);
-  _mapeamentoEmEdicao = {
-    projetoId, templateId, tipo, abas: preview.abas, abaAtiva: 0,
+// Estado inicial da tela de mapeamento de um template. Função à parte
+// porque o reconhecimento automático em segundo plano (ao cadastrar uma
+// lista) monta esse mesmo estado sem ter modal nenhum aberto.
+function _novoEstadoMapeamento(projetoId, templateId, tipo, abas) {
+  return {
+    projetoId, templateId, tipo, abas, abaAtiva: 0,
+    // Nome do cliente deste projeto, guardado junto porque o reconhecimento
+    // monta palavra-chave com ele ("Nº CBA:"). Os dois caminhos que criam
+    // estado - a tela de mapeamento e o reconhecimento ao cadastrar a lista -
+    // passam a ter o nome sem precisar mudar nada na chamada.
+    cliente: _clienteDoProjeto(projetoId),
     camposUnicos: {}, tabelas: {},
+    pendencias: [],        // o que o reconhecimento não teve certeza de preencher
+    conferir: [],          // o que ele preencheu, mas pede um olho antes de salvar
+    celulaDestaque: null,  // célula que pisca na prévia enquanto a pendência está em foco
     secaoAtiva: "unicos", // qual grupo de campos (cabeçalho / uma das tabelas) está em foco no painel
     zoom: 1, // 100% por padrão - legível de cara. "Ver folha inteira" (null) é uma ação manual, não o padrão.
   };
+}
+
+async function abrirMapeamentoTemplate(projetoId, templateId, tipo) {
+  const preview = await api(`/api/projetos/${projetoId}/templates/${templateId}/preview`);
+  _mapeamentoEmEdicao = _novoEstadoMapeamento(projetoId, templateId, tipo, preview.abas);
   _mapeamentoArmado = null;
   if (preview.mapeamento) _aplicarMapeamentoSalvoNoEstado(preview.mapeamento);
   renderMapeamentoTemplate();
+  // Template novo (sem mapeamento salvo) já abre reconhecido: é o que o
+  // projetista espera de "carregar template". Template que já foi mapeado
+  // abre como estava - não se mexe no que alguém conferiu e salvou.
+  //
+  // A exceção é o mapeamento gravado pelo próprio reconhecimento automático
+  // ao cadastrar uma lista: esse ainda não passou por ninguém, e as
+  // pendências e a lista de conferência não ficam guardadas no banco.
+  // Rodar de novo traz as perguntas de volta sem sobrescrever nada - o
+  // automático só preenche campo que ainda está vazio.
+  if (!preview.mapeamento || preview.mapeamento.origem_automatica) _mapeamentoAutomatico(true);
 }
 
 function _aplicarMapeamentoSalvoNoEstado(mapeamentoJson) {
@@ -989,11 +1044,11 @@ function renderMapeamentoTemplate() {
   abrirModal(`
     <h3>Mapear campos — ${esc(ROTULO_TIPO_TEMPLATE[_mapeamentoEmEdicao.tipo])}</h3>
     <div class="mapeamento-aviso">
-      Clique num campo à direita e depois na célula correspondente no template. Campos sem
-      correspondência no template do cliente podem ficar sem mapear — o preenchimento simplesmente
-      pula esse campo, sem erro.
+      O reconhecimento roda sozinho ao abrir um template novo: preenche o que dá para preencher
+      <strong>com segurança</strong> e deixa o resto como pergunta no alto do painel à direita.
+      Para mapear à mão, clique num campo à direita e depois na célula correspondente.
       <div style="margin-top:8px;">
-        <button type="button" class="btn-secundario" onclick="_mapeamentoAutomatico()">✨ Mapeamento automático</button>
+        <button type="button" class="btn-secundario" onclick="_mapeamentoAutomatico()">✨ Reconhecer de novo</button>
       </div>
     </div>
     <div class="mapeamento-secoes-abas">
@@ -1035,11 +1090,65 @@ function renderMapeamentoTemplate() {
 // lista única enorme misturando tudo, que fazia a pessoa perder a referência
 // de onde estava rolando.
 function _htmlPainelCampos(cfg) {
+  const pendencias = _htmlPendenciasMapeamento();
   if (_mapeamentoEmEdicao.secaoAtiva === "unicos") {
-    return cfg.unicos.map((f) => _htmlBotaoCampoMapeamento("unico", null, f.campo, f.rotulo)).join("");
+    return pendencias + cfg.unicos.map((f) => _htmlBotaoCampoMapeamento("unico", null, f.campo, f.rotulo)).join("");
   }
   const t = cfg.tabelas.find((t) => t.fonte_dados === _mapeamentoEmEdicao.secaoAtiva);
-  return t ? t.colunas.map((f) => _htmlBotaoCampoMapeamento("tabela", t.fonte_dados, f.campo, f.rotulo)).join("") : "";
+  return pendencias + (t ? t.colunas.map((f) => _htmlBotaoCampoMapeamento("tabela", t.fonte_dados, f.campo, f.rotulo)).join("") : "");
+}
+
+// A lista de perguntas do app: o que ele não teve certeza de preencher.
+// Fica no topo do painel, nas duas seções, porque é a única coisa que ainda
+// depende de uma pessoa - o resto já está resolvido.
+function _htmlPendenciasMapeamento() {
+  const pendencias = _mapeamentoEmEdicao.pendencias || [];
+  const conferir = _mapeamentoEmEdicao.conferir || [];
+  const bloco = (classe, lista, qual, titulo, ajuda) => !lista.length ? "" : `
+    <div class="${classe}">
+      <strong>${titulo}</strong>
+      <p>${ajuda}</p>
+      ${lista.map((d, i) => `
+        <button type="button" class="mapeamento-pendencia-item" onclick="_irParaPendencia('${qual}', ${i})">
+          <span>${esc(d.rotulo)}</span>
+          <small>${esc(d.motivo)}</small>
+        </button>`).join("")}
+    </div>`;
+  return bloco("mapeamento-pendencias", pendencias, "p",
+      `${pendencias.length} campo(s) que eu não preenchi sozinho`,
+      "Clique num item: a célula de que desconfiei pisca na prévia. Confirme clicando nela, ou escolha outra.")
+    + bloco("mapeamento-conferir", conferir, "c",
+      `${conferir.length} preenchimento(s) para conferir`,
+      "Preenchi, mas não tenho certeza. Clique para ver onde ficou; se estiver errado, clique na célula certa.");
+}
+
+// Leva a pessoa até a pendência: arma o campo, abre a aba certa, pisca a
+// célula suspeita e rola até ela. O clique seguinte na prévia resolve.
+function _irParaPendencia(qual, indice) {
+  const lista = qual === "c" ? _mapeamentoEmEdicao.conferir : _mapeamentoEmEdicao.pendencias;
+  const d = (lista || [])[indice];
+  if (!d) return;
+  // "__linha" não é campo mapeável (é a linha de exemplo da tabela): só
+  // mostra onde ficou, sem armar clique que criaria uma coluna inexistente.
+  _mapeamentoArmado = String(d.campo).startsWith("__")
+    ? null
+    : { grupo: d.grupo, tabela: d.tabela || null, campo: d.campo };
+  _mapeamentoEmEdicao.secaoAtiva = d.grupo === "unico" ? "unicos" : d.tabela;
+  if (d.sugestao) {
+    _mapeamentoEmEdicao.abaAtiva = d.sugestao.origem;
+    _mapeamentoEmEdicao.celulaDestaque = d.sugestao;
+  } else {
+    _mapeamentoEmEdicao.celulaDestaque = null;
+  }
+  renderMapeamentoTemplate();
+  if (d.sugestao) _centralizarPreviewEm(d.sugestao.origem, d.sugestao.linha, d.sugestao.coluna);
+}
+
+function _resolverPendencia(grupo, tabela, campo) {
+  const fora = (p) => !(p.grupo === grupo && (p.tabela || null) === (tabela || null) && p.campo === campo);
+  _mapeamentoEmEdicao.pendencias = (_mapeamentoEmEdicao.pendencias || []).filter(fora);
+  _mapeamentoEmEdicao.conferir = (_mapeamentoEmEdicao.conferir || []).filter(fora);
+  _mapeamentoEmEdicao.celulaDestaque = null;
 }
 
 // Troca a seção em foco e, se ela já tiver algum campo mapeado, pula pra
@@ -1134,21 +1243,148 @@ function _normalizarTexto(txt) {
     .replace(/[°º]/g, "").trim();
 }
 
+// Casamento de palavra-chave por PALAVRA INTEIRA, não por pedaço.
+//
+// Antes era includes() puro, e chave curta casava dentro de outra palavra:
+// "arca" (que existe pra tolerar "arca" digitado no lugar de "área") casava
+// com LOGOM-ARCA e mandava o campo Área para a célula ao lado do logotipo.
+// Medido no template da CBA em 2026-10-26. A mesma armadilha valia pra "te",
+// "item", "data" e qualquer outra chave curta.
+function _casaChave(textoNormalizado, chave) {
+  if (!textoNormalizado || !chave) return false;
+  const escapada = chave.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9])${escapada}([^a-z0-9]|$)`).test(textoNormalizado);
+}
+
 // Acha, numa lista de campos com "chaves" (palavras-chave), qual campo
 // corresponde ao texto normalizado de uma célula - o primeiro que bater
 // vence (evita a mesma célula virar sugestão pra dois campos ao mesmo tempo).
 function _campoPorPalavraChave(textoNormalizado, campos) {
   if (!textoNormalizado) return null;
-  return campos.find((f) => (f.chaves || []).some((chave) => textoNormalizado.includes(chave))) || null;
+  return campos.find((f) => (f.chaves || []).some((chave) => _casaChave(textoNormalizado, chave))) || null;
+}
+
+// Nome do cliente DESTE projeto, lido do cadastro que já está na memória da
+// tela. Não é lista no código: muda sozinho a cada projeto.
+function _clienteDoProjeto(projetoId) {
+  const p = (state.projetos || []).find((x) => x.id === projetoId)
+    || ((state.projetoAtual && state.projetoAtual.id === projetoId) ? state.projetoAtual : null);
+  return ((p && p.cliente_nome) || "").trim();
+}
+
+// O carimbo quase nunca escreve "Número do Cliente": escreve o NOME do
+// cliente - "Nº CBA:", "Nº NEXA:", "Nº JAGUAR:". Pôr esses nomes no
+// dicionário faria cada cliente novo virar alteração de código, que é o que
+// a decisão de 2026-10-26 proíbe. Então a palavra-chave é montada na hora,
+// a partir do cliente do próprio projeto.
+//
+// Mínimo de 3 letras porque chave curta casa onde não devia (foi "arca"
+// dentro de LOGOM-ARCA que mandou o campo Área para o lado do logotipo).
+function _chavesDoCampo(f, cliente) {
+  const chaves = (f.chaves || []).slice();
+  if (f.campo !== "numero_cliente") return chaves;
+  const nome = _normalizarTexto(cliente);
+  if (nome.length >= 3) chaves.push(nome);
+  const primeira = nome.split(/[^a-z0-9]+/).filter(Boolean)[0];
+  if (primeira && primeira.length >= 3 && primeira !== nome) chaves.push(primeira);
+  return chaves;
+}
+
+// Texto que o template usa só pra marcar "o dado vem aqui": XXX, XX / XX,
+// 1/X, dd/mm/aa, 0A, #N/A. Escrever por cima disso é o esperado.
+const _PADROES_ESPACO_RESERVADO = [
+  /^[x\s\/\-_.#]+$/,        // XXX · XX / XX · --- · X-X
+  /^\d+\s*\/\s*x$/,         // 1/X, 2/X (numeração de folha)
+  /^(dd|mm|aa)[\/\-. ]/,    // dd/mm/aa
+  /^#?n\/?a$/,              // #N/A, N/A
+  /^\d*[a-z]$/,             // 0A, 0B (revisão)
+];
+
+function _ehEspacoReservado(textoNormalizado) {
+  if (!textoNormalizado) return true;
+  return _PADROES_ESPACO_RESERVADO.some((p) => p.test(textoNormalizado));
+}
+
+// Distingue RÓTULO de VALOR que por acaso contém a palavra.
+//
+// Sem isto, a chave "subtitulo" casava com o bloco de títulos da CBA
+// ("TÍTULO DO PROJETO / SUBTÍTULO DO PROJETO / ..."), que é o lugar onde o
+// dado ENTRA, não o rótulo que o anuncia - e o automático então mirava a
+// célula seguinte, que era o rótulo "FASE DO PROJETO" de outro campo.
+// Rótulo é: termina em dois-pontos, ou é curto e quase todo formado pela
+// própria palavra-chave ("TE", "Item", "Elab.").
+function _pareceRotulo(textoNormalizado, chave) {
+  if (!textoNormalizado) return false;
+  if (/:\s*$/.test(textoNormalizado)) return true;
+  return !!chave && textoNormalizado.length <= 40 && chave.length / textoNormalizado.length >= 0.5;
+}
+
+// Rótulo que anuncia um NÚMERO: começa com a abreviação "N" ("Nº CBA:",
+// "Nº CONTRATADA:", "N:", "Nº Cliente"). O "º" já caiu em _normalizarTexto.
+//
+// Serve para separar o rótulo certo de uma palavra certa no lugar errado:
+// no template da CBA, "LOGOMARCA CONTRATADA" (G2) e "Nº CONTRATADA:" (K8)
+// casam os dois com a palavra "contratada", e o primeiro vence por estar
+// antes na varredura - jogando o número da projetista para dentro do espaço
+// do logotipo. Medido em 2026-11-09. É a armadilha do "arca" em LOGOM-ARCA
+// outra vez, agora com palavra legítima: não se resolve encurtando chave.
+function _ehRotuloDeNumero(textoNormalizado) {
+  return /^n($|[^a-z0-9])/.test(textoNormalizado || "") && textoNormalizado.length <= 30;
+}
+
+// A trava que faz o automático preencher só com certeza.
+//
+// O risco que importa não é campo vazio - é dado certo na célula errada, em
+// silêncio: documento emitido e assinado com a informação trocada.
+//
+// Escreve sem hesitar quando a célula (a) está vazia, (b) tem espaço
+// reservado, ou (c) se descreve ("TÍTULO DO PROJETO"). Nunca escreve sobre
+// fórmula (apagaria o cálculo do cliente) nem sobre o rótulo de outro campo.
+//
+// O caso do meio importa: parte dos clientes manda o template **preenchido
+// com um exemplo real** (o da Jaguar vem com "ENGENHARIA/GEAU", número de
+// documento, revisão). Ali a célula tem texto e ainda assim é o lugar certo.
+// Quando o rótulo encontrado é um rótulo de verdade, aceita - mas devolve
+// "confirmar", e o campo entra na lista de conferência em vez de passar
+// batido.
+function _alvoAceitavel(celula, chaves, rotuloEhRotulo) {
+  if (!celula || celula.valor === null || celula.valor === undefined || String(celula.valor).trim() === "") {
+    return { ok: true };
+  }
+  if (celula.formula) return { ok: false, motivo: "a célula tem fórmula do próprio template" };
+  const texto = _normalizarTexto(celula.valor);
+  if (_ehEspacoReservado(texto)) return { ok: true };
+  if ((chaves || []).some((ch) => _casaChave(texto, ch))) return { ok: true };
+  const amostra = String(celula.valor).trim().replace(/\s+/g, " ").slice(0, 28);
+  if (_pareceRotulo(texto, null)) {
+    return { ok: false, motivo: `a célula ao lado é outro rótulo ("${amostra}")` };
+  }
+  if (rotuloEhRotulo) {
+    return { ok: true, confirmar: `a célula já trazia "${amostra}" — exemplo do cliente? confira` };
+  }
+  return { ok: false, motivo: `a célula já tem texto ("${amostra}")` };
 }
 
 // Mapeamento automático: sugere associações prováveis a partir do texto das
 // próprias células do template, mas NUNCA sobrescreve um campo que a pessoa já
 // mapeou manualmente - só preenche o que ainda está "não definido". Sempre
 // revisável/corrigível depois, como qualquer mapeamento manual.
-function _mapeamentoAutomatico() {
+function _mapeamentoAutomatico(silencioso) {
   const cfg = CAMPOS_MAPEAMENTO_POR_TIPO[_mapeamentoEmEdicao.tipo];
   let contagem = 0;
+
+  // O que o automático NÃO teve certeza de preencher. Vira a lista de
+  // perguntas no painel, com a célula suspeita piscando na prévia - em vez
+  // de um número solto no aviso, que ninguém confere.
+  _mapeamentoEmEdicao.pendencias = [];
+  _mapeamentoEmEdicao.conferir = [];
+  const anotar = (grupo, tabela, campo, rotulo, motivo, sugestao) => {
+    _mapeamentoEmEdicao.pendencias.push({ grupo, tabela, campo, rotulo, motivo, sugestao: sugestao || null });
+  };
+  // Preenchido, mas vale um olho: não é pergunta, é conferência.
+  const conferir = (grupo, tabela, campo, rotulo, motivo, sugestao) => {
+    _mapeamentoEmEdicao.conferir.push({ grupo, tabela, campo, rotulo, motivo, sugestao: sugestao || null });
+  };
 
   // Índice plano de todas as células de todas as abas, com texto normalizado -
   // reaproveitado nas três buscas abaixo (campos únicos, itens, revisões).
@@ -1166,16 +1402,125 @@ function _mapeamentoAutomatico() {
   // ---- 1) Campos únicos: acha a célula-rótulo, valor fica embaixo (padrão
   // mais comum nesses carimbos) ou, se não houver linha abaixo, ao lado. ----
   cfg.unicos.forEach((f) => {
-    if (_mapeamentoEmEdicao.camposUnicos[f.campo] || !f.chaves.length) return;
-    const rotulo = todasCelulas.find((c) => (f.chaves || []).some((chave) => c.texto.includes(chave)));
-    if (!rotulo) return;
+    // Dicionário + o nome do cliente deste projeto, montado agora.
+    const chavesCampo = _chavesDoCampo(f, _mapeamentoEmEdicao.cliente);
+    if (_mapeamentoEmEdicao.camposUnicos[f.campo] || !chavesCampo.length) return;
+    // Procura primeiro uma célula que seja mesmo um RÓTULO ("TÍTULO:"); só
+    // se não houver nenhuma aceita um casamento solto, e aí com desconfiança.
+    let chaveCasada = null;
+    const casa = (c) => chavesCampo.find((chave) => _casaChave(c.texto, chave));
+    // Campo de número procura primeiro entre os rótulos que anunciam número.
+    // Só se não houver nenhum é que vale qualquer célula - assim um template
+    // que escreva apenas "Cliente:" continua sendo reconhecido.
+    const tentativas = f.campo.startsWith("numero_")
+      ? [todasCelulas.filter((c) => _ehRotuloDeNumero(c.texto)), todasCelulas]
+      : [todasCelulas];
+    let rotulo = null;
+    let rotuloEhRotulo = false;
+    for (const conjunto of tentativas) {
+      rotulo = conjunto.find((c) => { const ch = casa(c); return ch && _pareceRotulo(c.texto, ch); });
+      rotuloEhRotulo = !!rotulo;
+      if (!rotulo) rotulo = conjunto.find((c) => casa(c));
+      if (rotulo) break;
+    }
+    if (!rotulo) {
+      anotar("unico", null, f.campo, f.rotulo, "nenhum rótulo reconhecido neste template");
+      return;
+    }
+    chaveCasada = casa(rotulo);
     const abaixo = celulaEm(rotulo.origem, rotulo.linha + rotulo.rowspan, rotulo.coluna);
     const alvo = abaixo || celulaEm(rotulo.origem, rotulo.linha, rotulo.coluna + rotulo.colspan);
     const linha = alvo ? alvo.linha : rotulo.linha + rotulo.rowspan;
     const coluna = alvo ? alvo.coluna : rotulo.coluna + rotulo.colspan;
+    const veredito = _alvoAceitavel(alvo, chavesCampo, rotuloEhRotulo);
+    if (!veredito.ok) {
+      // Achou o rótulo mas a célula de destino não parece vaga. Não escreve:
+      // pergunta, mostrando onde ele ia escrever e por que desconfiou.
+      anotar("unico", null, f.campo, f.rotulo,
+        `achei "${String(rotulo.valor).trim().slice(0, 24)}", mas ${veredito.motivo}`,
+        { origem: rotulo.origem, linha, coluna });
+      return;
+    }
     _mapeamentoEmEdicao.camposUnicos[f.campo] = { origem: rotulo.origem, coord: `${_colunaParaLetra(coluna)}${linha}` };
+    if (veredito.confirmar) {
+      conferir("unico", null, f.campo, f.rotulo, veredito.confirmar, { origem: rotulo.origem, linha, coluna });
+    }
     contagem++;
   });
+
+  // ---- 1b) O carimbo de 4 linhas. ----
+  // "Subtítulo / Área / Disciplina / Título" são quatro linhas de um mesmo
+  // bloco, e os três templates de referência arranjam esse bloco de três
+  // jeitos diferentes: quatro células empilhadas (projeto #12), uma linha só
+  // (Jaguar) e quatro linhas dentro de UMA célula mesclada (CBA). Um único
+  // rótulo "TÍTULO:" serve para o bloco inteiro, então saber em qual linha
+  // cada campo cai é adivinhação. Quando é esse o caso, o que foi preenchido
+  // vai para conferência - preenchido, mas com o aviso de que pode estar uma
+  // linha acima ou abaixo.
+  const CARIMBO = ["subtitulo", "area", "disciplina", "titulo"];
+  const faltandoNoCarimbo = CARIMBO.filter((c) => !_mapeamentoEmEdicao.camposUnicos[c]);
+  if (faltandoNoCarimbo.length && faltandoNoCarimbo.length < CARIMBO.length) {
+    CARIMBO.filter((c) => _mapeamentoEmEdicao.camposUnicos[c]).forEach((campo) => {
+      if (_mapeamentoEmEdicao.conferir.some((p) => p.campo === campo)) return;
+      const f = cfg.unicos.find((x) => x.campo === campo);
+      const v = _mapeamentoEmEdicao.camposUnicos[campo];
+      const lc = _coordParaLinhaColuna(v.coord);
+      conferir("unico", null, campo, f ? f.rotulo : campo,
+        "o carimbo tem mais de uma linha e achei só um rótulo — confira se é esta linha",
+        { origem: v.origem, linha: lc.linha, coluna: lc.coluna });
+    });
+  }
+
+  // ---- 1c) O par de números empilhados no alto do carimbo. ----
+  //
+  // Medido nos templates reais do banco em 2026-11-09: o número do cliente e
+  // o da projetista são dois rótulos "Nº ..." na MESMA COLUNA, o do cliente
+  // em cima e o da projetista logo abaixo, com o valor na célula de baixo de
+  // cada um.
+  //
+  //   CBA      Capa K6 "Nº CBA:"     / K8 "Nº CONTRATADA:"  (valores K7 e K9, "XXX")
+  //   gerdau   Capa V3 "Nº Cliente"  / V6 "Nº Projetista"   (valores V4 e V7, vazios)
+  //
+  // O dicionário não acha "Nº CBA:" nem "Nº CONTRATADA:", e não pode achar
+  // virando lista de nomes de empresa. A POSIÇÃO resolve sem conhecer
+  // ninguém: de dois rótulos de número empilhados, o de cima é do cliente e o
+  // de baixo é da projetista. Vai para a lista de conferência, nunca passa
+  // batido - foi deduzido do arranjo, não lido de um rótulo explícito.
+  if (!_mapeamentoEmEdicao.camposUnicos.numero_cliente
+      || !_mapeamentoEmEdicao.camposUnicos.numero_projetista) {
+    const porColuna = {};
+    todasCelulas.forEach((c) => {
+      if (!_ehRotuloDeNumero(c.texto)) return;
+      const chave = `${c.origem}_${c.coluna}`;
+      (porColuna[chave] = porColuna[chave] || []).push(c);
+    });
+    Object.values(porColuna).forEach((grupo) => {
+      // Exatamente dois: com um só não há par, com três ou mais o arranjo
+      // não é o que foi medido e adivinhar sairia caro.
+      if (grupo.length !== 2) return;
+      const ordenados = grupo.slice().sort((a, b) => a.linha - b.linha);
+      [["numero_cliente", ordenados[0]], ["numero_projetista", ordenados[1]]].forEach(([campo, rotulo]) => {
+        if (_mapeamentoEmEdicao.camposUnicos[campo]) return;
+        const f = cfg.unicos.find((x) => x.campo === campo);
+        if (!f) return;
+        const alvo = celulaEm(rotulo.origem, rotulo.linha + rotulo.rowspan, rotulo.coluna);
+        const linha = alvo ? alvo.linha : rotulo.linha + rotulo.rowspan;
+        const coluna = alvo ? alvo.coluna : rotulo.coluna;
+        const amostra = String(rotulo.valor).trim().slice(0, 24);
+        const veredito = _alvoAceitavel(alvo, _chavesDoCampo(f, _mapeamentoEmEdicao.cliente), true);
+        if (!veredito.ok) return;  // a pendência do bloco 1 já diz o que falta
+        // O bloco 1 pode ter anotado "nenhum rótulo reconhecido" para este
+        // campo. Agora ele tem célula: a pergunta deixou de existir.
+        _mapeamentoEmEdicao.pendencias = _mapeamentoEmEdicao.pendencias.filter(
+          (p) => !(p.grupo === "unico" && p.campo === campo));
+        _mapeamentoEmEdicao.camposUnicos[campo] = { origem: rotulo.origem, coord: `${_colunaParaLetra(coluna)}${linha}` };
+        conferir("unico", null, campo, f.rotulo,
+          `achei pela posição: "${amostra}" é o ${campo === "numero_cliente" ? "de cima" : "de baixo"} do par de números — confira`,
+          { origem: rotulo.origem, linha, coluna });
+        contagem++;
+      });
+    });
+  }
 
   // ---- 2) Tabelas (itens / revisões): acha a linha de cabeçalho com mais
   // palavras-chave batendo, usa a linha seguinte como linha de exemplo. ----
@@ -1235,16 +1580,49 @@ function _mapeamentoAutomatico() {
     cabecalho.forEach((c) => {
       const campo = _campoPorPalavraChave(c.texto, t.colunas);
       if (!campo || estadoTabela.colunas[campo.campo]) return;
+      // Coluna calculada pelo próprio template (VLOOKUP e afins) não se
+      // preenche: o cliente busca o dado a partir de outra coluna, e
+      // escrever por cima apagaria a fórmula dele.
+      const celulaDado = celulaEm(origemAlvo, linhaDados, c.coluna);
+      if (celulaDado && celulaDado.formula) {
+        anotar("tabela", t.fonte_dados, campo.campo, `${t.rotulo}: ${campo.rotulo}`,
+          "a coluna é calculada por fórmula no template - deixe o cliente calcular",
+          { origem: origemAlvo, linha: linhaDados, coluna: c.coluna });
+        return;
+      }
       estadoTabela.colunas[campo.campo] = { colIni: c.coluna, colFim: c.coluna + c.colspan - 1 };
       contagem++;
     });
+    // Colunas do sistema que não apareceram no cabeçalho do cliente.
+    t.colunas.forEach((col) => {
+      if (estadoTabela.colunas[col.campo]) return;
+      if (_mapeamentoEmEdicao.pendencias.some((p) => p.tabela === t.fonte_dados && p.campo === col.campo)) return;
+      anotar("tabela", t.fonte_dados, col.campo, `${t.rotulo}: ${col.rotulo}`,
+        "não achei essa coluna no cabeçalho do template");
+    });
+    // A linha de exemplo é escolhida por heurística (o lado do cabeçalho que
+    // mais parece ter dado), e errar nela desloca a tabela inteira. Não é
+    // pergunta - é conferência de um clique.
+    if (Object.keys(estadoTabela.colunas).length) {
+      conferir("tabela", t.fonte_dados, "__linha", `${t.rotulo}: linha de exemplo`,
+        `usei a linha ${estadoTabela.linha} como modelo — confira se é a primeira linha de dados`,
+        { origem: estadoTabela.origem, linha: estadoTabela.linha, coluna: Object.values(estadoTabela.colunas)[0].colIni });
+    }
   });
 
-  _atualizarPainelCampos();
-  _renderPreviewAbaMapeamento(_mapeamentoEmEdicao.abaAtiva);
+  // O reconhecimento também roda com o modal FECHADO (ao salvar a primeira
+  // lista de um projeto cujo template ainda não foi mapeado). Aí não existe
+  // painel nem prévia para redesenhar - e _renderPreviewAbaMapeamento
+  // quebraria procurando a tabela da prévia.
+  if (document.getElementById("mapeamento-tabela-wrap")) {
+    _atualizarPainelCampos();
+    _renderPreviewAbaMapeamento(_mapeamentoEmEdicao.abaAtiva);
+  }
+  if (silencioso) return;
+  const pendentes = _mapeamentoEmEdicao.pendencias.length;
   toast(contagem
-    ? `${contagem} campo(s) preenchido(s) automaticamente - confira e complete o que faltar.`
-    : "Não encontrei correspondências óbvias no template - mapeie manualmente.");
+    ? `${contagem} campo(s) preenchido(s) com segurança${pendentes ? ` · ${pendentes} esperando você decidir` : ""}.`
+    : "Não encontrei nada com segurança neste template - responda as pendências ao lado.");
 }
 
 function _trocarAbaMapeamento(origem) {
@@ -1298,8 +1676,12 @@ function _renderPreviewAbaMapeamento(origem) {
       const coord = `${_colunaParaLetra(col)}${linha}`;
       const mapeada = _coordEstaMapeada(origem, linha, col);
       const estiloCss = _estiloCelulaParaCss(cel && cel.estilo);
-      html += `<td data-linha="${linha}" data-coluna="${col}" title="${esc(coord)}"
-        class="${mapeada ? "celula-mapeada" : ""} ${valor === "" ? "celula-vazia" : ""}"
+      const dest = _mapeamentoEmEdicao.celulaDestaque;
+      const emDuvida = dest && dest.origem === origem && dest.linha === linha
+        && col <= dest.coluna && dest.coluna < col + colspan;
+      const comFormula = cel && cel.formula;
+      html += `<td data-linha="${linha}" data-coluna="${col}" title="${esc(coord)}${comFormula ? " — célula com fórmula do template" : ""}"
+        class="${mapeada ? "celula-mapeada" : ""} ${valor === "" ? "celula-vazia" : ""} ${emDuvida ? "celula-em-duvida" : ""} ${comFormula ? "celula-formula" : ""}"
         style="${estiloCss}"
         ${rowspan > 1 ? `rowspan="${rowspan}"` : ""} ${colspan > 1 ? `colspan="${colspan}"` : ""}
         onclick="_clicarCelulaMapeamento(${origem}, ${linha}, ${col}, ${colspan})">${esc(valor) || "&nbsp;"}</td>`;
@@ -1429,18 +1811,22 @@ function _clicarCelulaMapeamento(origem, linha, coluna, colspan) {
     }
     estadoTabela.colunas[campo] = { colIni: coluna, colFim: coluna + colspan - 1 };
   }
+  _resolverPendencia(grupo, tabela, campo);
   _mapeamentoArmado = null;
   _atualizarPainelCampos();
   _renderPreviewAbaMapeamento(origem);
 }
 
-async function _salvarMapeamentoTemplate() {
+// Serializa o estado da tela no JSON que o banco guarda e que relatorios.py
+// lê para preencher o template. Separado de _salvarMapeamentoTemplate
+// porque o reconhecimento automático grava exatamente o mesmo formato.
+function _mapeamentoParaJson(estado) {
   const porAba = {};
-  Object.entries(_mapeamentoEmEdicao.camposUnicos).forEach(([campo, v]) => {
+  Object.entries(estado.camposUnicos).forEach(([campo, v]) => {
     porAba[v.origem] = porAba[v.origem] || { origem: v.origem, campos: {}, tabelas: [] };
     porAba[v.origem].campos[campo] = v.coord;
   });
-  Object.entries(_mapeamentoEmEdicao.tabelas).forEach(([fonteDados, t]) => {
+  Object.entries(estado.tabelas).forEach(([fonteDados, t]) => {
     if (!Object.keys(t.colunas).length) return;
     porAba[t.origem] = porAba[t.origem] || { origem: t.origem, campos: {}, tabelas: [] };
     const colDireita = Math.max(...Object.values(t.colunas).map((c) => c.colFim));
@@ -1450,11 +1836,21 @@ async function _salvarMapeamentoTemplate() {
       col_direita_impressao: colDireita,
     });
   });
+  return Object.values(porAba);
+}
 
-  const abas = Object.values(porAba);
+function _contarCamposMapeados(estado) {
+  return Object.keys(estado.camposUnicos).length
+    + Object.values(estado.tabelas).reduce((n, t) => n + Object.keys(t.colunas).length, 0);
+}
+
+async function _salvarMapeamentoTemplate() {
+  const abas = _mapeamentoParaJson(_mapeamentoEmEdicao);
   if (!abas.length) { toast("Mapeie ao menos um campo antes de salvar", "erro"); return; }
 
   try {
+    // Sem "origem_automatica": o que uma pessoa salvou deixa de ser palpite
+    // do sistema, e a tela para de reconhecer por cima a cada abertura.
     await api(`/api/projetos/${_mapeamentoEmEdicao.projetoId}/templates/${_mapeamentoEmEdicao.templateId}/mapeamento`, {
       method: "PUT", body: JSON.stringify({ abas }),
     });
@@ -1464,19 +1860,71 @@ async function _salvarMapeamentoTemplate() {
   } catch (err) { toast(err.message, "erro"); }
 }
 
+// ---------- Reconhecimento do template ao cadastrar a lista ----------
+// O template do cliente chega sem mapeamento, e até 03/11/2026 ele só era
+// reconhecido quando alguém abria a tela de mapeamento. Quem só cadastra
+// listas nunca passa por ali: o projeto ficava com template enviado e
+// mapeamento NULL, e relatorios.py recusa template sem mapeamento
+// (_template_projeto exige "mapeamento IS NOT NULL") - então o Excel da
+// lista simplesmente não saía. Foi o caso do projeto 26558.
+//
+// Agora, ao salvar uma lista num projeto cujo template de lista de
+// materiais ainda não tem mapeamento, o reconhecimento roda sozinho e grava
+// o que achou COM SEGURANÇA - com as travas de sempre: não escreve sobre
+// fórmula, nem sobre rótulo de outro campo, nem sobre texto que não pareça
+// espaço reservado. O que ficou em dúvida continua sendo pergunta: entra no
+// aviso e reaparece na tela de mapeamento, que reabre reconhecendo de novo
+// enquanto o mapeamento for automático.
+async function reconhecerTemplateDaLista(projetoId) {
+  let templates;
+  try { templates = await api(`/api/projetos/${projetoId}/templates`); } catch (err) { return; }
+  const template = (templates || []).find((x) => x.tipo === "lista_materiais");
+  if (!template || template.mapeado) return;  // nada enviado, ou já tem mapeamento
+
+  // O modal pode estar aberto em outra coisa - o estado é emprestado e devolvido.
+  const estadoAnterior = _mapeamentoEmEdicao;
+  const armadoAnterior = _mapeamentoArmado;
+  try {
+    const preview = await api(`/api/projetos/${projetoId}/templates/${template.id}/preview`);
+    if (preview.mapeamento) return;  // alguém mapeou enquanto isso
+    _mapeamentoEmEdicao = _novoEstadoMapeamento(projetoId, template.id, "lista_materiais", preview.abas);
+    _mapeamentoArmado = null;
+    _mapeamentoAutomatico(true);
+
+    const abas = _mapeamentoParaJson(_mapeamentoEmEdicao);
+    if (!abas.length) {
+      toast('Não reconheci nenhum campo do template deste projeto — abra "Template sem mapear" para mapear à mão antes de baixar o Excel.', "erro");
+      return;
+    }
+    await api(`/api/projetos/${projetoId}/templates/${template.id}/mapeamento`, {
+      method: "PUT", body: JSON.stringify({ abas, origem_automatica: true }),
+    });
+    const campos = _contarCamposMapeados(_mapeamentoEmEdicao);
+    const pendentes = _mapeamentoEmEdicao.pendencias.length;
+    toast(`Template do projeto reconhecido: ${campos} campo(s) mapeado(s)${pendentes ? ` · ${pendentes} esperando você decidir em "Template"` : ""}.`);
+  } catch (err) {
+    // Reconhecer é um extra em cima do cadastro: a lista JÁ foi salva, e
+    // falhar aqui não pode dar a entender que ela não foi.
+    toast(`Lista salva. Não consegui reconhecer o template agora: ${err.message}`, "erro");
+  } finally {
+    _mapeamentoEmEdicao = estadoAnterior;
+    _mapeamentoArmado = armadoAnterior;
+  }
+}
+
 // ---------- PROJETOS ----------
 async function carregarProjetos() {
   state.projetos = await api("/api/projetos");
   const tbody = document.getElementById("tbody-projetos");
   tbody.innerHTML = state.projetos.map((p) => `
     <tr>
-      <td>${esc(p.codigo)}</td><td>${esc(p.nome)}</td><td>${esc(p.cliente_nome || "-")}</td><td>${esc(p.status)}</td><td>${esc(p.area_nome || "-")}</td>
+      <td>${esc(p.cliente_nome || "-")}</td><td>${esc(p.nome)}</td><td>${esc(p.status)}</td><td>${esc(p.area_nome || "-")}</td>
       <td class="acoes-linha">
         <button class="link-acao" onclick="abrirProjeto(${p.id})">Abrir</button>
         <button class="link-acao somente-admin" onclick="editarProjeto(${p.id})">Editar</button>
         <button class="link-acao somente-master" onclick="excluirProjeto(${p.id})">Excluir</button>
       </td>
-    </tr>`).join("") || `<tr><td colspan="6">Nenhum projeto cadastrado.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="5">Nenhum projeto cadastrado.</td></tr>`;
   aplicarPermissoes();
 }
 
@@ -1493,21 +1941,18 @@ async function modalProjeto(projeto = null) {
   if (!state.clientes.length) state.clientes = await api("/api/clientes");
   await garantirAreasCarregadas();
   const p = projeto || { codigo: "", nome: "", cliente_id: "", status: "conceitual", numero_cliente: "", numero_fornecedor: "", area_id: "" };
-  const opcoesClientes = state.clientes.map((c) => `<option value="${c.id}" ${p.cliente_id == c.id ? "selected" : ""}>${esc(c.nome_fantasia || c.razao_social)}</option>`).join("");
+  const opcoesClientes = state.clientes.map((c) => `<option value="${c.id}" ${p.cliente_id == c.id ? "selected" : ""}>${esc(nomeDoCliente(c))}</option>`).join("");
   const opcoesAreas = state.areas.map((a) => `<option value="${a.id}" ${p.area_id == a.id ? "selected" : ""}>${esc(a.nome)}</option>`).join("");
   abrirModal(`
     <h3>${projeto ? "Editar" : "Novo"} Projeto</h3>
     <div class="form-grid">
       <label>Cliente</label>
       <select id="proj-cliente"><option value="">-- Selecione --</option>${opcoesClientes}</select>
-      <label>Número do Projeto</label><input id="proj-nome" value="${esc(p.nome)}">
+      <label>Nome do Projeto</label><input id="proj-nome" value="${esc(p.nome)}">
       <label>Status</label>
       <select id="proj-status">
         ${ORDEM_STATUS.map((s) => `<option value="${s}" ${p.status === s ? "selected" : ""}>${ROTULOS_STATUS[s]}</option>`).join("")}
       </select>
-      <label>Código</label><input id="proj-codigo" value="${esc(p.codigo)}">
-      <label>Nº do Cliente</label><input id="proj-numero-cliente" value="${esc(p.numero_cliente || "")}">
-      <label>Nº do Fornecedor</label><input id="proj-numero-fornecedor" value="${esc(p.numero_fornecedor || "")}">
       <label>Área</label>
       <select id="proj-area"><option value="">-- Selecione --</option>${opcoesAreas}</select>
     </div>
@@ -1519,20 +1964,39 @@ async function modalProjeto(projeto = null) {
 }
 
 async function salvarProjeto(id) {
+  // Código, Nº do Cliente e Nº do Fornecedor saíram desta tela: o código o
+  // servidor gera a partir do nome, e os dois números são do carimbo, que
+  // mora em "Padrão das listas". Não mandá-los aqui faz o servidor manter
+  // o que já estava gravado.
   const payload = {
     cliente_id: document.getElementById("proj-cliente").value || null,
     nome: document.getElementById("proj-nome").value.trim(),
     status: document.getElementById("proj-status").value,
-    codigo: document.getElementById("proj-codigo").value.trim(),
-    numero_cliente: document.getElementById("proj-numero-cliente").value.trim(),
-    numero_fornecedor: document.getElementById("proj-numero-fornecedor").value.trim(),
     area_id: Number(document.getElementById("proj-area").value) || null,
   };
   if (!payload.cliente_id) { toast("Selecione o cliente", "erro"); return; }
+  if (!payload.nome) { toast("Informe o nome do projeto", "erro"); return; }
   if (!payload.area_id) { toast("Selecione a área", "erro"); return; }
+
+  const enviar = async (corpo) => {
+    if (id) return api(`/api/projetos/${id}`, { method: "PUT", body: JSON.stringify(corpo) });
+    return api("/api/projetos", { method: "POST", body: JSON.stringify(corpo) });
+  };
+
   try {
-    if (id) await api(`/api/projetos/${id}`, { method: "PUT", body: JSON.stringify(payload) });
-    else await api("/api/projetos", { method: "POST", body: JSON.stringify(payload) });
+    try {
+      await enviar(payload);
+    } catch (err) {
+      // Mesmo cliente com projeto de mesmo nome: avisa e deixa quem
+      // cadastrou decidir - repetir é permitido, só não pode passar
+      // despercebido.
+      if (!err.dados || !err.dados.duplicado) throw err;
+      const seguir = await confirmarPersonalizado(
+        `${err.message} Deseja cadastrar assim mesmo?`
+      );
+      if (!seguir) return;
+      await enviar({ ...payload, confirmado: true });
+    }
     fecharModal();
     toast("Projeto salvo com sucesso");
     carregarProjetos();
@@ -1549,7 +2013,11 @@ document.getElementById("btn-voltar-projetos").addEventListener("click", () => a
 // ---------- LISTAS POR DESENHO ----------
 async function abrirProjeto(id) {
   state.projetoAtual = state.projetos.find((p) => p.id === id);
-  document.getElementById("projeto-detalhe-titulo").textContent = `${state.projetoAtual.codigo} — ${state.projetoAtual.nome}`;
+  // Título do projeto aberto: cliente e nome, que é como a pessoa se
+  // refere a ele. Era "código — nome", e o código deixou de ser digitado
+  // (o servidor o gera a partir do nome, para a coluna única do banco).
+  document.getElementById("projeto-detalhe-titulo").textContent =
+    `${state.projetoAtual.cliente_nome || "-"} — ${state.projetoAtual.nome}`;
   ativarTabInterna("projeto-detalhe");
   ativarSubtabPD("pd-desenho");
   await _atualizarStatusTemplates();
@@ -1566,6 +2034,11 @@ async function abrirProjeto(id) {
 //    metade" à parte: ou não tem nada mapeado (pendente), ou tem pelo
 //    menos algo mapeado e já funciona (mapeado/verde)
 //  - mapeado: pelo menos um campo mapeado - já é usado no download
+//  - reconhecido: mapeado pelo reconhecimento automático ao cadastrar uma
+//    lista. Funciona igual (o download usa), mas NINGUÉM conferiu ainda -
+//    por isso continua na cor de atenção até alguém salvar o mapeamento
+//    na tela. Distinguir importa: um palpite do sistema e um mapeamento
+//    conferido não podem ter a mesma cara.
 //  - erro: não deu pra consultar o servidor agora
 // O de "lista_materiais" também é usado pra desabilitar o ícone de baixar
 // de cada lista (renderNoLista) enquanto não houver template utilizável -
@@ -1588,7 +2061,7 @@ async function _atualizarStatusTemplates() {
     else if (erro) status = "erro";
     else {
       const t = templates.find((x) => x.tipo === tipo);
-      status = !t ? "nenhum" : t.mapeado ? "mapeado" : "pendente";
+      status = !t ? "nenhum" : !t.mapeado ? "pendente" : t.automatico ? "reconhecido" : "mapeado";
     }
     _pintarBotaoTemplate(btn, tipo, status);
   });
@@ -1600,6 +2073,7 @@ function _pintarBotaoTemplate(btn, tipo, status) {
     nenhum: { icone: ICONE_TEMPLATE_UPLOAD, texto: "Template", titulo: `Nenhum template de ${rotulo} enviado ainda - clique para enviar` },
     pendente: { icone: ICONE_TEMPLATE_ALERTA, texto: "Template sem mapear", titulo: `Template de ${rotulo} enviado, mas ainda sem nenhum campo mapeado - clique para mapear` },
     mapeado: { icone: ICONE_TEMPLATE_OK, texto: "Template mapeado", titulo: `Template de ${rotulo} ativo - o download em Excel usa ele` },
+    reconhecido: { icone: ICONE_TEMPLATE_OK, texto: "Template reconhecido", titulo: `Template de ${rotulo} reconhecido sozinho ao cadastrar a lista e já em uso no download - ninguém conferiu ainda; clique para revisar as pendências` },
     erro: { icone: ICONE_TEMPLATE_ERRO, texto: "Template", titulo: "Não foi possível verificar o template agora - clique para tentar de novo" },
   }[status];
   btn.className = `btn-template somente-admin status-${status}`;
@@ -1610,6 +2084,11 @@ function _pintarBotaoTemplate(btn, tipo, status) {
 
 document.querySelectorAll(".btn-template[data-tipo]").forEach((btn) => {
   btn.addEventListener("click", () => abrirTemplatesProjeto(state.projetoAtual.id, btn.dataset.tipo));
+});
+
+document.getElementById("btn-cabecalho-padrao").addEventListener("click", () => {
+  if (!state.projetoAtual) { toast("Abra um projeto primeiro", "erro"); return; }
+  abrirCabecalhoPadrao(state.projetoAtual.id);
 });
 
 document.querySelectorAll(".subnav-item-pd").forEach((btn) => {
@@ -1732,21 +2211,43 @@ const ICONE_TEMPLATE_ALERTA = `<svg viewBox="0 0 20 20" fill="none"><path d="M10
 const ICONE_TEMPLATE_OK = `<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.3" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.5"/><path d="M6.8 10.2l2.1 2.1 4.3-4.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const ICONE_TEMPLATE_ERRO = `<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.3" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.5"/><path d="M7.5 7.5l5 5M12.5 7.5l-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
 
+// Rótulo de uma lista na relação, nesta ordem: data de criação · número da
+// projetista | número do cliente — título resumido. Antes era "número do
+// cliente / número do fornecedor", que repetia o cabeçalho do projeto (já
+// escrito logo acima, "CBA — 010402") e não dizia nem quando a lista nasceu
+// nem do que ela trata. Campo vazio sai da linha junto com o separador - um
+// "-" no lugar de um número é ruído, e pontuação solta parece erro.
+function _rotuloLista(l) {
+  const data = dataCurta(l.criado_em);
+  const numeros = [l.numero_fornecedor, l.numero_cliente]
+    .map((x) => (x || "").trim()).filter(Boolean).map(esc).join(" <span class=\"arvore-separador\">|</span> ");
+  // Sem título, cai no número do desenho: duas listas do mesmo projeto têm a
+  // mesma data e os mesmos números, então sem este campo as linhas ficariam
+  // idênticas na tela e não daria para saber qual é qual.
+  const titulo = (l.titulo || "").trim() || (l.numero_desenho ? `Desenho ${l.numero_desenho}` : "");
+  const cabeca = [data ? `<span class="arvore-data">${esc(data)}</span>` : "", numeros].filter(Boolean).join(" · ");
+  const completo = [cabeca, titulo ? esc(titulo) : ""].filter(Boolean).join(" — ");
+  // Lista sem nenhum desses campos ainda precisa ser clicável e reconhecível.
+  return completo || esc(l.numero_desenho || "(lista sem identificação)");
+}
+
 function renderNoLista(l) {
   const aberta = arvoreState.expandidas.has(l.id);
   const versoes = arvoreState.versoesPorLista[l.id];
+  const dataVersao = dataCurta(l.versao_criado_em);
   return `
     <div class="arvore-no" data-lista-id="${l.id}">
       <div class="arvore-linha arvore-linha-pasta">
-        <button class="arvore-toggle ${aberta ? "aberto" : ""}" onclick="toggleListaArvore(${l.id})" aria-label="Expandir">
+        <button class="arvore-toggle ${aberta ? "aberto" : ""}" onclick="toggleListaArvore(${l.id})" aria-label="${aberta ? "Recolher as versões anteriores" : "Ver as versões anteriores"}" title="${aberta ? "Recolher as versões anteriores" : "Ver as versões anteriores"}">
           <svg viewBox="0 0 12 12" fill="none"><path d="M4 2.5 8 6l-4 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleListaArvore(${l.id})">
-          <span class="arvore-titulo">${esc(l.numero_cliente || "-")} / ${esc(l.numero_fornecedor || "-")}${l.titulo ? " — " + esc(l.titulo) : ""}</span>
-          <span class="arvore-sub">${l.versao_atual ? "v" + l.versao_atual : "sem versão emitida"}${l.tem_rascunho ? '<span class="badge-rascunho">Rascunho em aberto</span>' : ""}</span>
+          <span class="arvore-titulo">${_rotuloLista(l)}</span>
+          <span class="arvore-sub">${l.versao_atual ? `v${l.versao_atual} — versão atual${dataVersao ? " de " + esc(dataVersao) : ""}` : "sem versão emitida"}${l.tem_rascunho ? '<span class="badge-rascunho">Rascunho em aberto</span>' : ""}</span>
         </span>
         <span class="arvore-acoes">
+          ${l.versao_atual_id ? `<button class="link-acao" onclick="verVersao(${l.id}, ${l.versao_atual_id})">Ver v${l.versao_atual}</button>` : ""}
           <button class="link-acao" onclick="abrirEditorMateriais(${l.id})">Editar materiais</button>
           ${state.templateListaMateriaisMapeado === false
             ? `<span class="acao-icone desabilitado" title="Projeto sem template de Lista de Materiais mapeado - use o botão &quot;Template&quot; acima" aria-label="Baixar Excel (indisponível, sem template mapeado)">${ICONE_IMPRIMIR}</span>`
@@ -1756,21 +2257,28 @@ function renderNoLista(l) {
         </span>
       </div>
       <div class="arvore-filhos ${aberta ? "" : "oculto"}" id="filhos-lista-${l.id}">
-        ${aberta ? renderFilhosVersoes(l.id, versoes) : ""}
+        ${aberta ? renderFilhosVersoes(l.id, versoes, l.versao_atual_id) : ""}
       </div>
     </div>`;
 }
 
-function renderFilhosVersoes(listaId, versoes) {
+// A gaveta guarda só as versões ANTERIORES: a atual já está na linha da
+// lista, com o botão "Ver v3". Mostrar a atual aqui de novo fazia a relação
+// repetir a mesma versão em dois lugares e obrigava a abrir a árvore para
+// saber em que versão a lista está.
+function renderFilhosVersoes(listaId, versoes, versaoAtualId) {
   if (!versoes) return `<div class="arvore-carregando">Carregando versões…</div>`;
-  if (!versoes.length) return `<div class="arvore-carregando">Nenhuma versão salva.</div>`;
-  return versoes.map((v) => `
+  const anteriores = versoes.filter((v) => v.id !== versaoAtualId);
+  if (!anteriores.length) {
+    return `<div class="arvore-carregando">Nenhuma versão anterior — esta lista só tem a versão atual.</div>`;
+  }
+  return anteriores.map((v) => `
     <div class="arvore-linha arvore-linha-versao">
       <span class="arvore-toggle invisivel"></span>
       ${ICONE_ARQUIVO}
       <span class="arvore-label" onclick="verVersao(${listaId}, ${v.id})">
         <span class="arvore-titulo">v${v.versao}${v.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}</span>
-        <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${esc(v.criado_por_nome || "-")}</span>
+        <span class="arvore-sub">${dataHora(v.criado_em)} · ${esc(v.criado_por_nome || "-")}</span>
       </span>
       <span class="arvore-acoes">
         ${v.status === "rascunho" ? `<button class="link-acao somente-admin" onclick="abrirEditorMateriais(${listaId})">Editar rascunho</button>` : ""}
@@ -1836,16 +2344,25 @@ function excluirLista(id) {
 document.getElementById("btn-nova-lista").addEventListener("click", async () => {
   if (!state.materiais.length) state.materiais = await api("/api/materiais");
   window._itensEditor = [];
-  // Sugere os dados já cadastrados no projeto (evita redigitar o que já é
-  // conhecido) - a pessoa pode ajustar livremente, já que esses valores
-  // podem variar por desenho (ex.: numero_cliente aqui é o número do
-  // documento atribuído pelo cliente para ESTE desenho específico).
+  // A lista nova nasce com o carimbo padrão do projeto já preenchido - é o
+  // que se repete em todas as listas da unidade. A pessoa ajusta livremente
+  // o que for exclusivo desta (quem elaborou, a data, o título), e isso NÃO
+  // volta para o padrão: cada lista guarda o seu.
+  //
+  // Sem padrão salvo, cai no que o próprio cadastro do projeto já sabe.
   const p = state.projetoAtual || {};
-  renderCabecalhoLista(null, {
+  const base = {
     numero_cliente: p.numero_cliente || "",
     numero_fornecedor: p.numero_fornecedor || "",
     disciplina: p.area_nome || "",
-  });
+  };
+  let padrao = {};
+  try { padrao = await api(`/api/projetos/${p.id}/cabecalho-padrao`); } catch (err) { padrao = {}; }
+  // Data de emissão e revisão não se herdam: são desta emissão, e herdar
+  // data velha é o tipo de erro que passa despercebido num carimbo.
+  const { data_emissao_manual, rev_manual, ...padraoHerdavel } = padrao || {};
+  const herdados = Object.values(padraoHerdavel).filter((v) => v !== null && v !== "").length;
+  renderCabecalhoLista(null, { ...base, ...padraoHerdavel, _herdados: herdados });
 });
 
 // Monta o rótulo de um material com código e bitola em destaque (linha 1)
@@ -1880,6 +2397,30 @@ function paraDataInput(valor) {
   return isNaN(d) ? "" : d.toISOString().slice(0, 10);
 }
 
+// Data/hora vinda do banco, SEM o deslocamento de fuso. O MySQL grava hora
+// local (CURRENT_TIMESTAMP da máquina) e o jsonify do Flask a rotula como
+// GMT ("Wed, 05 Nov 2026 18:10:36 GMT"); o navegador então desconta as 3h
+// de Brasília e mostra 15:10. Medido em 05/11/2026 na lista 49: gravado
+// 18:10:36, exibido 15:10:36. Ler pelos componentes UTC devolve a hora que
+// está no banco. Perto da meia-noite o erro muda o DIA, não só a hora.
+function dataDoBanco(valor) {
+  if (!valor) return null;
+  const d = new Date(valor);
+  if (isNaN(d)) return null;
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(),
+                  d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds());
+}
+
+function dataCurta(valor) {
+  const d = dataDoBanco(valor);
+  return d ? d.toLocaleDateString("pt-BR") : "";
+}
+
+function dataHora(valor) {
+  const d = dataDoBanco(valor);
+  return d ? d.toLocaleString("pt-BR") : "-";
+}
+
 // ---------- EDITOR DA LISTA (com versionamento) ----------
 // Acesso separado do editor de materiais: só os dados da pasta (título,
 // cliente/fornecedor, carimbo), salvos direto via /cabecalho, sem tocar em
@@ -1901,7 +2442,7 @@ async function abrirEditorMateriais(listaId) {
   }));
   window._itensEditor = itensIniciais;
 
-  if (temRascunho) toast(`Continuando o rascunho salvo em ${new Date(dados.rascunho.criado_em).toLocaleString("pt-BR")}`);
+  if (temRascunho) toast(`Continuando o rascunho salvo em ${dataHora(dados.rascunho.criado_em)}`);
   renderEditorLista(listaId, dados.lista);
 }
 
@@ -1918,19 +2459,37 @@ async function salvarCabecalhoLista(listaId, cabecalho) {
 // somenteDados=true: edição isolada da pasta (botão "Salvar", persiste na hora).
 // somenteDados=false: primeiro passo do fluxo de criação/edição de materiais
 // (botão "Continuar", segue para a Tela 2 sem salvar nada ainda).
-function renderCabecalhoLista(listaId, lista, somenteDados = false) {
+// modoPadrao=true: a MESMA tela, usada para montar o carimbo padrão do
+// projeto. Sem número do desenho (que é de cada lista) e salvando no projeto.
+function renderCabecalhoLista(listaId, lista, somenteDados = false, modoPadrao = false) {
+  const herdados = !modoPadrao && !listaId && lista._herdados ? lista._herdados : 0;
   abrirModal(`
-    <h3>${lista.numero_desenho ? `Lista por Desenho — ${esc(lista.numero_desenho)}` : "Nova Lista por Desenho"}</h3>
+    <h3>${modoPadrao ? "Padrão das listas deste projeto"
+          : (lista.numero_desenho ? `Lista por Desenho — ${esc(lista.numero_desenho)}` : "Nova Lista por Desenho")}</h3>
+    ${modoPadrao ? `<div class="mapeamento-aviso">
+      Preencha aqui o que se repete em <strong>todas</strong> as listas deste projeto. Toda Lista por
+      Desenho criada depois já nasce com estes valores — e o projetista troca só o que for daquela lista
+      (número do desenho, título, quem elaborou, data de emissão).
+    </div>` : ""}
+    ${herdados ? `<div class="mapeamento-aviso">
+      <strong>${herdados} campo(s) vieram do padrão do projeto.</strong> Altere o que for exclusivo desta lista —
+      o que você mudar aqui vale só para ela, e não mexe no padrão.
+    </div>` : ""}
     <div class="form-grid-lista">
-      <div class="campo-linha"><label>Subtítulo (linha 1 do carimbo)</label><input id="cab-subtitulo" value="${esc(lista.subtitulo || "")}" placeholder="Ex.: ENGENHARIA DETALHADA - UTM"></div>
-      <div class="campo-linha"><label>Área (linha 2 do carimbo)</label><input id="cab-area-titulo" value="${esc(lista.area_titulo || "")}" placeholder="Ex.: ÁREA 3110 - BRITAGEM PRIMÁRIA"></div>
-      <div class="campo-linha"><label>Disciplina (linha 3 do carimbo)</label><input id="cab-disciplina" value="${esc(lista.disciplina || "")}" placeholder="Ex.: ELÉTRICA"></div>
+      <!-- Sem placeholder de exemplo nestes três campos: eram dados reais de
+           outra obra ("ENGENHARIA DETALHADA - UTM", "ÁREA 3110 - BRITAGEM
+           PRIMÁRIA") e, em cinza dentro do campo vazio, pareciam carimbo já
+           preenchido com dado de outro projeto. Num documento de engenharia
+           isso é o pior tipo de dúvida: não se distingue sugestão de valor. -->
+      <div class="campo-linha"><label>Subtítulo (linha 1 do carimbo)</label><input id="cab-subtitulo" value="${esc(lista.subtitulo || "")}"></div>
+      <div class="campo-linha"><label>Área (linha 2 do carimbo)</label><input id="cab-area-titulo" value="${esc(lista.area_titulo || "")}"></div>
+      <div class="campo-linha"><label>Disciplina (linha 3 do carimbo)</label><input id="cab-disciplina" value="${esc(lista.disciplina || "")}"></div>
       <div class="campo-linha"><label>Título do Documento (linha 4 do carimbo)</label><input id="cab-titulo" value="${esc(lista.titulo || "")}"></div>
       <div class="campo-linha campo-dupla">
         <div><label>Número do Cliente</label><input id="cab-numero-cliente" value="${esc(lista.numero_cliente || "")}"></div>
         <div><label>Número do Projetista</label><input id="cab-numero-fornecedor" value="${esc(lista.numero_fornecedor || "")}"></div>
       </div>
-      <div class="campo-linha"><label>Número do Desenho de Referência</label><input id="cab-numero-desenho" value="${esc(lista.numero_desenho || "")}"></div>
+      <div class="campo-linha" ${modoPadrao ? 'style="display:none"' : ""}><label>Número do Desenho de Referência</label><input id="cab-numero-desenho" value="${esc(lista.numero_desenho || "")}"></div>
       <div class="campo-linha campo-dupla">
         <div><label>Rev.</label><input id="cab-rev-manual" type="number" step="1" min="0" value="${esc(lista.rev_manual ?? "")}" placeholder="Conferir com a última revisão da lista"></div>
         <div><label>Data de Emissão</label><input id="cab-data-emissao" type="date" value="${paraDataInput(lista.data_emissao_manual)}"></div>
@@ -1954,14 +2513,14 @@ function renderCabecalhoLista(listaId, lista, somenteDados = false) {
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
-      <button class="btn-primario ${somenteDados ? "somente-admin" : ""}" id="btn-continuar-cabecalho">${somenteDados ? "Salvar" : "Continuar"}</button>
+      <button class="btn-primario ${somenteDados || modoPadrao ? "somente-admin" : ""}" id="btn-continuar-cabecalho">${modoPadrao ? "Salvar padrão" : (somenteDados ? "Salvar" : "Continuar")}</button>
     </div>
   `, "modal-media");
   aplicarPermissoes();
 
   document.getElementById("btn-continuar-cabecalho").addEventListener("click", () => {
     const numero_desenho = document.getElementById("cab-numero-desenho").value.trim();
-    if (!numero_desenho) { toast("Informe o número do desenho de referência", "erro"); return; }
+    if (!numero_desenho && !modoPadrao) { toast("Informe o número do desenho de referência", "erro"); return; }
     const listaAtualizada = {
       ...lista,
       numero_desenho,
@@ -1982,12 +2541,32 @@ function renderCabecalhoLista(listaId, lista, somenteDados = false) {
       autorizado_nome: document.getElementById("cab-autorizado-nome").value.trim(),
       autorizado_sigla: document.getElementById("cab-autorizado-sigla").value.trim(),
     };
-    if (somenteDados) {
+    if (modoPadrao) {
+      salvarCabecalhoPadrao(listaId, listaAtualizada); // listaId carrega o projetoId neste modo
+    } else if (somenteDados) {
       salvarCabecalhoLista(listaId, listaAtualizada);
     } else {
       renderEditorLista(listaId, listaAtualizada);
     }
   });
+}
+
+// ---------- Carimbo padrão do projeto ----------
+// Montado uma vez, junto com o template do cliente. Não altera nenhuma lista
+// já criada nem nenhum template já cadastrado: só vale para as listas novas,
+// que nascem com estes valores preenchidos.
+async function abrirCabecalhoPadrao(projetoId) {
+  let padrao = {};
+  try { padrao = await api(`/api/projetos/${projetoId}/cabecalho-padrao`); } catch (err) { padrao = {}; }
+  renderCabecalhoLista(projetoId, padrao || {}, false, true);
+}
+
+async function salvarCabecalhoPadrao(projetoId, dados) {
+  try {
+    const r = await api(`/api/projetos/${projetoId}/cabecalho-padrao`, { method: "PUT", body: JSON.stringify(dados) });
+    toast(`Padrão salvo (${r.campos} campo(s)) — vale para as próximas listas`);
+    fecharModal();
+  } catch (err) { toast(err.message, "erro"); }
 }
 
 // TELA 2: busca de materiais + tabela (Material | Quantidade).
@@ -2251,7 +2830,14 @@ async function salvarEditorLista(listaId, status, tipoEmissao) {
     }
     toast(mensagem);
     fecharModal();
-    carregarListas(state.projetoAtual.id);
+    // A lista acabou de ser cadastrada: se o template deste projeto ainda
+    // não tem mapeamento, é aqui que ele é reconhecido - sem isso o
+    // download em Excel desta lista não sairia. Vem ANTES de carregarListas
+    // porque é _atualizarStatusTemplates que libera o ícone de baixar de
+    // cada linha (state.templateListaMateriaisMapeado).
+    await reconhecerTemplateDaLista(state.projetoAtual.id);
+    await _atualizarStatusTemplates();
+    await carregarListas(state.projetoAtual.id);
   } catch (err) { toast(err.message, "erro"); }
 }
 
@@ -2268,7 +2854,7 @@ async function verVersao(listaId, versaoId) {
     <div class="info-versao">
       Título: <b>${esc(lista.titulo || "-")}</b> &nbsp;|&nbsp; Nº Cliente: <b>${esc(lista.numero_cliente || "-")}</b> &nbsp;|&nbsp; Nº Fornecedor: <b>${esc(lista.numero_fornecedor || "-")}</b><br>
       ${assinaturas ? assinaturas + "<br>" : ""}
-      Salva em ${new Date(dados.versao.criado_em).toLocaleString("pt-BR")} por <b>${esc(dados.versao.criado_por_nome || "-")}</b>
+      Salva em ${dataHora(dados.versao.criado_em)} por <b>${esc(dados.versao.criado_por_nome || "-")}</b>
     </div>
     <table class="tabela">
       <thead><tr><th>Código</th><th>Descrição</th><th>Qtd</th><th>Unidade</th></tr></thead>
@@ -2337,7 +2923,7 @@ function _toggleArvore(estado, versaoId, renderArvoreFn) {
 function _filtrarVersoes(todas, termo, camposOrigem) {
   if (!termo) return todas;
   return todas.filter((v) => {
-    const base = [String(v.versao), v.criado_por_nome, new Date(v.criado_em).toLocaleDateString("pt-BR")];
+    const base = [String(v.versao), v.criado_por_nome, dataCurta(v.criado_em)];
     if (base.some((c) => (c || "").toLowerCase().includes(termo))) return true;
     return camposOrigem(v).some((c) => (c || "").toLowerCase().includes(termo));
   });
@@ -2387,7 +2973,7 @@ function renderNoPQ(v) {
         ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleArvorePQ(${v.id})">
           <span class="arvore-titulo">v${v.versao}${v.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}</span>
-          <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${esc(v.criado_por_nome || "-")}</span>
+          <span class="arvore-sub">${dataHora(v.criado_em)} · ${esc(v.criado_por_nome || "-")}</span>
         </span>
         <span class="arvore-acoes">
           <button class="link-acao" onclick="verVersaoPQ(${v.id})">Ver</button>
@@ -2551,7 +3137,7 @@ function renderNoCompras(v) {
           ${ICONE_ARQUIVO}
           <span class="arvore-label">
             <span class="arvore-titulo">Planilha de Quantidades v${pq.versao}</span>
-            <span class="arvore-sub">${new Date(pq.criado_em).toLocaleString("pt-BR")}</span>
+            <span class="arvore-sub">${dataHora(pq.criado_em)}</span>
           </span>
         </div>
         ${(pq.origens || []).map((o) => `
@@ -2571,7 +3157,7 @@ function renderNoCompras(v) {
         ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleArvoreCompras(${v.id})">
           <span class="arvore-titulo">v${v.versao}${v.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}</span>
-          <span class="arvore-sub">${new Date(v.criado_em).toLocaleString("pt-BR")} · ${esc(v.criado_por_nome || "-")}</span>
+          <span class="arvore-sub">${dataHora(v.criado_em)} · ${esc(v.criado_por_nome || "-")}</span>
         </span>
         <span class="arvore-acoes">
           <button class="link-acao" onclick="verVersaoCompras(${v.id})">Ver</button>
@@ -3104,7 +3690,7 @@ async function carregarAuditoria(reiniciar = false) {
   const tbody = document.getElementById("tbody-auditoria");
   const linhas = resultado.itens.map((ev) => `
     <tr>
-      <td>${new Date(ev.criado_em).toLocaleString("pt-BR")}</td>
+      <td>${dataHora(ev.criado_em)}</td>
       <td>${esc(ev.usuario_nome)}</td>
       <td><span class="badge-acao ${esc(ev.acao)}">${esc(ROTULOS_ACAO[ev.acao] || ev.acao)}</span></td>
       <td>${esc(ROTULOS_ENTIDADE[ev.entidade] || ev.entidade)}</td>

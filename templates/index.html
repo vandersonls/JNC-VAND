@@ -178,7 +178,7 @@
       </div>
       <table class="tabela">
         <thead>
-          <tr><th>Razão Social</th><th>Fantasia</th><th>CNPJ/CPF</th><th>Contato</th><th>Telefone</th><th class="somente-admin">Ações</th></tr>
+          <tr><th>Cliente</th><th>Razão Social</th><th>CNPJ/CPF</th><th>Contato</th><th>Telefone</th><th class="somente-admin">Ações</th></tr>
         </thead>
         <tbody id="tbody-clientes"></tbody>
       </table>
@@ -194,7 +194,7 @@
       </div>
       <table class="tabela">
         <thead>
-          <tr><th>Código</th><th>Nome</th><th>Cliente</th><th>Status</th><th>Área</th><th>Ações</th></tr>
+          <tr><th>Cliente</th><th>Nome do Projeto</th><th>Status</th><th>Área</th><th>Ações</th></tr>
         </thead>
         <tbody id="tbody-projetos"></tbody>
       </table>
@@ -227,6 +227,9 @@
         <div class="pd-toolbar">
           <input type="search" id="busca-listas" class="pd-busca" placeholder="Buscar por número, cliente ou título..." autocomplete="off">
           <button class="btn-template somente-admin" id="btn-template-desenho" data-tipo="lista_materiais" type="button"></button>
+          <!-- Carimbo padrão: o que se repete em todas as listas deste projeto.
+               Preenchido uma vez, junto com o template do cliente. -->
+          <button class="btn-template somente-admin" id="btn-cabecalho-padrao" type="button">Padrão das listas</button>
         </div>
         <!-- Linha 5: ação principal da tela, isolada, logo acima da tabela. -->
         <h3 class="subtitulo-arvore">Listas de Materiais Cadastrados</h3>

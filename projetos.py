@@ -1,3 +1,5 @@
+import json
+
 from flask import Blueprint, request, jsonify
 from flask_login import login_required, current_user
 from werkzeug.security import check_password_hash
@@ -10,7 +12,22 @@ from versionamento import salvar_versao, obter_rascunho
 
 projetos_bp = Blueprint("projetos", __name__)
 
+# Como o cliente aparece na tela e nos relatórios: o nome fantasia, que é
+# por onde ele é conhecido (CBA, Jaguar), caindo na razão social quando não
+# houver fantasia. Era `c.razao_social` direto, e no cadastro real há mais de
+# um cliente com "NÃO SE APLICA" nessa coluna - quem cadastrou não tinha o
+# dado -, então a lista de projetos mostrava "NÃO SE APLICA" no lugar do
+# nome do cliente, em linhas diferentes e para clientes diferentes. Dois
+# projetos do mesmo cliente continuam podendo existir: nada aqui impede
+# repetir cliente, só o `codigo` do projeto é único.
+SQL_NOME_CLIENTE = "COALESCE(NULLIF(TRIM(c.nome_fantasia), ''), c.razao_social)"
+
 CAMPOS_PROJETO = ["codigo", "nome", "cliente_id", "descricao", "status"]
+
+# Fase do projeto. É um ENUM no banco: valor fora desta lista não dá erro de
+# validação, dá "Data truncated for column 'status'" - ou seja, erro 500 em
+# vez de uma mensagem. Por isso a conferência é aqui, antes do INSERT.
+STATUS_PROJETO = ("conceitual", "basico", "detalhado")
 
 CAMPOS_CABECALHO_LISTA = (
     "titulo", "subtitulo", "area_titulo", "disciplina",
@@ -77,7 +94,7 @@ def listar_projetos():
         filtro = f"WHERE p.area_id IN ({placeholders})"
         params = tuple(permitidas)
     rows = db.query_all(
-        f"""SELECT p.*, c.razao_social AS cliente_nome, a.nome AS area_nome
+        f"""SELECT p.*, {SQL_NOME_CLIENTE} AS cliente_nome, a.nome AS area_nome
             FROM projetos p
             LEFT JOIN clientes c ON c.id = p.cliente_id
             LEFT JOIN areas a ON a.id = p.area_id
@@ -92,7 +109,7 @@ def listar_projetos():
 @login_required
 def obter_projeto(projeto_id):
     row = db.query_one(
-        """SELECT p.*, c.razao_social AS cliente_nome, c.logo_url AS cliente_logo_url, a.nome AS area_nome
+        f"""SELECT p.*, {SQL_NOME_CLIENTE} AS cliente_nome, c.logo_url AS cliente_logo_url, a.nome AS area_nome
            FROM projetos p
            LEFT JOIN clientes c ON c.id = p.cliente_id
            LEFT JOIN areas a ON a.id = p.area_id
@@ -106,24 +123,73 @@ def obter_projeto(projeto_id):
     return jsonify(row)
 
 
+def _codigo_automatico(nome):
+    """Código do projeto a partir do nome, quando a tela não manda um.
+
+    A coluna `projetos.codigo` é NOT NULL UNIQUE e aparece em nome de
+    arquivo de relatório, então não dá simplesmente para deixá-la vazia -
+    duas vazias já violariam o índice. O nome do projeto é o que a pessoa
+    de fato usa para se referir a ele; o sufixo só entra quando o mesmo
+    nome se repete, que é um caso que o aviso de duplicidade já mostrou a
+    quem cadastrou."""
+    base = (nome or "").strip()[:50] or "projeto"
+    candidato = base
+    sufixo = 2
+    while db.query_one("SELECT id FROM projetos WHERE codigo = %s", (candidato,)):
+        corte = 50 - len(f"-{sufixo}")
+        candidato = f"{base[:corte]}-{sufixo}"
+        sufixo += 1
+    return candidato
+
+
+def _projeto_com_mesmo_nome(cliente_id, nome, ignorar_id=None):
+    """Outro projeto do MESMO cliente com o MESMO nome, se houver.
+
+    Repetir não é proibido - o mesmo cliente tem vários projetos, e nada no
+    banco impede dois com o mesmo nome. Serve para avisar quem cadastra,
+    que é quem sabe se é engano ou não."""
+    sql = "SELECT id, codigo, nome FROM projetos WHERE cliente_id = %s AND TRIM(LOWER(nome)) = TRIM(LOWER(%s))"
+    params = [cliente_id, nome or ""]
+    if ignorar_id:
+        sql += " AND id <> %s"
+        params.append(ignorar_id)
+    return db.query_one(sql, tuple(params))
+
+
 @projetos_bp.post("/api/projetos")
 @perfis_permitidos("master", "administrador")
 def criar_projeto():
     data = request.get_json(force=True) or {}
-    if not data.get("codigo") or not data.get("nome") or not data.get("cliente_id") or not data.get("area_id"):
-        return jsonify({"erro": "Cliente, nome, código e área são obrigatórios"}), 400
+    if not data.get("nome") or not data.get("cliente_id") or not data.get("area_id"):
+        return jsonify({"erro": "Cliente, nome do projeto e área são obrigatórios"}), 400
     if not area_permitida(int(data["area_id"])):
         return jsonify({"erro": "Você não tem permissão para criar projetos nesta área"}), 403
+
+    # Aviso, não impedimento: só interrompe uma vez, para quem cadastrou
+    # decidir. Reenviado com "confirmado", grava igual.
+    if not data.get("confirmado"):
+        igual = _projeto_com_mesmo_nome(data["cliente_id"], data["nome"])
+        if igual:
+            return jsonify({
+                "erro": f"Cliente já cadastrado com um projeto de mesmo nome ({igual['nome']}).",
+                "duplicado": True,
+            }), 409
+
+    status = (str(data.get("status") or "conceitual")).strip().lower()
+    if status not in STATUS_PROJETO:
+        return jsonify({"erro": f"Fase do projeto inválida - use uma de: {', '.join(STATUS_PROJETO)}"}), 400
+
+    codigo = (data.get("codigo") or "").strip() or _codigo_automatico(data["nome"])
     novo_id = db.execute(
         """INSERT INTO projetos (codigo, nome, cliente_id, status, numero_cliente, numero_fornecedor, area_id, criado_por)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
         (
-            data["codigo"], data["nome"], data["cliente_id"], data.get("status", "conceitual"),
+            codigo, data["nome"], data["cliente_id"], status,
             data.get("numero_cliente", ""), data.get("numero_fornecedor", ""), data["area_id"],
             current_user.id,
         ),
     )
-    registrar("criar", "projeto", novo_id, f"Criou o projeto {data['codigo']} — {data['nome']}", depois=data)
+    registrar("criar", "projeto", novo_id, f"Criou o projeto {codigo} — {data['nome']}", depois=data)
     return jsonify({"id": novo_id}), 201
 
 
@@ -131,8 +197,8 @@ def criar_projeto():
 @perfis_permitidos("master", "administrador")
 def editar_projeto(projeto_id):
     data = request.get_json(force=True) or {}
-    if not data.get("codigo") or not data.get("nome") or not data.get("cliente_id") or not data.get("area_id"):
-        return jsonify({"erro": "Cliente, nome, código e área são obrigatórios"}), 400
+    if not data.get("nome") or not data.get("cliente_id") or not data.get("area_id"):
+        return jsonify({"erro": "Cliente, nome do projeto e área são obrigatórios"}), 400
     if not projeto_permitido(projeto_id):
         return jsonify({"erro": "Você não tem permissão para editar este projeto"}), 403
     if not area_permitida(int(data["area_id"])):
@@ -141,17 +207,38 @@ def editar_projeto(projeto_id):
         "SELECT codigo, nome, cliente_id, status, numero_cliente, numero_fornecedor, area_id FROM projetos WHERE id = %s",
         (projeto_id,),
     )
+    if not antes:
+        return jsonify({"erro": "Projeto não encontrado"}), 404
+
+    if not data.get("confirmado"):
+        igual = _projeto_com_mesmo_nome(data["cliente_id"], data["nome"], ignorar_id=projeto_id)
+        if igual:
+            return jsonify({
+                "erro": f"Cliente já cadastrado com um projeto de mesmo nome ({igual['nome']}).",
+                "duplicado": True,
+            }), 409
+
+    # Campos que saíram da tela de cadastro (código, nº do cliente, nº do
+    # fornecedor) não vêm mais no corpo. Ausente quer dizer "não mexa",
+    # NÃO "apague" - senão editar o nome de um projeto limparia o que já
+    # estava gravado e o carimbo das próximas listas nasceria vazio.
+    codigo = (data.get("codigo") or "").strip() or antes["codigo"]
+    numero_cliente = data.get("numero_cliente", antes["numero_cliente"])
+    numero_fornecedor = data.get("numero_fornecedor", antes["numero_fornecedor"])
+    status = (str(data.get("status") or antes["status"])).strip().lower()
+    if status not in STATUS_PROJETO:
+        return jsonify({"erro": f"Fase do projeto inválida - use uma de: {', '.join(STATUS_PROJETO)}"}), 400
     db.execute(
         """UPDATE projetos SET codigo=%s, nome=%s, cliente_id=%s, status=%s,
            numero_cliente=%s, numero_fornecedor=%s, area_id=%s
            WHERE id=%s""",
         (
-            data["codigo"], data["nome"], data["cliente_id"], data.get("status", "conceitual"),
-            data.get("numero_cliente", ""), data.get("numero_fornecedor", ""), data["area_id"],
+            codigo, data["nome"], data["cliente_id"], status,
+            numero_cliente, numero_fornecedor, data["area_id"],
             projeto_id,
         ),
     )
-    registrar("editar", "projeto", projeto_id, f"Editou o projeto {data['codigo']} — {data['nome']}", antes=antes, depois=data)
+    registrar("editar", "projeto", projeto_id, f"Editou o projeto {codigo} — {data['nome']}", antes=antes, depois=data)
     return jsonify({"ok": True})
 
 
@@ -300,6 +387,10 @@ def criar_lista(projeto_id):
     _salvar_itens(versao_id, data.get("itens"))
     if status == "salvo":
         db.execute("UPDATE listas_desenho SET versao_atual_id = %s WHERE id = %s", (versao_id, lista_id))
+        # Primeira lista emitida do projeto: o carimbo dela passa a ser o
+        # padrão da unidade. Rascunho não promove nada - dado de rascunho
+        # ainda vai mudar, e o padrão é sticky (não se reescreve sozinho).
+        _definir_padrao_na_primeira_lista(projeto_id, lista_id)
     registrar(
         "criar", "lista_desenho", lista_id,
         f"Criou a lista por desenho {numero_desenho} (v{numero_versao}{'' if status == 'salvo' else ', rascunho'}) no projeto #{projeto_id}",
@@ -374,6 +465,139 @@ def editar_cabecalho_lista(lista_id):
         antes=antes, depois=data,
     )
     return jsonify({"ok": True})
+
+
+# ---------- Carimbo padrão do projeto ----------
+# Montado uma vez, ao preparar o projeto para a unidade, junto com o template
+# do cliente. Toda Lista por Desenho criada depois nasce com estes valores já
+# preenchidos - o projetista só troca o que é daquela lista (o número do
+# desenho, o título, quem elaborou, a data). Antes disto, cada lista era
+# digitada do zero: no projeto #10 do banco de teste, a primeira lista tem o
+# carimbo inteiro preenchido e as duas seguintes têm tudo NULL.
+#
+# O número do desenho não entra no padrão: é o que identifica cada lista.
+CAMPOS_PADRAO_PROJETO = tuple(c for c in CAMPOS_CABECALHO_LISTA if c != "numero_desenho")
+
+# Rev. e Data de emissão ficam fora do padrão montado pelo sistema: são
+# daquela emissão, e herdar data velha é o erro que passa despercebido num
+# carimbo. A tela de "Carimbo padrão" ainda aceita gravá-los à mão (projetos
+# antigos têm), e o front já os descarta na hora de herdar.
+CAMPOS_PADRAO_AUTOMATICO = tuple(c for c in CAMPOS_PADRAO_PROJETO
+                                 if c not in CAMPOS_CABECALHO_NULOS_SE_VAZIO)
+
+
+def _padrao_salvo(projeto_id):
+    """Carimbo padrão gravado no projeto, já como dict ({} se não houver,
+    None se o projeto não existe). A coluna é JSON e o driver devolve dict,
+    texto cru ou bytes, dependendo da versão."""
+    row = db.query_one("SELECT cabecalho_padrao FROM projetos WHERE id = %s", (projeto_id,))
+    if not row:
+        return None
+    padrao = row["cabecalho_padrao"]
+    if isinstance(padrao, (bytes, bytearray)):
+        padrao = padrao.decode("utf-8")
+    if isinstance(padrao, str):
+        try:
+            padrao = json.loads(padrao)
+        except ValueError:
+            return {}
+    return padrao or {}
+
+
+def _padrao_de_lista(lista):
+    """Os campos fixos de uma lista, no formato do carimbo padrão. Campo
+    vazio fica de fora: o padrão guarda o que repete, não o que falta."""
+    if not lista:
+        return {}
+    padrao = {}
+    for campo in CAMPOS_PADRAO_AUTOMATICO:
+        valor = lista.get(campo)
+        if isinstance(valor, str):
+            valor = valor.strip()
+        if valor in (None, ""):
+            continue
+        padrao[campo] = valor
+    return padrao
+
+
+def _carimbo_da_ultima_lista(projeto_id):
+    """Carimbo da lista mais recente DESTE projeto, usado quando o projeto
+    ainda não tem padrão gravado - é o caso dos projetos criados antes desta
+    regra, que já têm listas preenchidas. Sem isto, a segunda lista de um
+    projeto antigo continuaria nascendo vazia. Nunca olha outro projeto: o
+    carimbo é da unidade, e misturar unidades é erro grave num documento."""
+    colunas = ", ".join(CAMPOS_PADRAO_AUTOMATICO)
+    ultima = db.query_one(
+        f"SELECT {colunas} FROM listas_desenho WHERE projeto_id = %s ORDER BY id DESC LIMIT 1",
+        (projeto_id,),
+    )
+    return _padrao_de_lista(ultima)
+
+
+def _definir_padrao_na_primeira_lista(projeto_id, lista_id):
+    """A primeira lista do projeto é a que define os dados fixos da unidade:
+    o que ela tem de carimbo vira o padrão do projeto, sem ninguém precisar
+    abrir a tela de "Carimbo padrão". Daí em diante toda lista nova nasce
+    preenchida e o projetista só troca o que é dela (elaborador, verificador,
+    o título daquele desenho) - o que ele não mexer fica como está.
+
+    Só grava se o projeto ainda não tiver padrão: um padrão já montado (à mão
+    ou pela primeira lista) nunca é sobrescrito por uma lista posterior, para
+    o carimbo da unidade não mudar sozinho no meio do projeto."""
+    if _padrao_salvo(projeto_id):
+        return 0
+    colunas = ", ".join(CAMPOS_PADRAO_AUTOMATICO)
+    lista = db.query_one(f"SELECT {colunas} FROM listas_desenho WHERE id = %s", (lista_id,))
+    padrao = _padrao_de_lista(lista)
+    if not padrao:
+        return 0
+    db.execute(
+        "UPDATE projetos SET cabecalho_padrao = %s WHERE id = %s",
+        (json.dumps(padrao, ensure_ascii=False), projeto_id),
+    )
+    registrar(
+        "editar", "projeto", projeto_id,
+        f"Carimbo padrão do projeto #{projeto_id} montado a partir da lista #{lista_id} "
+        f"({len(padrao)} campo(s)) - vale para as próximas listas",
+    )
+    return len(padrao)
+
+
+@projetos_bp.get("/api/projetos/<int:projeto_id>/cabecalho-padrao")
+@perfis_permitidos("master", "administrador", "projetista")
+def obter_cabecalho_padrao(projeto_id):
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para este projeto"}), 403
+    padrao = _padrao_salvo(projeto_id)
+    if padrao is None:
+        return jsonify({"erro": "Projeto não encontrado"}), 404
+    # Projeto sem padrão gravado (criado antes desta regra) ainda assim
+    # devolve o carimbo da última lista dele - é o mesmo dado fixo, só não
+    # tinha sido promovido a padrão.
+    return jsonify(padrao or _carimbo_da_ultima_lista(projeto_id))
+
+
+@projetos_bp.put("/api/projetos/<int:projeto_id>/cabecalho-padrao")
+@perfis_permitidos("master", "administrador")
+def salvar_cabecalho_padrao(projeto_id):
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para este projeto"}), 403
+    if not db.query_one("SELECT id FROM projetos WHERE id = %s", (projeto_id,)):
+        return jsonify({"erro": "Projeto não encontrado"}), 404
+    data = request.get_json(force=True) or {}
+    padrao = {}
+    for campo in CAMPOS_PADRAO_PROJETO:
+        valor = data.get(campo)
+        if valor in (None, ""):
+            continue
+        padrao[campo] = valor
+    db.execute(
+        "UPDATE projetos SET cabecalho_padrao = %s WHERE id = %s",
+        (json.dumps(padrao, ensure_ascii=False) if padrao else None, projeto_id),
+    )
+    registrar("editar", "projeto", projeto_id,
+              f"Salvou o carimbo padrão do projeto #{projeto_id} ({len(padrao)} campo(s))")
+    return jsonify({"ok": True, "campos": len(padrao)})
 
 
 @projetos_bp.delete("/api/listas/<int:lista_id>")
