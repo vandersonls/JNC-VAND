@@ -1580,18 +1580,25 @@ function _mapeamentoAutomatico(silencioso) {
     cabecalho.forEach((c) => {
       const campo = _campoPorPalavraChave(c.texto, t.colunas);
       if (!campo || estadoTabela.colunas[campo.campo]) return;
-      // Coluna calculada pelo próprio template (VLOOKUP e afins) não se
-      // preenche: o cliente busca o dado a partir de outra coluna, e
-      // escrever por cima apagaria a fórmula dele.
-      const celulaDado = celulaEm(origemAlvo, linhaDados, c.coluna);
-      if (celulaDado && celulaDado.formula) {
-        anotar("tabela", t.fonte_dados, campo.campo, `${t.rotulo}: ${campo.rotulo}`,
-          "a coluna é calculada por fórmula no template - deixe o cliente calcular",
-          { origem: origemAlvo, linha: linhaDados, coluna: c.coluna });
-        return;
-      }
       estadoTabela.colunas[campo.campo] = { colIni: c.coluna, colFim: c.coluna + c.colspan - 1 };
       contagem++;
+      // Coluna calculada pelo próprio template (VLOOKUP e afins): preenche,
+      // e manda conferir.
+      //
+      // Até 2026-11-15 essa coluna era deixada de fora, para não apagar o
+      // cálculo do cliente. A medição derrubou o argumento: no template da
+      // CBA a busca procura CÓDIGO SAP ("1618147") e o cadastro daqui usa
+      // código próprio ("GE-01-01"). Nenhum dos 5 códigos da última lista
+      // existia na aba "Lista Codificada" dele, então a fórmula devolvia
+      // #N/A e Descrição e Unidade saíam EM BRANCO no documento entregue.
+      // Fórmula preservada só vale quando os dois cadastros usam o mesmo
+      // código - e aí é só tirar o mapeamento desta coluna na conferência.
+      const celulaDado = celulaEm(origemAlvo, linhaDados, c.coluna);
+      if (celulaDado && celulaDado.formula) {
+        conferir("tabela", t.fonte_dados, campo.campo, `${t.rotulo}: ${campo.rotulo}`,
+          "a coluna tem fórmula do cliente e vou escrever por cima — se o código daqui for o mesmo do cadastro dele, tire o mapeamento",
+          { origem: origemAlvo, linha: linhaDados, coluna: c.coluna });
+      }
     });
     // Colunas do sistema que não apareceram no cabeçalho do cliente.
     t.colunas.forEach((col) => {

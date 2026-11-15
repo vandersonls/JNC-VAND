@@ -569,6 +569,68 @@ def _preencher_blocos_de_titulo(ws, valores):
     return ocupadas
 
 
+def _descricao_com_complemento(tabela_cfg, colunas, linhas_dados):
+    """Junta a bitola à descrição quando o template do cliente não tem coluna
+    para ela.
+
+    No cadastro, materiais de uma mesma família têm a MESMA descrição e se
+    distinguem pela bitola: `GE-01-01` a `GE-01-06` são todos "ABRAÇADEIRA DE
+    UNIÃO HORIZONTAL PARA ELETRODUTOS...", mudando só 1/2", 1", 1.1/4"...
+    O template da CBA tem Código, Descrição, Unidade e Quantidade - não tem
+    coluna de bitola. Sem esta junção, a lista sai com cinco linhas de
+    descrição idêntica e códigos diferentes, e quem lê não consegue dizer
+    qual é qual (constatado em 2026-11-15, lista 56).
+
+    Só age quando a descrição está mapeada e o complemento NÃO está - num
+    template que tenha a coluna própria, a bitola continua indo nela.
+    """
+    if tabela_cfg.get("fonte_dados") != "itens":
+        return linhas_dados
+    nomes = {c[0] for c in colunas}
+    if "descricao" not in nomes or "complemento" in nomes:
+        return linhas_dados
+    saida = []
+    for dados in linhas_dados:
+        complemento = (dados.get("complemento") or "").strip()
+        descricao = (dados.get("descricao") or "").strip()
+        if complemento and complemento.lower() not in descricao.lower():
+            dados = {**dados, "descricao": f"{descricao} - {complemento}" if descricao else complemento}
+        saida.append(dados)
+    return saida
+
+
+def _limpar_formulas_sem_dado(ws, tabela_cfg, colunas):
+    """Apaga, nas linhas SEM item, as fórmulas que o template usa para buscar
+    material na matriz dele.
+
+    O template da CBA traz uma matriz própria de materiais (aba "Lista
+    Codificada", 906 linhas) e cada linha da tabela tem um VLOOKUP contra
+    ela. O JNC não usa essa matriz: o material vem do cadastro do próprio
+    sistema. Resultado: as linhas que a lista não preenche ficam com a
+    fórmula buscando um código vazio, e o Excel mostra **#N/D** - 160 linhas
+    assim numa lista de 5 itens (medido na lista 56, em 2026-11-15). Vira
+    documento entregue cheio do que parece erro.
+
+    Só apaga onde a coluna-chave da linha está vazia, e só célula que é
+    fórmula: linha preenchida e valor digitado pelo cliente não são tocados.
+    """
+    if tabela_cfg.get("fonte_dados") != "itens":
+        return
+    chave = next((c for c in colunas if c[0] == "codigo"), None)
+    if not chave:
+        return  # sem coluna de código não dá para saber se a linha está vazia
+    for linha in range(tabela_cfg["linha_inicial"], ws.max_row + 1):
+        if ws.cell(row=linha, column=chave[1]).value not in (None, ""):
+            continue
+        for _, col_ini, col_fim in colunas:
+            for col in range(col_ini, col_fim + 1):
+                cel = ws.cell(row=linha, column=col)
+                if isinstance(cel, MergedCell):
+                    continue
+                if isinstance(cel.value, str) and cel.value.startswith("="):
+                    cel.value = None
+
+
 def _preencher_tabela(ws, tabela_cfg, linhas_dados):
     """tabela_cfg vem do mapeamento salvo: fonte_dados, linha_inicial,
     linha_final_molde, linha_estilo, colunas ([nome, col_ini, col_fim]),
@@ -579,11 +641,13 @@ def _preencher_tabela(ws, tabela_cfg, linhas_dados):
     linha = tabela_cfg["linha_inicial"]
     linha_final_molde = tabela_cfg["linha_final_molde"]
     linha_estilo = tabela_cfg["linha_estilo"]
+    linhas_dados = _descricao_com_complemento(tabela_cfg, colunas, linhas_dados)
     for dados in linhas_dados:
         if linha > linha_final_molde:
             _duplicar_linha_estilo(ws, linha_estilo, linha, colunas)
         _escrever_linha_grade(ws, linha, colunas, dados)
         linha += 1
+    _limpar_formulas_sem_dado(ws, tabela_cfg, colunas)
     ultima_linha = max(linha_final_molde, linha - 1)
     # A área de impressão cobre o documento INTEIRO, não só o que foi
     # mapeado - o template do cliente costuma ter colunas/linhas com
