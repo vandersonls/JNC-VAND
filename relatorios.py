@@ -599,6 +599,42 @@ def _descricao_com_complemento(tabela_cfg, colunas, linhas_dados):
     return saida
 
 
+# Texto que o template usa só para marcar "o dado vem aqui": XXX, XX / XX,
+# 1/X, dd/mm/aa, 0A. Mesmos padrões da tela de mapeamento.
+_RESERVADO = re.compile(r"^(?:[xX\s/\-_.#]+|\d+\s*/\s*[xX]|(?:dd|mm|aa)[/\-. ].*|\d*[a-zA-Z])$")
+
+
+def _repetir_campos_nas_outras_abas(wb, aba_origem, campos, valores):
+    """Repete os campos do carimbo nas outras abas do template.
+
+    O carimbo da CBA aparece em TODA aba (a Capa diz "FOLHA: 1/X", a aba da
+    lista diz "2/X"), nas mesmas células. O mapeamento, porém, é de uma aba
+    só: o número do cliente e o da contratada saíam preenchidos na Capa e
+    continuavam "XXX" na folha da lista - documento entregue meio preenchido
+    (constatado em 2026-11-15).
+
+    Só escreve onde a célula da outra aba ainda tem **espaço reservado**
+    (XXX, 0A, dd/mm/aa). Célula com conteúdo de verdade não é tocada: se
+    aquela coordenada ali não for o carimbo, nada acontece.
+    """
+    for ws in wb.worksheets:
+        if ws is aba_origem:
+            continue
+        for campo, coord in (campos or {}).items():
+            if campo not in valores:
+                continue
+            try:
+                cel = ws[coord]
+            except Exception:
+                continue
+            if isinstance(cel, MergedCell):
+                continue
+            atual = cel.value
+            if atual is None or not isinstance(atual, str) or not _RESERVADO.match(atual.strip()):
+                continue
+            _definir_com_quebra(ws, coord, valores[campo])
+
+
 def _limpar_formulas_sem_dado(ws, tabela_cfg, colunas):
     """Apaga, nas linhas SEM item, as fórmulas que o template usa para buscar
     material na matriz dele.
@@ -828,6 +864,7 @@ def _preencher_template_generico(arquivo_bytes, mapeamento, dados_por_fonte):
         ws = wb.worksheets[aba_cfg["origem"]]
         _preencher_campos(ws, aba_cfg.get("campos", {}), campos_valores,
                           reservadas=reservadas.get(ws.title, set()))
+        _repetir_campos_nas_outras_abas(wb, ws, aba_cfg.get("campos", {}), campos_valores)
         for tabela_cfg in aba_cfg.get("tabelas", []):
             linhas_dados = dados_por_fonte.get(tabela_cfg["fonte_dados"], [])
             _preencher_tabela(ws, tabela_cfg, linhas_dados)

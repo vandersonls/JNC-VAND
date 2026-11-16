@@ -267,7 +267,15 @@ def listar_listas(projeto_id):
            FROM listas_desenho ld
            LEFT JOIN lista_desenho_versoes v ON v.id = ld.versao_atual_id
            WHERE ld.projeto_id = %s
-           ORDER BY ld.numero_desenho""",
+           -- Ordem da árvore: pelo número da projetista, que é o controle de
+           -- quem usa. Sem número vai para o fim, para a lista incompleta
+           -- ficar visível em vez de se perder no meio. LENGTH antes do texto
+           -- põe 2 antes de 10 (ordenação só por texto deixaria "10" antes de
+           -- "2"); entre códigos do mesmo tamanho, vale a ordem alfabética.
+           ORDER BY (TRIM(COALESCE(ld.numero_fornecedor, '')) = '') ASC,
+                    LENGTH(TRIM(COALESCE(ld.numero_fornecedor, ''))) ASC,
+                    TRIM(COALESCE(ld.numero_fornecedor, '')) ASC,
+                    ld.numero_desenho ASC""",
         (projeto_id,),
     )
     return jsonify(rows)

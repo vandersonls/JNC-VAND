@@ -1499,7 +1499,32 @@ function _mapeamentoAutomatico(silencioso) {
       // não é o que foi medido e adivinhar sairia caro.
       if (grupo.length !== 2) return;
       const ordenados = grupo.slice().sort((a, b) => a.linha - b.linha);
-      [["numero_cliente", ordenados[0]], ["numero_projetista", ordenados[1]]].forEach(([campo, rotulo]) => {
+
+      // Quem é quem no par: primeiro pelo RÓTULO, só depois pela posição.
+      //
+      // O lado da projetista tem palavra própria e estável em todos os
+      // templates vistos - CONTRATADA (CBA), FORNECEDOR (Jaguar),
+      // PROJETISTA (gerdau). O lado do cliente não tem: traz o nome da
+      // empresa ("Nº CBA:"), que não entra no dicionário sem transformar
+      // cliente novo em alteração de código. Mas num par de dois, achado um,
+      // o outro é o cliente por eliminação - e aí não é palpite.
+      //
+      // A posição continua valendo quando nenhum dos dois se identifica:
+      // nesse caso vai para a conferência, porque foi deduzido do arranjo.
+      const f_proj = cfg.unicos.find((x) => x.campo === "numero_projetista");
+      const chavesProj = _chavesDoCampo(f_proj || {}, _mapeamentoEmEdicao.cliente);
+      const ehProjetista = (c) => (chavesProj || []).some((ch) => _casaChave(c.texto, ch));
+      const projetistas = ordenados.filter(ehProjetista);
+      let porRotulo = false;
+      let parCliente = ordenados[0];
+      let parProjetista = ordenados[1];
+      if (projetistas.length === 1) {
+        porRotulo = true;
+        parProjetista = projetistas[0];
+        parCliente = ordenados.find((c) => c !== parProjetista);
+      }
+
+      [["numero_cliente", parCliente], ["numero_projetista", parProjetista]].forEach(([campo, rotulo]) => {
         if (_mapeamentoEmEdicao.camposUnicos[campo]) return;
         const f = cfg.unicos.find((x) => x.campo === campo);
         if (!f) return;
@@ -1514,9 +1539,13 @@ function _mapeamentoAutomatico(silencioso) {
         _mapeamentoEmEdicao.pendencias = _mapeamentoEmEdicao.pendencias.filter(
           (p) => !(p.grupo === "unico" && p.campo === campo));
         _mapeamentoEmEdicao.camposUnicos[campo] = { origem: rotulo.origem, coord: `${_colunaParaLetra(coluna)}${linha}` };
-        conferir("unico", null, campo, f.rotulo,
-          `achei pela posição: "${amostra}" é o ${campo === "numero_cliente" ? "de cima" : "de baixo"} do par de números — confira`,
-          { origem: rotulo.origem, linha, coluna });
+        // Identificado pelo rótulo da projetista não é dedução: não ocupa a
+        // lista de conferência. Só o que saiu da posição vai para lá.
+        if (!porRotulo) {
+          conferir("unico", null, campo, f.rotulo,
+            `achei pela posição: "${amostra}" é o ${campo === "numero_cliente" ? "de cima" : "de baixo"} do par de números — confira`,
+            { origem: rotulo.origem, linha, coluna });
+        }
         contagem++;
       });
     });
@@ -1526,7 +1555,7 @@ function _mapeamentoAutomatico(silencioso) {
   // palavras-chave batendo, usa a linha seguinte como linha de exemplo. ----
   cfg.tabelas.forEach((t) => {
     const jaTinha = _mapeamentoEmEdicao.tabelas[t.fonte_dados];
-    let origemAlvo, linhaCabecalho, linhaDados;
+    let origemAlvo, linhaCabecalho, linhaDados, segundoCabecalho;
 
     if (jaTinha) {
       // Já existe mapeamento parcial - continua na MESMA linha de exemplo
@@ -1567,9 +1596,34 @@ function _mapeamentoAutomatico(silencioso) {
         const c = todasCelulas.find((cc) => cc.origem === origemAlvo && cc.linha === linha && cc.coluna === col);
         return n + (c && !_campoPorPalavraChave(c.texto, t.colunas) ? 1 : 0);
       }, 0);
-      linhaDados = contarDados(linhaCabecalho - 1) > contarDados(linhaCabecalho + 1)
-        ? linhaCabecalho - 1
-        : linhaCabecalho + 1;
+
+      // Cabeçalho de DUAS linhas. Na Jaguar a linha 47 traz
+      // "Rev. | Nome | Data | Nome | Nome | Data | Status | Descrição" e a 48,
+      // logo abaixo, diz de quem é cada "Nome": "Preparado por | Checado |
+      // Aprovado por". As duas são cabeçalho. Sem reconhecer isso, a linha de
+      // dados caía na 48 e a primeira revisão escrevia por cima de
+      // "Preparado por".
+      const acertosDe = (linha) => todasCelulas.filter(
+        (c) => c.origem === origemAlvo && c.linha === linha && _campoPorPalavraChave(c.texto, t.colunas)
+      ).length;
+      segundoCabecalho = [linhaCabecalho + 1, linhaCabecalho - 1].find((l) => l >= 1 && acertosDe(l) >= 2);
+
+      // Faixa de seção ("STATUS DO DOCUMENTO", "Materiais referente ao
+      // desenho XXX") é uma célula só atravessando a tabela inteira - não é
+      // linha de dados, e escrever ali estraga o molde.
+      const largura = colunasCabecalho.length
+        ? Math.max(...colunasCabecalho) - Math.min(...colunasCabecalho) + 1 : 1;
+      const ehFaixa = (linha) => todasCelulas.some(
+        (c) => c.origem === origemAlvo && c.linha === linha && c.colspan >= largura * 0.8);
+
+      const candidatas = [linhaCabecalho - 1, linhaCabecalho + 1];
+      if (segundoCabecalho) {
+        // Pula a segunda linha de cabeçalho e olha o que vem depois dela.
+        candidatas.push(segundoCabecalho > linhaCabecalho ? segundoCabecalho + 1 : segundoCabecalho - 1);
+      }
+      const validas = candidatas.filter((l) => l >= 1 && l !== segundoCabecalho && l !== linhaCabecalho && !ehFaixa(l));
+      linhaDados = validas.sort((a, b) => contarDados(b) - contarDados(a))[0];
+      if (!linhaDados) linhaDados = linhaCabecalho + 1;
     }
 
     const cabecalho = todasCelulas.filter((c) => c.origem === origemAlvo && c.linha === linhaCabecalho);
@@ -1578,7 +1632,16 @@ function _mapeamentoAutomatico(silencioso) {
     }
     const estadoTabela = _mapeamentoEmEdicao.tabelas[t.fonte_dados];
     cabecalho.forEach((c) => {
-      const campo = _campoPorPalavraChave(c.texto, t.colunas);
+      let campo = _campoPorPalavraChave(c.texto, t.colunas);
+      // "Nome" não diz de quem é o nome. Quem diz é o rótulo do grupo, na
+      // outra linha do cabeçalho, que abrange essa coluna: na Jaguar,
+      // "Nome" em H está sob "Preparado por" (H48:Q48) e vira o elaborador;
+      // o "Nome" em R está sob "Checado" e vira o verificador.
+      if (!campo && segundoCabecalho) {
+        const grupo = todasCelulas.find((g) => g.origem === origemAlvo && g.linha === segundoCabecalho
+          && g.coluna <= c.coluna && c.coluna < g.coluna + g.colspan);
+        if (grupo) campo = _campoPorPalavraChave(grupo.texto, t.colunas);
+      }
       if (!campo || estadoTabela.colunas[campo.campo]) return;
       estadoTabela.colunas[campo.campo] = { colIni: c.coluna, colFim: c.coluna + c.colspan - 1 };
       contagem++;
@@ -1886,7 +1949,21 @@ async function reconhecerTemplateDaLista(projetoId) {
   let templates;
   try { templates = await api(`/api/projetos/${projetoId}/templates`); } catch (err) { return; }
   const template = (templates || []).find((x) => x.tipo === "lista_materiais");
-  if (!template || template.mapeado) return;  // nada enviado, ou já tem mapeamento
+
+  // Projeto SEM template nenhum: até 2026-11-15 isto saía em silêncio. A
+  // lista era salva, e só lá na frente, ao tentar baixar o Excel, a pessoa
+  // descobria que faltava o molde do cliente - com a lista já montada e o
+  // prazo correndo. O momento certo de pedir é agora, na primeira lista:
+  // é quando se descobre que falta, e quem acabou de cadastrar ainda está
+  // com o assunto na mão.
+  if (!template) {
+    const carregar = await confirmarPersonalizado(
+      "Lista salva. Este projeto ainda não tem o template de Lista de Materiais do cliente — "
+      + "sem ele o Excel desta lista não sai. Quer carregar o template agora?");
+    if (carregar) abrirTemplatesProjeto(projetoId, "lista_materiais");
+    return;
+  }
+  if (template.mapeado) return;  // já tem mapeamento conferido ou automático
 
   // O modal pode estar aberto em outra coisa - o estado é emprestado e devolvido.
   const estadoAnterior = _mapeamentoEmEdicao;
@@ -2226,14 +2303,32 @@ const ICONE_TEMPLATE_ERRO = `<svg viewBox="0 0 20 20" fill="none"><circle cx="10
 // "-" no lugar de um número é ruído, e pontuação solta parece erro.
 function _rotuloLista(l) {
   const data = dataCurta(l.criado_em);
-  const numeros = [l.numero_fornecedor, l.numero_cliente]
-    .map((x) => (x || "").trim()).filter(Boolean).map(esc).join(" <span class=\"arvore-separador\">|</span> ");
-  // Sem título, cai no número do desenho: duas listas do mesmo projeto têm a
-  // mesma data e os mesmos números, então sem este campo as linhas ficariam
-  // idênticas na tela e não daria para saber qual é qual.
-  const titulo = (l.titulo || "").trim() || (l.numero_desenho ? `Desenho ${l.numero_desenho}` : "");
+  // Os dois números aparecem SEMPRE, mesmo vazios - são o que identifica o
+  // documento para o cliente e para a projetista, e sumir com o que está em
+  // branco escondia justamente a lista que precisava ser corrigida. O travessão
+  // mostra a falta; o "title" diz qual é qual sem poluir a linha.
+  // "sem nº" em vez de um travessão: o travessão já separa o cabeçalho do
+  // título na mesma linha, e dois travessões seguidos viravam sopa de traços.
+  const numero = (valor, titulo) =>
+    `<span class="arvore-numero${(valor || "").trim() ? "" : " arvore-numero-vazio"}" title="${esc(titulo)}">${esc((valor || "").trim() || "sem nº")}</span>`;
+  const numeros = [
+    numero(l.numero_fornecedor, "Número da projetista"),
+    numero(l.numero_cliente, "Número do cliente"),
+  ].join(" <span class=\"arvore-separador\">|</span> ");
+  // Sem título, a linha mostra só a data e os dois números - é o controle do
+  // Vanderson, e o "Desenho 00X" que entrava aqui no lugar do título só
+  // repetia informação que ele não usa para se achar (decisão dele, 2026-11-15).
+  // O número do desenho continua disponível na dica de mouse da linha, para
+  // o caso de duas listas ficarem com data e números iguais.
+  const titulo = (l.titulo || "").trim();
   const cabeca = [data ? `<span class="arvore-data">${esc(data)}</span>` : "", numeros].filter(Boolean).join(" · ");
-  const completo = [cabeca, titulo ? esc(titulo) : ""].filter(Boolean).join(" — ");
+  // Duas partes separadas de propósito: a chave (data + números) nunca
+  // encolhe; o título livre é o que recebe o "..." quando falta espaço.
+  const completo = `<span class="arvore-chave">${cabeca}</span>`
+    + (titulo ? `<span class="arvore-titulo-texto">— ${esc(titulo)}</span>` : "");
+  if (completo && l.numero_desenho) {
+    return `<span title="Desenho ${esc(l.numero_desenho)}">${completo}</span>`;
+  }
   // Lista sem nenhum desses campos ainda precisa ser clicável e reconhecível.
   return completo || esc(l.numero_desenho || "(lista sem identificação)");
 }
@@ -2251,7 +2346,9 @@ function renderNoLista(l) {
         ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleListaArvore(${l.id})">
           <span class="arvore-titulo">${_rotuloLista(l)}</span>
-          <span class="arvore-sub">${l.versao_atual ? `v${l.versao_atual} — versão atual${dataVersao ? " de " + esc(dataVersao) : ""}` : "sem versão emitida"}${l.tem_rascunho ? '<span class="badge-rascunho">Rascunho em aberto</span>' : ""}</span>
+          <span class="arvore-sub">${l.versao_atual
+            ? `<span class="arvore-versao" title="Versão atual${dataVersao ? ", de " + esc(dataVersao) : ""}">v${l.versao_atual}</span>`
+            : `<span class="arvore-versao" title="Nenhuma versão emitida ainda">sem versão</span>`}${l.tem_rascunho ? '<span class="badge-rascunho">Rascunho em aberto</span>' : ""}</span>
         </span>
         <span class="arvore-acoes">
           ${l.versao_atual_id ? `<button class="link-acao" onclick="verVersao(${l.id}, ${l.versao_atual_id})">Ver v${l.versao_atual}</button>` : ""}
@@ -2368,9 +2465,42 @@ document.getElementById("btn-nova-lista").addEventListener("click", async () => 
   // Data de emissão e revisão não se herdam: são desta emissão, e herdar
   // data velha é o tipo de erro que passa despercebido num carimbo.
   const { data_emissao_manual, rev_manual, ...padraoHerdavel } = padrao || {};
-  const herdados = Object.values(padraoHerdavel).filter((v) => v !== null && v !== "").length;
-  renderCabecalhoLista(null, { ...base, ...padraoHerdavel, _herdados: herdados });
+
+  // E, por cima do padrão, o que a ÚLTIMA lista deste projeto já tinha.
+  //
+  // O padrão só existe se alguém preencheu a tela "Padrão das listas" - e na
+  // maioria dos projetos ninguém preencheu, então a lista nova nascia vazia.
+  // A última lista cadastrada é a fonte que sempre existe a partir da
+  // segunda, e é a mais atual: o que o operador corrigiu na lista anterior
+  // aparece já corrigido na próxima, em vez de voltar ao padrão antigo.
+  // Campo vazio na última lista não apaga o padrão - cai no valor de lá.
+  let ultima = {};
+  try {
+    const listas = await api(`/api/projetos/${p.id}/listas`);
+    const recente = (listas || []).slice().sort((a, b) => (b.id || 0) - (a.id || 0))[0];
+    if (recente) {
+      CAMPOS_HERDADOS_DA_LISTA.forEach((campo) => {
+        const v = recente[campo];
+        if (v !== null && v !== undefined && String(v).trim() !== "") ultima[campo] = v;
+      });
+    }
+  } catch (err) { ultima = {}; }
+
+  const herdado = { ...padraoHerdavel, ...ultima };
+  const herdados = Object.values(herdado).filter((v) => v !== null && v !== "").length;
+  const origem = Object.keys(ultima).length ? "da última lista deste projeto" : "do padrão do projeto";
+  renderCabecalhoLista(null, { ...base, ...herdado, _herdados: herdados, _origemHeranca: origem });
 });
+
+// O que uma lista nova herda da anterior. Fora daqui, de propósito:
+// numero_desenho (é o que identifica a lista), rev_manual e
+// data_emissao_manual (são desta emissão, não da anterior).
+const CAMPOS_HERDADOS_DA_LISTA = [
+  "subtitulo", "area_titulo", "disciplina", "titulo",
+  "numero_cliente", "numero_fornecedor",
+  "elaborador_nome", "elaborador_sigla", "verificador_nome", "verificador_sigla",
+  "aprovador_nome", "aprovador_sigla", "autorizado_nome", "autorizado_sigla",
+];
 
 // Monta o rótulo de um material com código e bitola em destaque (linha 1)
 // e a descrição completa como texto secundário (linha 2) - sem isso, dois
@@ -2479,8 +2609,8 @@ function renderCabecalhoLista(listaId, lista, somenteDados = false, modoPadrao =
       (número do desenho, título, quem elaborou, data de emissão).
     </div>` : ""}
     ${herdados ? `<div class="mapeamento-aviso">
-      <strong>${herdados} campo(s) vieram do padrão do projeto.</strong> Altere o que for exclusivo desta lista —
-      o que você mudar aqui vale só para ela, e não mexe no padrão.
+      <strong>${herdados} campo(s) vieram ${esc(lista._origemHeranca || "do cadastro deste projeto")}.</strong>
+      Altere o que for exclusivo desta lista — o que você mudar aqui vale só para ela, e serve de base para a próxima.
     </div>` : ""}
     <div class="form-grid-lista">
       <!-- Sem placeholder de exemplo nestes três campos: eram dados reais de

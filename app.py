@@ -2,7 +2,7 @@ import hashlib
 import os
 from urllib.parse import urlparse
 
-from flask import Flask, render_template
+from flask import Flask, current_app, render_template
 
 import db
 import log_erros
@@ -58,10 +58,23 @@ def _hash_arquivo(caminho_relativo):
         return "0"
 
 
-ASSET_VERSIONS = {
-    "js/app.js": _hash_arquivo("js/app.js"),
-    "css/style.css": _hash_arquivo("css/style.css"),
-}
+_ASSETS = ("js/app.js", "css/style.css")
+ASSET_VERSIONS = {nome: _hash_arquivo(nome) for nome in _ASSETS}
+
+
+def asset_versions():
+    """Em produção, o hash calculado na subida basta: o processo reinicia a
+    cada deploy, então o arquivo nunca muda debaixo dele.
+
+    Em desenvolvimento, recalcula a cada requisição. O servidor do Flask
+    reinicia quando um `.py` muda, mas NÃO quando muda um `.js` ou `.css` -
+    então o `?v=` continuava o mesmo depois de editar a tela, o navegador
+    servia a cópia em cache e a alteração parecia não ter acontecido. Custou
+    uma rodada de teste em 2026-11-15, com a tela antiga na frente de quem
+    estava conferindo."""
+    if current_app.debug:
+        return {nome: _hash_arquivo(nome) for nome in _ASSETS}
+    return ASSET_VERSIONS
 
 
 def create_app():
@@ -116,7 +129,7 @@ def create_app():
 
     @app.context_processor
     def injetar_versoes_estaticas():
-        return {"asset_versions": ASSET_VERSIONS}
+        return {"asset_versions": asset_versions()}
 
     @app.route("/")
     def index():
@@ -136,7 +149,9 @@ def create_app():
     def versao():
         # Usado pelo frontend pra detectar que um novo deploy saiu enquanto a
         # aba (SPA) segue aberta com o JS antigo, e avisar pra recarregar.
-        return {"js": ASSET_VERSIONS["js/app.js"]}
+        # Em desenvolvimento acompanha o arquivo em disco, então editar a
+        # tela também dispara o aviso de recarregar.
+        return {"js": asset_versions()["js/app.js"]}
 
     return app
 
