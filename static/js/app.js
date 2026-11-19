@@ -2105,7 +2105,11 @@ async function abrirProjeto(id) {
   ativarTabInterna("projeto-detalhe");
   ativarSubtabPD("pd-desenho");
   await _atualizarStatusTemplates();
-  await carregarListas(id);
+  // Uma tela só: Listas de Materiais e, embaixo, Listas de Compras.
+  await Promise.all([
+    carregarListas(id),
+    carregarListaCompras().catch((err) => toast(`Listas de Compras: ${err.message}`, "erro")),
+  ]);
 }
 
 // Estado dos templates de impressão do projeto atual (um por tipo, ver
@@ -2264,7 +2268,7 @@ function renderArvoreListas() {
   aplicarPermissoes();
 }
 
-document.getElementById("busca-listas").addEventListener("input", renderArvoreListas);
+document.getElementById("busca-listas").addEventListener("input", () => { renderArvoreListas(); renderArvoreCompras(); });
 
 const ICONE_PASTA = `<svg class="arvore-icone" viewBox="0 0 20 20" fill="none"><path d="M2.5 5.5a1 1 0 0 1 1-1h4l1.5 1.8h7.5a1 1 0 0 1 1 1v8.2a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V5.5Z" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
 const ICONE_ARQUIVO = `<svg class="arvore-icone" viewBox="0 0 20 20" fill="none"><path d="M6 2.5h6l3 3v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M12 2.5V6h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
@@ -3242,9 +3246,9 @@ async function carregarListaCompras() {
 
 function renderArvoreCompras() {
   const cont = document.getElementById("arvore-compras");
-  const termo = (document.getElementById("busca-compras")?.value || "").trim().toLowerCase();
+  const termo = (document.getElementById("busca-listas")?.value || "").trim().toLowerCase();
   if (!comprasArvoreState.pastas.length) {
-    cont.innerHTML = `<div class="arvore-vazio">Nenhuma Lista de Compras criada para este projeto.</div>`;
+    cont.innerHTML = `<div class="arvore-vazio">Nenhuma lista de compras cadastrada para este projeto.</div>`;
     return;
   }
   const pastas = termo
@@ -3256,8 +3260,6 @@ function renderArvoreCompras() {
     : `<div class="arvore-vazio">Nenhuma Lista de Compras encontrada para "${esc(termo)}".</div>`;
   aplicarPermissoes();
 }
-
-document.getElementById("busca-compras").addEventListener("input", renderArvoreCompras);
 
 // O documento vai no onclick como texto JSON (aspas escapadas para o HTML).
 const _docArg = (doc) => esc(JSON.stringify(doc));
@@ -3283,9 +3285,14 @@ function renderNoCompras(p) {
           ${p.tem_rascunho
             ? `<button class="link-acao somente-admin" onclick="continuarRascunhoCompras(${arg})">Continuar rascunho</button>`
             : `<button class="link-acao somente-admin" onclick="novaVersaoCompras(${arg})">Nova versão</button>`}
-          ${p.versao_atual_id ? `
-            <a class="acao-icone" href="/api/projetos/${projetoId}/lista-compras/relatorio/excel?versao_id=${p.versao_atual_id}" target="_blank" title="Baixar Excel" aria-label="Baixar Excel">${ICONE_IMPRIMIR}</a>
-            <a class="acao-icone" href="/api/projetos/${projetoId}/lista-compras/relatorio/pdf?versao_id=${p.versao_atual_id}" target="_blank" title="Baixar PDF" aria-label="Baixar PDF">${ICONE_PDF}</a>` : ""}
+          ${!p.versao_atual_id ? ""
+            : state.templateListaMateriaisMapeado === false
+              ? `<span class="acao-icone desabilitado" title="Projeto sem template de Lista de Materiais mapeado - use o botão &quot;Template&quot; acima" aria-label="Baixar Excel (indisponível, sem template mapeado)">${ICONE_IMPRIMIR}</span>`
+              : `<a class="acao-icone" href="/api/projetos/${projetoId}/lista-compras/relatorio/excel?versao_id=${p.versao_atual_id}" target="_blank" title="Baixar Excel" aria-label="Baixar Excel">${ICONE_IMPRIMIR}</a>`}
+          <!-- Espaços dos ícones de editar/excluir das Listas de Materiais:
+               mantêm o ícone de imprimir na mesma coluna nas duas fases. -->
+          <span class="acao-icone" style="visibility:hidden" aria-hidden="true">${ICONE_LAPIS}</span>
+          <span class="acao-icone somente-master" style="visibility:hidden" aria-hidden="true">${ICONE_EXCLUIR}</span>
         </span>
       </div>
       <div class="arvore-filhos ${aberta ? "" : "oculto"}">
@@ -3303,7 +3310,6 @@ function renderFilhosCompras(p) {
   if (!anteriores.length) {
     return `<div class="arvore-carregando">Nenhuma versão anterior — esta Lista de Compras só tem a versão atual.</div>`;
   }
-  const projetoId = state.projetoAtual.id;
   return anteriores.map((v) => {
     const origem = (v.listas_origem || []).map((o) => o.numero_desenho).filter(Boolean).join(", ");
     return `
@@ -3316,8 +3322,6 @@ function renderFilhosCompras(p) {
       </span>
       <span class="arvore-acoes">
         <button class="link-acao" onclick="verVersaoCompras(${v.id})">Ver</button>
-        <a class="acao-icone" href="/api/projetos/${projetoId}/lista-compras/relatorio/excel?versao_id=${v.id}" target="_blank" title="Baixar Excel" aria-label="Baixar Excel desta versão">${ICONE_IMPRIMIR}</a>
-        <a class="acao-icone" href="/api/projetos/${projetoId}/lista-compras/relatorio/pdf?versao_id=${v.id}" target="_blank" title="Baixar PDF" aria-label="Baixar PDF desta versão">${ICONE_PDF}</a>
       </span>
     </div>`;
   }).join("");

@@ -136,6 +136,7 @@ body {
 .subtab { display: none; }
 .subtab.ativo { display: block; }
 .subtab-pd { display: none; }
+.subtitulo-fase { margin-top: 36px; }
 .subtab-pd.ativo { display: block; }
 .subnav-pd { display: flex; width: fit-content; border: 1px solid var(--azul); border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
 .subnav-item-pd {

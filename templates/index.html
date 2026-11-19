@@ -212,10 +212,11 @@
       <!-- Linha 2: contexto - o projeto em que a pessoa está. -->
       <h2 id="projeto-detalhe-titulo" class="projeto-titulo">Projeto</h2>
 
-      <!-- Linha 3: navegação interna entre as 3 visões, alinhada à esquerda
-           logo abaixo do título (leitura em "F": contexto primeiro, depois
-           as opções, só então o conteúdo). Compartilhada pelas 3 abas. -->
-      <div class="subnav-pd">
+      <!-- Linha 3: navegação entre as abas - ESCONDIDA desde 2026-11-19: as
+           Listas de Materiais e as Listas de Compras ficam numa tela só,
+           agrupadas por fase, e a Planilha de Quantidades está fora de uso
+           por enquanto (o código dela continua aqui, só não aparece). -->
+      <div class="subnav-pd oculto">
         <button class="subnav-item-pd ativo" data-subtab-pd="pd-desenho">Lista de Material por Desenho</button>
         <button class="subnav-item-pd" data-subtab-pd="pd-pq">Planilha de Quantidades</button>
         <button class="subnav-item-pd" data-subtab-pd="pd-compras">Lista de Compras</button>
@@ -225,18 +226,26 @@
       <div id="subtab-pd-desenho" class="subtab-pd ativo">
         <!-- Linha 4: ferramentas da lista (filtrar / definir o template de impressão). -->
         <div class="pd-toolbar">
-          <input type="search" id="busca-listas" class="pd-busca" placeholder="Buscar por número, cliente ou título..." autocomplete="off">
+          <input type="search" id="busca-listas" class="pd-busca" placeholder="Buscar listas de materiais e de compras por número ou título..." autocomplete="off">
           <button class="btn-template somente-admin" id="btn-template-desenho" data-tipo="lista_materiais" type="button"></button>
           <!-- Carimbo padrão: o que se repete em todas as listas deste projeto.
                Preenchido uma vez, junto com o template do cliente. -->
           <button class="btn-template somente-admin" id="btn-cabecalho-padrao" type="button">Padrão das listas</button>
         </div>
         <!-- Linha 5: ação principal da tela, isolada, logo acima da tabela. -->
-        <h3 class="subtitulo-arvore">Listas de Materiais Cadastrados</h3>
+        <h3 class="subtitulo-arvore">Listas de Materiais</h3>
         <div class="pd-acao-primaria">
           <button class="btn-primario somente-admin" id="btn-nova-lista">+ Nova Lista por Desenho</button>
         </div>
         <div class="arvore" id="arvore-listas"></div>
+
+        <!-- Mesma tela, segunda fase: as Listas de Compras, no mesmo molde
+             das linhas acima. A busca lá em cima filtra as duas. -->
+        <h3 class="subtitulo-arvore subtitulo-fase">Listas de Compras</h3>
+        <div class="pd-acao-primaria">
+          <button class="btn-primario somente-admin" id="btn-criar-compras">+ Nova Lista de Compras</button>
+        </div>
+        <div class="arvore" id="arvore-compras"></div>
       </div>
 
       <!-- ABA: PLANILHA DE QUANTIDADES -->
@@ -254,19 +263,6 @@
         <div class="arvore" id="arvore-pq"></div>
       </div>
 
-      <!-- ABA: LISTA DE COMPRAS -->
-      <div id="subtab-pd-compras" class="subtab-pd">
-        <div class="pd-toolbar">
-          <input type="search" id="busca-compras" class="pd-busca" placeholder="Buscar por versão ou responsável..." autocomplete="off">
-          <!-- Sem botão de template: a Lista de Compras sai no template de
-               Lista de Materiais do projeto (decisão de 2026-11-18). -->
-        </div>
-        <h3 class="subtitulo-arvore">Histórico de Versões</h3>
-        <div class="pd-acao-primaria">
-          <button class="btn-primario somente-admin" id="btn-criar-compras">+ Criar Nova Lista de Compras</button>
-        </div>
-        <div class="arvore" id="arvore-compras"></div>
-      </div>
     </section>
 
     <!-- CONFIGURAÇÕES -->
