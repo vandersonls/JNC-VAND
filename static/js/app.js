@@ -2234,22 +2234,24 @@ function abrirSelecaoListas(titulo, mensagem, listas, aoConfirmar) {
   });
 }
 
+// A Lista de Compras sai direto das Listas por Desenho: no processo dos
+// engenheiros cada lista é independente, e a Planilha de Quantidades não é
+// passagem obrigatória (decisão de 2026-11-16). Entram as listas com versão
+// emitida - a quantidade vem da versão atual de cada uma, somada por material.
 document.getElementById("btn-criar-compras").addEventListener("click", async () => {
-  const dadosPQ = await api(`/api/projetos/${state.projetoAtual.id}/lista-pq`);
-  if (!dadosPQ.versao) { toast("A Planilha de Quantidades deste projeto ainda não tem nenhuma versão salva", "erro"); return; }
-  const versaoPQ = await api(`/api/lista-pq/versoes/${dadosPQ.versao.id}`);
-  const origens = versaoPQ.versao.origens || [];
-  if (!origens.length) { toast("Esta versão da Planilha de Quantidades não tem listas de origem registradas", "erro"); return; }
-  abrirSelecaoListas(
-    "Selecionar Listas para a Lista de Compras",
-    "Escolha quais listas por desenho (que compõem a Planilha de Quantidades atual) entrarão na Lista de Compras. Por padrão, todas estão marcadas.",
-    origens.map((o) => ({ id: o.lista_desenho_id, numero_desenho: o.numero_desenho, titulo: o.titulo })),
-    (selecionados) => {
-      window._comprasListaIdsSelecionados = selecionados;
-      document.getElementById("btn-criar-compras").classList.add("oculto");
-      document.getElementById("btn-revisar-compras").classList.remove("oculto");
-    },
-  );
+  try {
+    const listas = (await api(`/api/projetos/${state.projetoAtual.id}/listas`)).filter((l) => l.versao_atual);
+    if (!listas.length) { toast("Este projeto ainda não tem nenhuma Lista por Desenho emitida", "erro"); return; }
+    abrirSelecaoListas(
+      "Selecionar Listas para a Lista de Compras",
+      "Escolha quais Listas por Desenho entrarão na Lista de Compras. As quantidades vêm da versão atual de cada lista, somadas por material. Por padrão, todas estão marcadas.",
+      listas,
+      (selecionados) => {
+        window._comprasListaIdsSelecionados = selecionados;
+        iniciarRevisaoCompras();
+      },
+    );
+  } catch (err) { toast(err.message, "erro"); }
 });
 
 const arvoreState = { listas: [], versoesPorLista: {}, expandidas: new Set() };
@@ -3267,7 +3269,18 @@ document.getElementById("busca-compras").addEventListener("input", renderArvoreC
 function renderNoCompras(v) {
   const aberta = comprasArvoreState.expandidas.has(v.id);
   const pq = v.origem_pq;
-  const filhosHtml = pq
+  const listasOrigem = v.listas_origem || [];
+  const filhosHtml = listasOrigem.length
+    ? listasOrigem.map((o) => `
+          <div class="arvore-linha arvore-linha-versao">
+            <span class="arvore-toggle invisivel"></span>
+            ${ICONE_ARQUIVO}
+            <span class="arvore-label">
+              <span class="arvore-titulo">${esc(o.numero_cliente || "-")} / ${esc(o.numero_fornecedor || "-")}${o.titulo ? " — " + esc(o.titulo) : ""} <span class="arvore-sub">(${esc(o.numero_desenho)})</span></span>
+              <span class="arvore-sub">Lista por Desenho v${o.versao_numero}</span>
+            </span>
+          </div>`).join("")
+    : pq
     ? `
         <div class="arvore-linha arvore-linha-versao">
           <span class="arvore-toggle invisivel"></span>
@@ -3286,14 +3299,14 @@ function renderNoCompras(v) {
               <span class="arvore-sub">v${o.versao_numero}</span>
             </span>
           </div>`).join("")}`
-    : `<div class="arvore-carregando">Origem da Planilha de Quantidades não registrada.</div>`;
+    : `<div class="arvore-carregando">Origem não registrada.</div>`;
   return `
     <div class="arvore-no">
       <div class="arvore-linha arvore-linha-pasta">
         <button class="arvore-toggle ${aberta ? "aberto" : ""}" onclick="toggleArvoreCompras(${v.id})" aria-label="Expandir">${ICONE_SETA}</button>
         ${ICONE_PASTA}
         <span class="arvore-label" onclick="toggleArvoreCompras(${v.id})">
-          <span class="arvore-titulo">v${v.versao}${v.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}</span>
+          <span class="arvore-titulo">v${v.versao}${v.cabecalho && v.cabecalho.numero_documento ? " — " + esc(v.cabecalho.numero_documento) : ""}${v.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}</span>
           <span class="arvore-sub">${dataHora(v.criado_em)} · ${esc(v.criado_por_nome || "-")}</span>
         </span>
         <span class="arvore-acoes">
@@ -3313,13 +3326,21 @@ function toggleArvoreCompras(versaoId) {
 async function verVersaoCompras(versaoId) {
   const dados = await api(`/api/lista-compras/versoes/${versaoId}`);
   mostrarItensVersaoGenerico(
-    `Lista de Compras — versão ${dados.versao.versao}${dados.versao.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}`, dados.itens,
+    `Lista de Compras — versão ${dados.versao.versao}${dados.versao.cabecalho && dados.versao.cabecalho.numero_documento ? " — " + esc(dados.versao.cabecalho.numero_documento) : ""}${dados.versao.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}`, dados.itens,
     ["codigo", "descricao", "fabricante", "bitola", "quantidade", "unidade"],
     ["Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"],
   );
 }
 
-document.getElementById("btn-revisar-compras").addEventListener("click", async () => {
+document.getElementById("btn-revisar-compras").addEventListener("click", () => iniciarRevisaoCompras());
+
+// Erro aqui (ex.: banco local sem a coluna do carimbo) aparecia como "nada
+// acontece": a promessa falhava em silêncio. Agora vira aviso na tela.
+async function iniciarRevisaoCompras() {
+  try { await _iniciarRevisaoCompras(); } catch (err) { toast(err.message || "Não foi possível abrir a Lista de Compras", "erro"); }
+}
+
+async function _iniciarRevisaoCompras() {
   const listaIds = window._comprasListaIdsSelecionados || [];
   const base = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras/base`, {
     method: "POST", body: JSON.stringify({ lista_ids: listaIds }),
@@ -3329,20 +3350,90 @@ document.getElementById("btn-revisar-compras").addEventListener("click", async (
     material_id: b.material_id, codigo: b.codigo, descricao: b.descricao, fabricante: b.fabricante,
     bitola: b.bitola, unidade: b.unidade, quantidade: Number(b.quantidade), observacao: "",
   }));
-  renderModalRevisaoCompras();
-});
+  const inicial = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras/cabecalho-inicial`);
+  window._comprasCabecalho = inicial.cabecalho || {};
+  renderCabecalhoCompras({ herdados: inicial.herdados, origem: inicial.origem });
+}
 
 // Retoma um rascunho da Lista de Compras já em aberto, com as quantidades
 // exatamente como estavam no último "Salvar rascunho".
-document.getElementById("btn-continuar-rascunho-compras").addEventListener("click", () => {
+document.getElementById("btn-continuar-rascunho-compras").addEventListener("click", async () => {
   const r = window._comprasRascunho;
   if (!r) return;
   window._comprasDraft = r.itens.map((i) => ({
     material_id: i.material_id, codigo: i.codigo, descricao: i.descricao, fabricante: i.fabricante,
     bitola: i.bitola, unidade: i.unidade, quantidade: Number(i.quantidade), observacao: i.observacao || "",
   }));
-  renderModalRevisaoCompras();
+  window._comprasListaIdsSelecionados = (r.versao.listas_origem || []).map((o) => o.lista_desenho_id);
+  // Rascunho salvo antes do carimbo existir vem sem ele: abre com o inicial.
+  const cab = r.versao.cabecalho || {};
+  if (Object.keys(cab).length) {
+    window._comprasCabecalho = cab;
+    renderCabecalhoCompras({});
+  } else {
+    const inicial = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras/cabecalho-inicial`);
+    window._comprasCabecalho = inicial.cabecalho || {};
+    renderCabecalhoCompras({ herdados: inicial.herdados, origem: inicial.origem });
+  }
 });
+
+// TELA 1 da Lista de Compras: o carimbo. Mesmos campos da Lista por Desenho
+// (o documento sai no mesmo template do cliente), com o Nº do documento no
+// lugar do Nº do desenho. Vem preenchida: o que é do projeto, do carimbo
+// padrão; o que é deste documento, da última Lista de Compras emitida. Rev.
+// e Data de emissão sempre em branco - são desta emissão.
+function renderCabecalhoCompras({ herdados = 0, origem = "" } = {}) {
+  const c = window._comprasCabecalho || {};
+  const campo = (id, rotulo, chave) =>
+    `<div><label>${rotulo}</label><input id="${id}" value="${esc(c[chave] ?? "")}"></div>`;
+  abrirModal(`
+    <h3>Carimbo da Lista de Compras</h3>
+    ${herdados ? `<div class="mapeamento-aviso">
+      <strong>${herdados} campo(s) vieram ${esc(origem)}.</strong>
+      Confira e altere o que for desta emissão. Rev. e Data de emissão ficam em branco de propósito.
+    </div>` : ""}
+    <div class="form-grid-lista">
+      <div class="campo-linha"><label>Número do Documento (Lista de Compras)</label><input id="cc-numero-documento" value="${esc(c.numero_documento || "")}"></div>
+      <div class="campo-linha"><label>Subtítulo (linha 1 do carimbo)</label><input id="cc-subtitulo" value="${esc(c.subtitulo || "")}"></div>
+      <div class="campo-linha"><label>Área (linha 2 do carimbo)</label><input id="cc-area-titulo" value="${esc(c.area_titulo || "")}"></div>
+      <div class="campo-linha"><label>Disciplina (linha 3 do carimbo)</label><input id="cc-disciplina" value="${esc(c.disciplina || "")}"></div>
+      <div class="campo-linha"><label>Título do Documento (linha 4 do carimbo)</label><input id="cc-titulo" value="${esc(c.titulo || "")}"></div>
+      <div class="campo-linha campo-dupla">
+        ${campo("cc-numero-cliente", "Número do Cliente", "numero_cliente")}
+        ${campo("cc-numero-fornecedor", "Número do Projetista", "numero_fornecedor")}
+      </div>
+      <div class="campo-linha campo-dupla">
+        <div><label>Rev.</label><input id="cc-rev-manual" type="number" step="1" min="0" value="${esc(c.rev_manual ?? "")}" placeholder="Em branco: número da versão"></div>
+        <div><label>Data de Emissão</label><input id="cc-data-emissao" type="date" value="${esc(c.data_emissao_manual || "")}"></div>
+      </div>
+      <div class="campo-linha campo-dupla">${campo("cc-elaborador-nome", "Nome do Elaborador", "elaborador_nome")}${campo("cc-elaborador-sigla", "Sigla", "elaborador_sigla")}</div>
+      <div class="campo-linha campo-dupla">${campo("cc-verificador-nome", "Nome do Verificador", "verificador_nome")}${campo("cc-verificador-sigla", "Sigla", "verificador_sigla")}</div>
+      <div class="campo-linha campo-dupla">${campo("cc-aprovador-nome", "Nome do Aprovador", "aprovador_nome")}${campo("cc-aprovador-sigla", "Sigla", "aprovador_sigla")}</div>
+      <div class="campo-linha campo-dupla">${campo("cc-autorizado-nome", "Nome do Autorizado", "autorizado_nome")}${campo("cc-autorizado-sigla", "Sigla", "autorizado_sigla")}</div>
+    </div>
+    <div class="modal-acoes">
+      <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
+      <button class="btn-primario" id="btn-continuar-cabecalho-compras">Continuar</button>
+    </div>
+  `, "modal-media");
+
+  document.getElementById("btn-continuar-cabecalho-compras").addEventListener("click", () => {
+    const v = (id) => document.getElementById(id).value.trim();
+    const numero_documento = v("cc-numero-documento");
+    if (!numero_documento) { toast("Informe o número do documento da Lista de Compras", "erro"); return; }
+    window._comprasCabecalho = {
+      numero_documento,
+      subtitulo: v("cc-subtitulo"), area_titulo: v("cc-area-titulo"), disciplina: v("cc-disciplina"),
+      titulo: v("cc-titulo"), numero_cliente: v("cc-numero-cliente"), numero_fornecedor: v("cc-numero-fornecedor"),
+      rev_manual: v("cc-rev-manual"), data_emissao_manual: document.getElementById("cc-data-emissao").value,
+      elaborador_nome: v("cc-elaborador-nome"), elaborador_sigla: v("cc-elaborador-sigla"),
+      verificador_nome: v("cc-verificador-nome"), verificador_sigla: v("cc-verificador-sigla"),
+      aprovador_nome: v("cc-aprovador-nome"), aprovador_sigla: v("cc-aprovador-sigla"),
+      autorizado_nome: v("cc-autorizado-nome"), autorizado_sigla: v("cc-autorizado-sigla"),
+    };
+    renderModalRevisaoCompras();
+  });
+}
 
 function renderModalRevisaoCompras() {
   const linhas = window._comprasDraft.map((item, idx) => `
@@ -3354,8 +3445,8 @@ function renderModalRevisaoCompras() {
     </tr>`).join("");
 
   abrirModal(`
-    <h3>Revisar Lista de Compras</h3>
-    <p style="color:var(--cinza); font-size:13px;">Itens vindos da última versão salva da Planilha de Quantidades. Ajuste as quantidades se necessário.</p>
+    <h3>Revisar Lista de Compras${window._comprasCabecalho?.numero_documento ? " — " + esc(window._comprasCabecalho.numero_documento) : ""}</h3>
+    <p style="color:var(--cinza); font-size:13px;">Itens somados da versão atual de cada Lista por Desenho escolhida. Ajuste as quantidades se necessário.</p>
     <div style="max-height:360px; overflow-y:auto; margin:12px 0;">
       <table class="tabela">
         <thead><tr><th>Código</th><th>Descrição</th><th>Quantidade</th><th>Unidade</th></tr></thead>
@@ -3364,6 +3455,7 @@ function renderModalRevisaoCompras() {
     </div>
     <div class="modal-acoes">
       <button class="btn-secundario" onclick="fecharModalComConfirmacao()">Cancelar</button>
+      <button class="btn-secundario" id="btn-voltar-cabecalho-compras">← Carimbo</button>
       <button class="btn-secundario" id="btn-salvar-rascunho-compras">Salvar rascunho</button>
       <button class="btn-primario" id="btn-emitir-compras">Emitir versão</button>
     </div>
@@ -3374,6 +3466,7 @@ function renderModalRevisaoCompras() {
       window._comprasDraft[Number(input.dataset.idx)].quantidade = Math.round(Number(input.value)) || 0;
     });
   });
+  document.getElementById("btn-voltar-cabecalho-compras").addEventListener("click", () => renderCabecalhoCompras({}));
   document.getElementById("btn-salvar-rascunho-compras").addEventListener("click", () => salvarVersaoCompras("rascunho"));
   document.getElementById("btn-emitir-compras").addEventListener("click", () => salvarVersaoCompras("salvo"));
 }
@@ -3383,7 +3476,11 @@ async function salvarVersaoCompras(status) {
     material_id: item.material_id, quantidade: Math.round(Number(item.quantidade)) || 0, observacao: item.observacao || "",
   }));
   try {
-    await api(`/api/projetos/${state.projetoAtual.id}/lista-compras`, { method: "POST", body: JSON.stringify({ itens, status }) });
+    await api(`/api/projetos/${state.projetoAtual.id}/lista-compras`, {
+      method: "POST", body: JSON.stringify({
+        itens, status, cabecalho: window._comprasCabecalho || {}, lista_ids: window._comprasListaIdsSelecionados || [],
+      }),
+    });
     fecharModal();
     toast(status === "rascunho" ? "Rascunho da Lista de Compras salvo" : "Nova versão da Lista de Compras emitida com sucesso");
     document.getElementById("btn-revisar-compras").classList.add("oculto");

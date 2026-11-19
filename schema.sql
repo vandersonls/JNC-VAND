@@ -485,6 +485,15 @@ CREATE TABLE IF NOT EXISTS lista_compras_versoes (
     criado_por INT,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     pq_versao_id INT NULL,
+    -- Carimbo DESTA emissão da Lista de Compras (títulos, números, Rev.,
+    -- data, assinantes e o número do documento). JSON pelo mesmo motivo do
+    -- projetos.cabecalho_padrao: é a mesma estrutura do cabeçalho da Lista
+    -- por Desenho, que já mudou de forma ao longo do projeto.
+    cabecalho JSON NULL,
+    -- Listas por Desenho de onde a versão saiu (id, nº do desenho, título,
+    -- números e a versão de cada lista usada). A Lista de Compras pode sair
+    -- direto das Listas por Desenho, sem passar pela Planilha de Quantidades.
+    listas_origem JSON NULL,
     FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
     FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
     UNIQUE KEY uq_compras_projeto_versao (projeto_id, versao)
@@ -493,6 +502,16 @@ CREATE TABLE IF NOT EXISTS lista_compras_versoes (
 SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lista_compras_versoes' AND COLUMN_NAME = 'pq_versao_id');
 SET @sql = IF(@col_exists = 0, 'ALTER TABLE lista_compras_versoes ADD COLUMN pq_versao_id INT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lista_compras_versoes' AND COLUMN_NAME = 'cabecalho');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE lista_compras_versoes ADD COLUMN cabecalho JSON NULL AFTER pq_versao_id', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lista_compras_versoes' AND COLUMN_NAME = 'listas_origem');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE lista_compras_versoes ADD COLUMN listas_origem JSON NULL AFTER cabecalho', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @fk_exists = (SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE

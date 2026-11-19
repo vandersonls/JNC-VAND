@@ -1,3 +1,4 @@
+import datetime
 import io
 import ipaddress
 import json
@@ -667,24 +668,142 @@ def _limpar_formulas_sem_dado(ws, tabela_cfg, colunas):
                     cel.value = None
 
 
-def _preencher_tabela(ws, tabela_cfg, linhas_dados):
+def _texto_cabecalho(ws, linha, colunas):
+    """Texto das células de cabeçalho da tabela numa linha, normalizado -
+    serve para reconhecer o mesmo cabeçalho repetido nas folhas seguintes."""
+    textos = []
+    for _, col_ini, _ in colunas:
+        valor = ws.cell(row=linha, column=col_ini).value
+        textos.append(re.sub(r"\s+", " ", str(valor)).strip().lower() if valor not in (None, "") else "")
+    return tuple(textos)
+
+
+def _assinatura_linha(ws, linha, colunas, mesclas_por_linha):
+    """Como uma linha da tabela "parece": as mesclagens de uma linha só que
+    ela tem dentro das colunas da tabela (no template da CBA: C:D e E:M).
+    É o que distingue uma linha de item de uma linha do carimbo."""
+    col_min = min(c[1] for c in colunas)
+    col_max = max(c[2] for c in colunas)
+    return frozenset((c1, c2) for c1, c2 in mesclas_por_linha.get(linha, ()) if c1 >= col_min and c2 <= col_max)
+
+
+def _blocos_da_tabela(ws, tabela_cfg, colunas):
+    """Onde cada folha do template guarda a sua parte da tabela.
+
+    O template da CBA não é uma tabela comprida: a aba da lista tem várias
+    FOLHAS, uma embaixo da outra, cada uma com o próprio carimbo e o próprio
+    cabeçalho "Item | Código SAP | Descrição...". O motor escrevia os itens
+    em sequência a partir da 1ª folha e, passada a última linha dela,
+    escrevia POR CIMA do carimbo da folha 2 - duplicando mesclagens em cima
+    das do carimbo, o que o Excel acusa como arquivo corrompido ("Mesclar
+    células" removido no reparo). Apareceu com a Lista de Compras, que soma
+    várias listas e passa de uma folha (16/11/2026).
+
+    Devolve [(linha_inicial, capacidade), ...], uma entrada por folha: a 1ª
+    é a do mapeamento; as outras, cada linha abaixo que repete o texto do
+    cabeçalho da tabela. A capacidade de cada folha é medida no próprio
+    arquivo - linhas seguidas com a mesma cara da linha-molde (mesmas
+    mesclagens) -, porque o mapeamento costuma marcar só UMA linha de molde.
+    Template sem cabeçalho repetido = uma folha só, comportamento de antes."""
+    inicio = tabela_cfg["linha_inicial"]
+    capacidade_mapeada = tabela_cfg["linha_final_molde"] - inicio + 1
+    cabecalho = _texto_cabecalho(ws, inicio - 1, colunas)
+    if capacidade_mapeada < 1 or sum(1 for t in cabecalho if t) < 2:
+        return [(inicio, capacidade_mapeada)]
+    inicios = [inicio]
+    for linha in range(inicio + 1, ws.max_row + 1):
+        if _texto_cabecalho(ws, linha, colunas) == cabecalho:
+            inicios.append(linha + 1)
+    if len(inicios) == 1:
+        return [(inicio, capacidade_mapeada)]
+
+    mesclas_por_linha = {}
+    for m in ws.merged_cells.ranges:
+        if m.min_row == m.max_row:
+            mesclas_por_linha.setdefault(m.min_row, []).append((m.min_col, m.max_col))
+    molde = _assinatura_linha(ws, tabela_cfg["linha_estilo"], colunas, mesclas_por_linha)
+    blocos = []
+    for i, ini in enumerate(inicios):
+        limite = inicios[i + 1] - 1 if i + 1 < len(inicios) else ws.max_row + 1  # nunca invade a próxima folha
+        if molde:
+            fim = ini
+            while fim < limite and _assinatura_linha(ws, fim, colunas, mesclas_por_linha) == molde:
+                fim += 1
+            cap = fim - ini
+        else:
+            cap = min(capacidade_mapeada, limite - ini)
+        blocos.append((ini, max(cap, 1)))
+    return blocos
+
+
+def _repetir_carimbo_nas_folhas(ws, deslocamentos, campos, valores):
+    """Preenche o carimbo das folhas 2, 3... da mesma aba, nas mesmas
+    posições da 1ª folha deslocadas para baixo. Mesma trava de sempre: só
+    escreve onde a célula ainda tem espaço reservado (XXX, 0A)."""
+    for desloc in deslocamentos:
+        for campo, coord in (campos or {}).items():
+            if campo not in valores:
+                continue
+            m = re.match(r"^([A-Z]+)(\d+)$", str(coord))
+            if not m:
+                continue
+            destino = f"{m.group(1)}{int(m.group(2)) + desloc}"
+            cel = ws[destino]
+            if isinstance(cel, MergedCell):
+                continue
+            atual = cel.value
+            if not isinstance(atual, str) or not _RESERVADO.match(atual.strip()):
+                continue
+            _definir_com_quebra(ws, destino, valores[campo])
+
+
+def _preencher_tabela(ws, tabela_cfg, linhas_dados, campos=None, valores=None):
     """tabela_cfg vem do mapeamento salvo: fonte_dados, linha_inicial,
     linha_final_molde, linha_estilo, colunas ([nome, col_ini, col_fim]),
     col_direita_impressao. linhas_dados é a lista de dicts (um por item, por
-    exemplo) a escrever a partir da linha_inicial, duplicando o estilo da
-    linha_estilo quando precisar de mais linhas que o template já tem prontas."""
+    exemplo) a escrever a partir da linha_inicial. Quando o template tem a
+    tabela repetida em várias folhas, segue para a folha seguinte ao encher
+    uma; só depois da última folha duplica o estilo da linha_estilo para
+    criar linhas novas, como sempre fez."""
     colunas = [tuple(c) for c in tabela_cfg["colunas"]]
-    linha = tabela_cfg["linha_inicial"]
     linha_final_molde = tabela_cfg["linha_final_molde"]
     linha_estilo = tabela_cfg["linha_estilo"]
     linhas_dados = _descricao_com_complemento(tabela_cfg, colunas, linhas_dados)
-    for dados in linhas_dados:
-        if linha > linha_final_molde:
+    blocos = _blocos_da_tabela(ws, tabela_cfg, colunas)
+
+    posicoes = []  # linha de cada item, folha por folha
+    for ini, cap in blocos:
+        posicoes.extend(range(ini, ini + cap))
+    linha = None
+    for i, dados in enumerate(linhas_dados):
+        if i < len(posicoes):
+            linha = posicoes[i]
+        else:
+            # Passou da última folha pronta do template: cresce para baixo
+            # dela, copiando o estilo da linha-molde (o comportamento antigo).
+            linha += 1
             _duplicar_linha_estilo(ws, linha_estilo, linha, colunas)
         _escrever_linha_grade(ws, linha, colunas, dados)
-        linha += 1
+    folhas_usadas = 1
+    if linha is not None:
+        folhas_usadas = 1 + sum(1 for ini, _ in blocos[1:] if linha >= ini)
+    if len(blocos) > 1 and folhas_usadas > 1:
+        deslocamentos = [ini - blocos[0][0] for ini, _ in blocos[1:folhas_usadas]]
+        _repetir_carimbo_nas_folhas(ws, deslocamentos, campos, valores or {})
     _limpar_formulas_sem_dado(ws, tabela_cfg, colunas)
-    ultima_linha = max(linha_final_molde, linha - 1)
+    if len(blocos) > 1 and len(linhas_dados) <= len(posicoes):
+        # Template em folhas: imprime até o fim da última folha usada, não
+        # as folhas vazias que sobraram do molde do cliente.
+        if folhas_usadas < len(blocos):
+            periodo_inicio = blocos[folhas_usadas][0] - blocos[0][0]
+            ultima_linha = periodo_inicio + _primeira_linha_impressao(tabela_cfg) - 1
+        else:
+            ultima_linha = ws.max_row
+        col_direita = max(tabela_cfg["col_direita_impressao"], ws.max_column)
+        _ajustar_area_impressao(ws, tabela_cfg.get("canto_superior_impressao", "A1"), ultima_linha, col_direita)
+        return
+    linha_escrita = linha if linha is not None else tabela_cfg["linha_inicial"] - 1
+    ultima_linha = max(linha_final_molde, linha_escrita)
     # A área de impressão cobre o documento INTEIRO, não só o que foi
     # mapeado - o template do cliente costuma ter colunas/linhas com
     # conteúdo ou formatação (ex.: "Valor Unitário"/"Total" com fórmula
@@ -701,6 +820,11 @@ def _preencher_tabela(ws, tabela_cfg, linhas_dados):
     # não começava no canto absoluto da planilha (ex.: linha/coluna 1 em
     # branco de propósito, fora da área impressa do template do cliente).
     _ajustar_area_impressao(ws, tabela_cfg.get("canto_superior_impressao", "A1"), ultima_linha, col_direita)
+
+
+def _primeira_linha_impressao(tabela_cfg):
+    m = re.match(r"^[A-Z]+(\d+)$", tabela_cfg.get("canto_superior_impressao", "A1"))
+    return int(m.group(1)) if m else 1
 
 
 def _ajustar_area_impressao(ws, canto_superior, ultima_linha, col_direita):
@@ -803,23 +927,104 @@ def _linhas_itens_pq(itens):
     return linhas
 
 
-# ---------- Campos pro template opcional de Lista de Compras ----------
+# ---------- Campos da Lista de Compras ----------
+# A Lista de Compras sai no template do cliente com o MESMO carimbo da Lista
+# por Desenho: os campos levam os nomes da Lista por Desenho (é o mapeamento
+# do template de Lista de Materiais que vai ser usado na maioria dos casos)
+# mais os nomes antigos do template próprio de Compras (projeto, cliente,
+# data), para um template de Compras já mapeado continuar funcionando.
+def _cabecalho_compras(versao):
+    """Carimbo gravado na versão, com Rev. e Data no mesmo tipo que as
+    colunas da Lista por Desenho (int e date), para reaproveitar
+    _rev_exibicao e _data_emissao_exibicao sem nenhum caso especial."""
+    from lista_compras import cabecalho_dict  # import aqui: evita ciclo na carga dos blueprints
+    cab = dict(cabecalho_dict(versao.get("cabecalho"))) if versao else {}
+    rev = cab.get("rev_manual")
+    if rev not in (None, ""):
+        try:
+            cab["rev_manual"] = int(rev)
+        except (TypeError, ValueError):
+            pass  # texto livre ("0A") vai como foi digitado
+    else:
+        cab.pop("rev_manual", None)
+    data = cab.get("data_emissao_manual")
+    if isinstance(data, str):
+        try:
+            cab["data_emissao_manual"] = datetime.date.fromisoformat(data[:10])
+        except ValueError:
+            cab.pop("data_emissao_manual", None)
+    return cab
+
+
 def _campos_lista_compras(projeto, versao):
+    cab = _cabecalho_compras(versao)
+    numero_documento = cab.get("numero_documento") or ""
     return {
-        "projeto": f"{projeto['codigo']} — {projeto['nome']}",
-        "cliente": projeto.get("cliente_nome") or "",
-        "rev": str(versao["versao"]) if versao else "-",
-        "data": versao["criado_em"].strftime("%d/%m/%Y") if versao else "-",
+        "projeto": projeto["nome"], "cliente": projeto.get("cliente_nome") or "",
+        "subtitulo": cab.get("subtitulo") or "", "area": cab.get("area_titulo") or "",
+        "disciplina": cab.get("disciplina") or "", "titulo": cab.get("titulo") or "",
+        "numero_cliente": cab.get("numero_cliente") or "",
+        "numero_projetista": cab.get("numero_fornecedor") or "",
+        "rev": _rev_exibicao(cab, versao), "data": _data_emissao_exibicao(cab, versao),
+        "numero_desenho": numero_documento, "referencia_desenho": "",
     }
 
 
-def _linhas_itens_compras(itens):
+def _versoes_compras_emitidas(projeto_id):
+    return db.query_all(
+        """SELECT id, versao, status, observacoes, criado_em, cabecalho FROM lista_compras_versoes
+           WHERE projeto_id = %s AND status = 'salvo' ORDER BY versao""",
+        (projeto_id,),
+    )
+
+
+def _linhas_revisoes_compras(versao, historico):
+    """Histórico de revisões do carimbo: uma linha por versão emitida até a
+    exibida, cada uma com os assinantes e a data DAQUELA versão. A Lista de
+    Compras não tem tipo de emissão (TE), então a descrição é a observação
+    digitada ao emitir, ou o próprio nome do documento."""
+    if not versao:
+        return []
+    linhas = []
+    for v in historico:
+        if v["versao"] > versao["versao"]:
+            break
+        cab = _cabecalho_compras(v)
+        linhas.append({
+            "rev": _rev_exibicao(cab, v), "te": "-",
+            "descricao": (v["observacoes"] or "").strip() or "EMITIDO PARA COMPRA",
+            "por": _assinatura_curta(cab, "elaborador_nome", "elaborador_sigla"),
+            "ver": _assinatura_curta(cab, "verificador_nome", "verificador_sigla"),
+            "apr": _assinatura_curta(cab, "aprovador_nome", "aprovador_sigla"),
+            "aut": _assinatura_curta(cab, "autorizado_nome", "autorizado_sigla"),
+            "data": _data_emissao_exibicao(cab, v),
+        })
+    return linhas
+
+
+def _quantidades_compras_anterior(versao, historico):
+    """Quantidade de cada material na versão emitida imediatamente anterior
+    (coluna 'quant. anterior' do template da Lista de Materiais)."""
+    anteriores = [v for v in historico if versao and v["versao"] < versao["versao"]]
+    if not anteriores:
+        return {}
+    rows = db.query_all(
+        "SELECT material_id, quantidade FROM lista_compras_itens WHERE versao_id = %s",
+        (anteriores[-1]["id"],),
+    )
+    return {r["material_id"]: float(r["quantidade"]) for r in rows}
+
+
+def _linhas_itens_compras(itens, anteriores=None):
+    anteriores = anteriores or {}
     linhas = []
     for idx, item in enumerate(itens, start=1):
+        quantidade = float(item["quantidade"])
         linhas.append({
             "item": idx, "codigo": item["codigo"], "descricao": item["descricao"],
             "referencia": item["fabricante"] or "", "complemento": item["bitola"] or "",
-            "unidade": item["unidade"], "quantidade": float(item["quantidade"]),
+            "unidade": item["unidade"], "quantidade": quantidade,
+            "quant_atual": quantidade, "quant_anterior": anteriores.get(item["material_id"], 0.0),
         })
     return linhas
 
@@ -842,6 +1047,16 @@ def _template_projeto(projeto_id, tipo):
     if isinstance(mapeamento, str):
         mapeamento = json.loads(mapeamento)
     return row["arquivo"], mapeamento
+
+
+def _campos_de_todas_as_abas(mapeamento):
+    """Coordenadas do carimbo mapeadas em qualquer aba: o carimbo das folhas
+    é o mesmo em todas as abas do template (ver _repetir_campos_nas_outras_abas)."""
+    campos = {}
+    for aba_cfg in mapeamento.get("abas", []):
+        for campo, coord in (aba_cfg.get("campos") or {}).items():
+            campos.setdefault(campo, coord)
+    return campos
 
 
 def _preencher_template_generico(arquivo_bytes, mapeamento, dados_por_fonte):
@@ -867,7 +1082,8 @@ def _preencher_template_generico(arquivo_bytes, mapeamento, dados_por_fonte):
         _repetir_campos_nas_outras_abas(wb, ws, aba_cfg.get("campos", {}), campos_valores)
         for tabela_cfg in aba_cfg.get("tabelas", []):
             linhas_dados = dados_por_fonte.get(tabela_cfg["fonte_dados"], [])
-            _preencher_tabela(ws, tabela_cfg, linhas_dados)
+            _preencher_tabela(ws, tabela_cfg, linhas_dados,
+                              campos=_campos_de_todas_as_abas(mapeamento), valores=campos_valores)
             # A aba com a tabela de itens é a "principal" do arquivo - renomeá-la
             # pro número do desenho facilita identificar o arquivo baixado
             # (mesmo comportamento de quando isso era fixo pro template da Ausenco).
@@ -1255,18 +1471,28 @@ def relatorio_lista_compras_excel(projeto_id):
     projeto, config = ctx["projeto"], ctx["config"]
     versao, itens = _carregar_versao_itens(projeto, request.args.get("versao_id", type=int), "compras")
 
-    # Template do cliente é opcional aqui - sem um mapeado, cai no layout
-    # padrão de sempre logo abaixo.
-    template = _template_projeto(projeto_id, "lista_compras")
+    # Template: o próprio de Lista de Compras, se o projeto tiver um mapeado;
+    # senão, o MESMO template de Lista de Materiais do cliente, com o carimbo
+    # desta Lista de Compras. Sem nenhum dos dois, cai no layout padrão abaixo.
+    template = (_template_projeto(projeto_id, "lista_compras")
+                or _template_projeto(projeto_id, "lista_materiais"))
+    cab = _cabecalho_compras(versao)
+    nome_base = cab.get("numero_documento") or f"lista_compras_{projeto['codigo']}"
+    nome_arquivo = f"{nome_base}_rev{_rev_exibicao(cab, versao)}.xlsx" if versao else f"{nome_base}.xlsx"
     if template:
         arquivo_bytes, mapeamento = template
-        dados_por_fonte = {"_campos": _campos_lista_compras(projeto, versao), "itens": _linhas_itens_compras(itens)}
+        historico = _versoes_compras_emitidas(projeto_id)
+        dados_por_fonte = {
+            "_campos": _campos_lista_compras(projeto, versao),
+            "itens": _linhas_itens_compras(itens, _quantidades_compras_anterior(versao, historico)),
+            "revisoes": _linhas_revisoes_compras(versao, historico),
+        }
         try:
             wb = _preencher_template_generico(arquivo_bytes, mapeamento, dados_por_fonte)
             buf = io.BytesIO()
             wb.save(buf)
             buf.seek(0)
-            return send_file(buf, as_attachment=True, download_name=f"lista_compras_{projeto['codigo']}.xlsx",
+            return send_file(buf, as_attachment=True, download_name=nome_arquivo,
                               mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         except Exception:
             log_erros.registrar(f"Excel da Lista de Compras (projeto {projeto_id})")
@@ -1283,12 +1509,11 @@ def relatorio_lista_compras_excel(projeto_id):
     centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
     esquerda = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
-    data_versao = versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
     linha = _cabecalho_excel_com_logos(
         ws, 6, config.get("nome_empresa", ""), config.get("logo_url", ""),
         projeto["cliente_nome"], projeto.get("cliente_logo_url"),
-        f"{projeto['codigo']} — {projeto['nome']}", "LISTA DE COMPRAS",
-        versao["versao"] if versao else "-", data_versao,
+        f"{projeto['codigo']} — {projeto['nome']}", cab.get("titulo") or "LISTA DE COMPRAS",
+        _rev_exibicao(cab, versao), _data_emissao_exibicao(cab, versao),
     )
 
     cabecalho = ["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]
@@ -1317,7 +1542,7 @@ def relatorio_lista_compras_excel(projeto_id):
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    return send_file(buf, as_attachment=True, download_name=f"lista_compras_{projeto['codigo']}.xlsx",
+    return send_file(buf, as_attachment=True, download_name=nome_arquivo,
                       mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
@@ -1334,12 +1559,12 @@ def relatorio_lista_compras_pdf(projeto_id):
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.2 * cm, bottomMargin=1.2 * cm,
                              leftMargin=1.2 * cm, rightMargin=1.2 * cm)
-    data_versao = versao["criado_em"].strftime("%d/%m/%Y") if versao else "-"
+    cab = _cabecalho_compras(versao)
     elementos = _cabecalho_pdf_com_logos(
         config.get("nome_empresa", ""), config.get("logo_url", ""),
         projeto["cliente_nome"], projeto.get("cliente_logo_url"),
-        f"{projeto['codigo']} — {projeto['nome']}", "LISTA DE COMPRAS",
-        versao["versao"] if versao else "-", data_versao,
+        f"{projeto['codigo']} — {projeto['nome']}", cab.get("titulo") or "LISTA DE COMPRAS",
+        _rev_exibicao(cab, versao), _data_emissao_exibicao(cab, versao),
     )
 
     dados = [["Item", "Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"]]
