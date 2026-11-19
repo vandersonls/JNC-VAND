@@ -1471,11 +1471,12 @@ def relatorio_lista_compras_excel(projeto_id):
     projeto, config = ctx["projeto"], ctx["config"]
     versao, itens = _carregar_versao_itens(projeto, request.args.get("versao_id", type=int), "compras")
 
-    # Template: o próprio de Lista de Compras, se o projeto tiver um mapeado;
-    # senão, o MESMO template de Lista de Materiais do cliente, com o carimbo
-    # desta Lista de Compras. Sem nenhum dos dois, cai no layout padrão abaixo.
-    template = (_template_projeto(projeto_id, "lista_compras")
-                or _template_projeto(projeto_id, "lista_materiais"))
+    # Template: o MESMO de Lista de Materiais do cliente, com o carimbo desta
+    # Lista de Compras (o botão de template próprio de Compras saiu da tela em
+    # 2026-11-18). Um template de Compras enviado antes disso só vale para
+    # projeto sem template de Lista de Materiais. Sem nenhum, layout padrão.
+    template = (_template_projeto(projeto_id, "lista_materiais")
+                or _template_projeto(projeto_id, "lista_compras"))
     cab = _cabecalho_compras(versao)
     nome_base = cab.get("numero_documento") or f"lista_compras_{projeto['codigo']}"
     nome_arquivo = f"{nome_base}_rev{_rev_exibicao(cab, versao)}.xlsx" if versao else f"{nome_base}.xlsx"
