@@ -958,7 +958,9 @@ def _cabecalho_compras(versao):
 
 def _campos_lista_compras(projeto, versao):
     cab = _cabecalho_compras(versao)
-    numero_documento = cab.get("numero_documento") or ""
+    # O Nº do cliente é o nome desta Lista de Compras: vai também no lugar do
+    # Nº do desenho (nome da aba) - antes era o "Nº do documento" (16-18/11).
+    numero_documento = cab.get("numero_cliente") or cab.get("numero_documento") or ""
     return {
         "projeto": projeto["nome"], "cliente": projeto.get("cliente_nome") or "",
         "subtitulo": cab.get("subtitulo") or "", "area": cab.get("area_titulo") or "",
@@ -970,11 +972,13 @@ def _campos_lista_compras(projeto, versao):
     }
 
 
-def _versoes_compras_emitidas(projeto_id):
+def _versoes_compras_emitidas(projeto_id, documento=None):
+    """Versões emitidas da MESMA Lista de Compras (documento) - cada uma tem
+    o próprio histórico de revisões e a própria "quant. anterior"."""
     return db.query_all(
         """SELECT id, versao, status, observacoes, criado_em, cabecalho FROM lista_compras_versoes
-           WHERE projeto_id = %s AND status = 'salvo' ORDER BY versao""",
-        (projeto_id,),
+           WHERE projeto_id = %s AND status = 'salvo' AND documento <=> %s ORDER BY versao""",
+        (projeto_id, documento),
     )
 
 
@@ -1478,11 +1482,11 @@ def relatorio_lista_compras_excel(projeto_id):
     template = (_template_projeto(projeto_id, "lista_materiais")
                 or _template_projeto(projeto_id, "lista_compras"))
     cab = _cabecalho_compras(versao)
-    nome_base = cab.get("numero_documento") or f"lista_compras_{projeto['codigo']}"
+    nome_base = (cab.get("numero_cliente") or cab.get("numero_documento") or f"lista_compras_{projeto['codigo']}").replace("/", "-")
     nome_arquivo = f"{nome_base}_rev{_rev_exibicao(cab, versao)}.xlsx" if versao else f"{nome_base}.xlsx"
     if template:
         arquivo_bytes, mapeamento = template
-        historico = _versoes_compras_emitidas(projeto_id)
+        historico = _versoes_compras_emitidas(projeto_id, versao.get("documento") if versao else None)
         dados_por_fonte = {
             "_campos": _campos_lista_compras(projeto, versao),
             "itens": _linhas_itens_compras(itens, _quantidades_compras_anterior(versao, historico)),

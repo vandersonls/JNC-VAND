@@ -2189,8 +2189,6 @@ function ativarSubtabPD(nome) {
     carregarListaPQ();
   }
   if (nome === "pd-compras") {
-    document.getElementById("btn-criar-compras").classList.remove("oculto");
-    document.getElementById("btn-revisar-compras").classList.add("oculto");
     carregarListaCompras();
   }
 }
@@ -2211,10 +2209,11 @@ document.getElementById("btn-criar-pq").addEventListener("click", async () => {
 });
 
 // Modal genérico de checklist de listas por desenho, reaproveitado por PQ e Compras.
-function abrirSelecaoListas(titulo, mensagem, listas, aoConfirmar) {
+// marcadas: Set de ids pré-marcados; sem ele, todas vêm marcadas.
+function abrirSelecaoListas(titulo, mensagem, listas, aoConfirmar, marcadas = null) {
   const linhas = listas.map((l) => `
     <label class="selecao-lista-linha">
-      <input type="checkbox" class="selecao-lista-check" value="${l.id}" checked>
+      <input type="checkbox" class="selecao-lista-check" value="${l.id}" ${!marcadas || marcadas.has(l.id) ? "checked" : ""}>
       <span>${esc(l.numero_cliente || "-")} / ${esc(l.numero_fornecedor || "-")}${l.titulo ? " — " + esc(l.titulo) : ""} <span class="arvore-sub">(${esc(l.numero_desenho)})</span></span>
     </label>`).join("");
   abrirModal(`
@@ -2236,23 +2235,8 @@ function abrirSelecaoListas(titulo, mensagem, listas, aoConfirmar) {
 
 // A Lista de Compras sai direto das Listas por Desenho: no processo dos
 // engenheiros cada lista é independente, e a Planilha de Quantidades não é
-// passagem obrigatória (decisão de 2026-11-16). Entram as listas com versão
-// emitida - a quantidade vem da versão atual de cada uma, somada por material.
-document.getElementById("btn-criar-compras").addEventListener("click", async () => {
-  try {
-    const listas = (await api(`/api/projetos/${state.projetoAtual.id}/listas`)).filter((l) => l.versao_atual);
-    if (!listas.length) { toast("Este projeto ainda não tem nenhuma Lista por Desenho emitida", "erro"); return; }
-    abrirSelecaoListas(
-      "Selecionar Listas para a Lista de Compras",
-      "Escolha quais Listas por Desenho entrarão na Lista de Compras. As quantidades vêm da versão atual de cada lista, somadas por material. Por padrão, todas estão marcadas.",
-      listas,
-      (selecionados) => {
-        window._comprasListaIdsSelecionados = selecionados;
-        iniciarRevisaoCompras();
-      },
-    );
-  } catch (err) { toast(err.message, "erro"); }
-});
+// passagem obrigatória (decisão de 2026-11-16). Ver abrirFluxoCompras.
+document.getElementById("btn-criar-compras").addEventListener("click", () => abrirFluxoCompras(null));
 
 const arvoreState = { listas: [], versoesPorLista: {}, expandidas: new Set() };
 
@@ -3244,144 +3228,191 @@ async function salvarVersaoPQ(status) {
 }
 
 // ---------- LISTA DE COMPRAS ----------
-const comprasArvoreState = { todas: [], versoes: [], expandidas: new Set() };
+// Desde 2026-11-19 a aba tem o MESMO molde da relação de Listas por Desenho:
+// uma "pasta" por Lista de Compras, identificada pelo Nº do cliente do
+// carimbo, com a versão atual na linha e as anteriores na gaveta. Um projeto
+// pode ter várias Listas de Compras, cada uma com a própria numeração.
+const comprasArvoreState = { pastas: [], versoesPorDoc: {}, expandidas: new Set() };
 
 async function carregarListaCompras() {
-  const [versoes, rascunho] = await Promise.all([
-    api(`/api/projetos/${state.projetoAtual.id}/lista-compras/versoes`),
-    api(`/api/projetos/${state.projetoAtual.id}/lista-compras/rascunho`),
-  ]);
-  comprasArvoreState.todas = versoes;
+  comprasArvoreState.versoesPorDoc = {};
+  comprasArvoreState.pastas = await api(`/api/projetos/${state.projetoAtual.id}/listas-compras`);
   renderArvoreCompras();
-  window._comprasRascunho = rascunho.versao ? rascunho : null;
-  document.getElementById("btn-continuar-rascunho-compras").classList.toggle("oculto", !window._comprasRascunho);
 }
 
 function renderArvoreCompras() {
+  const cont = document.getElementById("arvore-compras");
   const termo = (document.getElementById("busca-compras")?.value || "").trim().toLowerCase();
-  const versoes = _filtrarVersoes(comprasArvoreState.todas, termo, (v) => ((v.origem_pq && v.origem_pq.origens) || []).flatMap((o) => [o.numero_desenho, o.titulo]));
-  const mensagem = termo ? `Nenhuma versão encontrada para "${esc(termo)}".` : "Nenhuma versão da Lista de Compras salva ainda.";
-  _renderArvore("arvore-compras", mensagem, versoes, comprasArvoreState, renderNoCompras);
+  if (!comprasArvoreState.pastas.length) {
+    cont.innerHTML = `<div class="arvore-vazio">Nenhuma Lista de Compras criada para este projeto.</div>`;
+    return;
+  }
+  const pastas = termo
+    ? comprasArvoreState.pastas.filter((p) => [p.numero_cliente, p.numero_fornecedor, p.titulo]
+        .some((c) => (c || "").toLowerCase().includes(termo)))
+    : comprasArvoreState.pastas;
+  cont.innerHTML = pastas.length
+    ? pastas.map(renderNoCompras).join("")
+    : `<div class="arvore-vazio">Nenhuma Lista de Compras encontrada para "${esc(termo)}".</div>`;
+  aplicarPermissoes();
 }
 
 document.getElementById("busca-compras").addEventListener("input", renderArvoreCompras);
 
-function renderNoCompras(v) {
-  const aberta = comprasArvoreState.expandidas.has(v.id);
-  const pq = v.origem_pq;
-  const listasOrigem = v.listas_origem || [];
-  const filhosHtml = listasOrigem.length
-    ? listasOrigem.map((o) => `
-          <div class="arvore-linha arvore-linha-versao">
-            <span class="arvore-toggle invisivel"></span>
-            ${ICONE_ARQUIVO}
-            <span class="arvore-label">
-              <span class="arvore-titulo">${esc(o.numero_cliente || "-")} / ${esc(o.numero_fornecedor || "-")}${o.titulo ? " — " + esc(o.titulo) : ""} <span class="arvore-sub">(${esc(o.numero_desenho)})</span></span>
-              <span class="arvore-sub">Lista por Desenho v${o.versao_numero}</span>
-            </span>
-          </div>`).join("")
-    : pq
-    ? `
-        <div class="arvore-linha arvore-linha-versao">
-          <span class="arvore-toggle invisivel"></span>
-          ${ICONE_ARQUIVO}
-          <span class="arvore-label">
-            <span class="arvore-titulo">Planilha de Quantidades v${pq.versao}</span>
-            <span class="arvore-sub">${dataHora(pq.criado_em)}</span>
-          </span>
-        </div>
-        ${(pq.origens || []).map((o) => `
-          <div class="arvore-linha arvore-linha-versao" style="margin-left:28px">
-            <span class="arvore-toggle invisivel"></span>
-            ${ICONE_ARQUIVO}
-            <span class="arvore-label">
-              <span class="arvore-titulo">${esc(o.numero_desenho)}${o.titulo ? " — " + esc(o.titulo) : ""}</span>
-              <span class="arvore-sub">v${o.versao_numero}</span>
-            </span>
-          </div>`).join("")}`
-    : `<div class="arvore-carregando">Origem não registrada.</div>`;
+// O documento vai no onclick como texto JSON (aspas escapadas para o HTML).
+const _docArg = (doc) => esc(JSON.stringify(doc));
+
+function renderNoCompras(p) {
+  const aberta = comprasArvoreState.expandidas.has(p.documento);
+  const dataVersao = dataCurta(p.versao_criado_em);
+  const projetoId = state.projetoAtual.id;
+  const arg = _docArg(p.documento);
   return `
     <div class="arvore-no">
       <div class="arvore-linha arvore-linha-pasta">
-        <button class="arvore-toggle ${aberta ? "aberto" : ""}" onclick="toggleArvoreCompras(${v.id})" aria-label="Expandir">${ICONE_SETA}</button>
+        <button class="arvore-toggle ${aberta ? "aberto" : ""}" onclick="toggleArvoreCompras(${arg})" aria-label="${aberta ? "Recolher as versões anteriores" : "Ver as versões anteriores"}" title="${aberta ? "Recolher as versões anteriores" : "Ver as versões anteriores"}">${ICONE_SETA}</button>
         ${ICONE_PASTA}
-        <span class="arvore-label" onclick="toggleArvoreCompras(${v.id})">
-          <span class="arvore-titulo">v${v.versao}${v.cabecalho && v.cabecalho.numero_documento ? " — " + esc(v.cabecalho.numero_documento) : ""}${v.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}</span>
-          <span class="arvore-sub">${dataHora(v.criado_em)} · ${esc(v.criado_por_nome || "-")}</span>
+        <span class="arvore-label" onclick="toggleArvoreCompras(${arg})">
+          <span class="arvore-titulo">${_rotuloLista(p)}</span>
+          <span class="arvore-sub">${p.versao_atual
+            ? `<span class="arvore-versao" title="Versão atual${dataVersao ? ", de " + esc(dataVersao) : ""}">v${p.versao_atual}</span>`
+            : `<span class="arvore-versao" title="Nenhuma versão emitida ainda">sem versão</span>`}${p.tem_rascunho ? '<span class="badge-rascunho">Rascunho em aberto</span>' : ""}</span>
         </span>
         <span class="arvore-acoes">
-          <button class="link-acao" onclick="verVersaoCompras(${v.id})">Ver</button>
-          <a class="acao-icone" href="/api/projetos/${state.projetoAtual.id}/lista-compras/relatorio/excel?versao_id=${v.id}" target="_blank" title="Baixar Excel" aria-label="Baixar Excel desta versão">${ICONE_IMPRIMIR}</a>
-          <a class="acao-icone" href="/api/projetos/${state.projetoAtual.id}/lista-compras/relatorio/pdf?versao_id=${v.id}" target="_blank" title="Baixar PDF" aria-label="Baixar PDF desta versão">${ICONE_PDF}</a>
+          ${p.versao_atual_id ? `<button class="link-acao" onclick="verVersaoCompras(${p.versao_atual_id})">Ver v${p.versao_atual}</button>` : ""}
+          ${p.tem_rascunho
+            ? `<button class="link-acao somente-admin" onclick="continuarRascunhoCompras(${arg})">Continuar rascunho</button>`
+            : `<button class="link-acao somente-admin" onclick="novaVersaoCompras(${arg})">Nova versão</button>`}
+          ${p.versao_atual_id ? `
+            <a class="acao-icone" href="/api/projetos/${projetoId}/lista-compras/relatorio/excel?versao_id=${p.versao_atual_id}" target="_blank" title="Baixar Excel" aria-label="Baixar Excel">${ICONE_IMPRIMIR}</a>
+            <a class="acao-icone" href="/api/projetos/${projetoId}/lista-compras/relatorio/pdf?versao_id=${p.versao_atual_id}" target="_blank" title="Baixar PDF" aria-label="Baixar PDF">${ICONE_PDF}</a>` : ""}
         </span>
       </div>
-      <div class="arvore-filhos ${aberta ? "" : "oculto"}">${aberta ? filhosHtml : ""}</div>
+      <div class="arvore-filhos ${aberta ? "" : "oculto"}">
+        ${aberta ? renderFilhosCompras(p) : ""}
+      </div>
     </div>`;
 }
 
-function toggleArvoreCompras(versaoId) {
-  _toggleArvore(comprasArvoreState, versaoId, renderArvoreCompras);
+// Gaveta: as versões ANTERIORES (a atual já está na linha da pasta), cada
+// uma dizendo de quais Listas por Desenho saiu.
+function renderFilhosCompras(p) {
+  const versoes = comprasArvoreState.versoesPorDoc[p.documento];
+  if (!versoes) return `<div class="arvore-carregando">Carregando versões…</div>`;
+  const anteriores = versoes.filter((v) => v.id !== p.versao_atual_id && v.status === "salvo");
+  if (!anteriores.length) {
+    return `<div class="arvore-carregando">Nenhuma versão anterior — esta Lista de Compras só tem a versão atual.</div>`;
+  }
+  const projetoId = state.projetoAtual.id;
+  return anteriores.map((v) => {
+    const origem = (v.listas_origem || []).map((o) => o.numero_desenho).filter(Boolean).join(", ");
+    return `
+    <div class="arvore-linha arvore-linha-versao">
+      <span class="arvore-toggle invisivel"></span>
+      ${ICONE_ARQUIVO}
+      <span class="arvore-label" onclick="verVersaoCompras(${v.id})">
+        <span class="arvore-titulo">v${v.versao}</span>
+        <span class="arvore-sub">${dataHora(v.criado_em)} · ${esc(v.criado_por_nome || "-")}${origem ? " · de " + esc(origem) : ""}</span>
+      </span>
+      <span class="arvore-acoes">
+        <button class="link-acao" onclick="verVersaoCompras(${v.id})">Ver</button>
+        <a class="acao-icone" href="/api/projetos/${projetoId}/lista-compras/relatorio/excel?versao_id=${v.id}" target="_blank" title="Baixar Excel" aria-label="Baixar Excel desta versão">${ICONE_IMPRIMIR}</a>
+        <a class="acao-icone" href="/api/projetos/${projetoId}/lista-compras/relatorio/pdf?versao_id=${v.id}" target="_blank" title="Baixar PDF" aria-label="Baixar PDF desta versão">${ICONE_PDF}</a>
+      </span>
+    </div>`;
+  }).join("");
+}
+
+async function toggleArvoreCompras(documento) {
+  if (comprasArvoreState.expandidas.has(documento)) {
+    comprasArvoreState.expandidas.delete(documento);
+    renderArvoreCompras();
+    return;
+  }
+  comprasArvoreState.expandidas.add(documento);
+  if (!comprasArvoreState.versoesPorDoc[documento]) {
+    renderArvoreCompras();
+    comprasArvoreState.versoesPorDoc[documento] = await api(
+      `/api/projetos/${state.projetoAtual.id}/lista-compras/versoes?documento=${encodeURIComponent(documento)}`);
+  }
+  renderArvoreCompras();
 }
 
 async function verVersaoCompras(versaoId) {
   const dados = await api(`/api/lista-compras/versoes/${versaoId}`);
+  const doc = dados.versao.documento || (dados.versao.cabecalho || {}).numero_cliente || "";
   mostrarItensVersaoGenerico(
-    `Lista de Compras — versão ${dados.versao.versao}${dados.versao.cabecalho && dados.versao.cabecalho.numero_documento ? " — " + esc(dados.versao.cabecalho.numero_documento) : ""}${dados.versao.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}`, dados.itens,
+    `Lista de Compras${doc ? " " + esc(doc) : ""} — v${dados.versao.versao}${dados.versao.status === "rascunho" ? '<span class="badge-rascunho">Rascunho</span>' : ""}`, dados.itens,
     ["codigo", "descricao", "fabricante", "bitola", "quantidade", "unidade"],
     ["Código", "Descrição", "Fabricante", "Bitola", "Quantidade", "Unidade"],
   );
 }
 
-document.getElementById("btn-revisar-compras").addEventListener("click", () => iniciarRevisaoCompras());
-
-// Erro aqui (ex.: banco local sem a coluna do carimbo) aparecia como "nada
-// acontece": a promessa falhava em silêncio. Agora vira aviso na tela.
-async function iniciarRevisaoCompras() {
-  try { await _iniciarRevisaoCompras(); } catch (err) { toast(err.message || "Não foi possível abrir a Lista de Compras", "erro"); }
-}
-
-async function _iniciarRevisaoCompras() {
-  const listaIds = window._comprasListaIdsSelecionados || [];
-  const base = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras/base`, {
-    method: "POST", body: JSON.stringify({ lista_ids: listaIds }),
-  });
-  if (!base.length) { toast("Nenhum material encontrado para as listas selecionadas", "erro"); return; }
-  window._comprasDraft = base.map((b) => ({
-    material_id: b.material_id, codigo: b.codigo, descricao: b.descricao, fabricante: b.fabricante,
-    bitola: b.bitola, unidade: b.unidade, quantidade: Number(b.quantidade), observacao: "",
-  }));
-  const inicial = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras/cabecalho-inicial`);
-  window._comprasCabecalho = inicial.cabecalho || {};
-  renderCabecalhoCompras({ herdados: inicial.herdados, origem: inicial.origem });
-}
-
-// Retoma um rascunho da Lista de Compras já em aberto, com as quantidades
-// exatamente como estavam no último "Salvar rascunho".
-document.getElementById("btn-continuar-rascunho-compras").addEventListener("click", async () => {
-  const r = window._comprasRascunho;
-  if (!r) return;
-  window._comprasDraft = r.itens.map((i) => ({
-    material_id: i.material_id, codigo: i.codigo, descricao: i.descricao, fabricante: i.fabricante,
-    bitola: i.bitola, unidade: i.unidade, quantidade: Number(i.quantidade), observacao: i.observacao || "",
-  }));
-  window._comprasListaIdsSelecionados = (r.versao.listas_origem || []).map((o) => o.lista_desenho_id);
-  // Rascunho salvo antes do carimbo existir vem sem ele: abre com o inicial.
-  const cab = r.versao.cabecalho || {};
-  if (Object.keys(cab).length) {
-    window._comprasCabecalho = cab;
-    renderCabecalhoCompras({});
-  } else {
-    const inicial = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras/cabecalho-inicial`);
+// "+ Criar Nova Lista de Compras" (documento = null) e "Nova versão" de uma
+// pasta (documento = o Nº do cliente dela) seguem o mesmo caminho:
+// escolher as Listas por Desenho -> carimbo -> revisar quantidades -> emitir.
+// Na nova versão, a seleção já vem com as listas da versão anterior e o
+// carimbo com o dela.
+async function abrirFluxoCompras(documento) {
+  try {
+    const projetoId = state.projetoAtual.id;
+    const qs = documento ? `?documento=${encodeURIComponent(documento)}` : "";
+    const [todas, inicial] = await Promise.all([
+      api(`/api/projetos/${projetoId}/listas`),
+      api(`/api/projetos/${projetoId}/lista-compras/cabecalho-inicial${qs}`),
+    ]);
+    const listas = todas.filter((l) => l.versao_atual);
+    if (!listas.length) { toast("Este projeto ainda não tem nenhuma Lista por Desenho emitida", "erro"); return; }
+    window._comprasDocumento = documento;
     window._comprasCabecalho = inicial.cabecalho || {};
-    renderCabecalhoCompras({ herdados: inicial.herdados, origem: inicial.origem });
-  }
-});
+    const marcadas = documento && (inicial.lista_ids || []).length ? new Set(inicial.lista_ids) : null;
+    abrirSelecaoListas(
+      documento ? `Nova versão da Lista de Compras ${esc(documento)}` : "Selecionar Listas para a Lista de Compras",
+      documento
+        ? "Já vêm marcadas as listas da versão anterior. As quantidades vêm da versão atual de cada lista, somadas por material."
+        : "Escolha quais Listas por Desenho entrarão na Lista de Compras. As quantidades vêm da versão atual de cada lista, somadas por material.",
+      listas,
+      async (selecionados) => {
+        window._comprasListaIdsSelecionados = selecionados;
+        try {
+          const base = await api(`/api/projetos/${projetoId}/lista-compras/base`, {
+            method: "POST", body: JSON.stringify({ lista_ids: selecionados }),
+          });
+          if (!base.length) { toast("Nenhum material encontrado para as listas selecionadas", "erro"); return; }
+          window._comprasDraft = base.map((b) => ({
+            material_id: b.material_id, codigo: b.codigo, descricao: b.descricao, fabricante: b.fabricante,
+            bitola: b.bitola, unidade: b.unidade, quantidade: Number(b.quantidade), observacao: "",
+          }));
+          renderCabecalhoCompras({ herdados: inicial.herdados, origem: inicial.origem });
+        } catch (err) { toast(err.message, "erro"); }
+      },
+      marcadas,
+    );
+  } catch (err) { toast(err.message || "Não foi possível abrir a Lista de Compras", "erro"); }
+}
 
-// TELA 1 da Lista de Compras: o carimbo. Mesmos campos da Lista por Desenho
-// (o documento sai no mesmo template do cliente), com o Nº do documento no
-// lugar do Nº do desenho. Vem preenchida: o que é do projeto, do carimbo
-// padrão; o que é deste documento, da última Lista de Compras emitida. Rev.
-// e Data de emissão sempre em branco - são desta emissão.
+function novaVersaoCompras(documento) { abrirFluxoCompras(documento); }
+
+// Retoma o rascunho em aberto de uma Lista de Compras, com as quantidades
+// e o carimbo exatamente como estavam no último "Salvar rascunho".
+async function continuarRascunhoCompras(documento) {
+  try {
+    const r = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras/rascunho?documento=${encodeURIComponent(documento)}`);
+    if (!r.versao) { toast("Rascunho não encontrado", "erro"); carregarListaCompras(); return; }
+    window._comprasDocumento = documento;
+    window._comprasDraft = r.itens.map((i) => ({
+      material_id: i.material_id, codigo: i.codigo, descricao: i.descricao, fabricante: i.fabricante,
+      bitola: i.bitola, unidade: i.unidade, quantidade: Number(i.quantidade), observacao: i.observacao || "",
+    }));
+    window._comprasListaIdsSelecionados = (r.versao.listas_origem || []).map((o) => o.lista_desenho_id);
+    window._comprasCabecalho = r.versao.cabecalho || {};
+    renderCabecalhoCompras({});
+  } catch (err) { toast(err.message, "erro"); }
+}
+
+// TELA do carimbo. Mesmos campos da Lista por Desenho (o documento sai no
+// mesmo template do cliente). O Nº do cliente é obrigatório: é o nome da
+// pasta desta Lista de Compras. Rev. e Data de emissão sempre em branco.
 function renderCabecalhoCompras({ herdados = 0, origem = "" } = {}) {
   const c = window._comprasCabecalho || {};
   const campo = (id, rotulo, chave) =>
@@ -3393,15 +3424,15 @@ function renderCabecalhoCompras({ herdados = 0, origem = "" } = {}) {
       Confira e altere o que for desta emissão. Rev. e Data de emissão ficam em branco de propósito.
     </div>` : ""}
     <div class="form-grid-lista">
-      <div class="campo-linha"><label>Número do Documento (Lista de Compras)</label><input id="cc-numero-documento" value="${esc(c.numero_documento || "")}"></div>
       <div class="campo-linha"><label>Subtítulo (linha 1 do carimbo)</label><input id="cc-subtitulo" value="${esc(c.subtitulo || "")}"></div>
       <div class="campo-linha"><label>Área (linha 2 do carimbo)</label><input id="cc-area-titulo" value="${esc(c.area_titulo || "")}"></div>
       <div class="campo-linha"><label>Disciplina (linha 3 do carimbo)</label><input id="cc-disciplina" value="${esc(c.disciplina || "")}"></div>
       <div class="campo-linha"><label>Título do Documento (linha 4 do carimbo)</label><input id="cc-titulo" value="${esc(c.titulo || "")}"></div>
       <div class="campo-linha campo-dupla">
-        ${campo("cc-numero-cliente", "Número do Cliente", "numero_cliente")}
+        <div><label>Número do Cliente <span style="color:var(--cinza); font-weight:normal">(nome desta Lista de Compras)</span></label><input id="cc-numero-cliente" value="${esc(c.numero_cliente || "")}"></div>
         ${campo("cc-numero-fornecedor", "Número do Projetista", "numero_fornecedor")}
       </div>
+      <div id="cc-aviso-documento" class="campo-linha" style="color:var(--cinza); font-size:13px; margin-top:-6px"></div>
       <div class="campo-linha campo-dupla">
         <div><label>Rev.</label><input id="cc-rev-manual" type="number" step="1" min="0" value="${esc(c.rev_manual ?? "")}" placeholder="Em branco: número da versão"></div>
         <div><label>Data de Emissão</label><input id="cc-data-emissao" type="date" value="${esc(c.data_emissao_manual || "")}"></div>
@@ -3417,14 +3448,26 @@ function renderCabecalhoCompras({ herdados = 0, origem = "" } = {}) {
     </div>
   `, "modal-media");
 
+  // Avisa na hora se o número digitado já é de outra pasta: emitir com ele
+  // vira a próxima versão daquela Lista de Compras, não uma nova.
+  const avisar = () => {
+    const doc = document.getElementById("cc-numero-cliente").value.trim();
+    const pasta = comprasArvoreState.pastas.find((p) => p.documento === doc);
+    document.getElementById("cc-aviso-documento").innerHTML = !doc ? ""
+      : pasta && pasta.versao_atual
+        ? `Já existe a Lista de Compras <strong>${esc(doc)}</strong>: esta emissão vira a <strong>v${pasta.versao_atual + 1}</strong> dela.`
+        : `Nova Lista de Compras <strong>${esc(doc)}</strong> (v1).`;
+  };
+  document.getElementById("cc-numero-cliente").addEventListener("input", avisar);
+  avisar();
+
   document.getElementById("btn-continuar-cabecalho-compras").addEventListener("click", () => {
     const v = (id) => document.getElementById(id).value.trim();
-    const numero_documento = v("cc-numero-documento");
-    if (!numero_documento) { toast("Informe o número do documento da Lista de Compras", "erro"); return; }
+    const numero_cliente = v("cc-numero-cliente");
+    if (!numero_cliente) { toast("Informe o Número do Cliente: ele é o nome desta Lista de Compras", "erro"); return; }
     window._comprasCabecalho = {
-      numero_documento,
       subtitulo: v("cc-subtitulo"), area_titulo: v("cc-area-titulo"), disciplina: v("cc-disciplina"),
-      titulo: v("cc-titulo"), numero_cliente: v("cc-numero-cliente"), numero_fornecedor: v("cc-numero-fornecedor"),
+      titulo: v("cc-titulo"), numero_cliente, numero_fornecedor: v("cc-numero-fornecedor"),
       rev_manual: v("cc-rev-manual"), data_emissao_manual: document.getElementById("cc-data-emissao").value,
       elaborador_nome: v("cc-elaborador-nome"), elaborador_sigla: v("cc-elaborador-sigla"),
       verificador_nome: v("cc-verificador-nome"), verificador_sigla: v("cc-verificador-sigla"),
@@ -3443,9 +3486,10 @@ function renderModalRevisaoCompras() {
       <td><input type="number" step="1" min="0" class="compras-qtd" data-idx="${idx}" value="${Math.round(Number(item.quantidade)) || 0}" style="width:100px"></td>
       <td>${esc(item.unidade)}</td>
     </tr>`).join("");
+  const doc = (window._comprasCabecalho || {}).numero_cliente;
 
   abrirModal(`
-    <h3>Revisar Lista de Compras${window._comprasCabecalho?.numero_documento ? " — " + esc(window._comprasCabecalho.numero_documento) : ""}</h3>
+    <h3>Revisar Lista de Compras${doc ? " " + esc(doc) : ""}</h3>
     <p style="color:var(--cinza); font-size:13px;">Itens somados da versão atual de cada Lista por Desenho escolhida. Ajuste as quantidades se necessário.</p>
     <div style="max-height:360px; overflow-y:auto; margin:12px 0;">
       <table class="tabela">
@@ -3476,15 +3520,15 @@ async function salvarVersaoCompras(status) {
     material_id: item.material_id, quantidade: Math.round(Number(item.quantidade)) || 0, observacao: item.observacao || "",
   }));
   try {
-    await api(`/api/projetos/${state.projetoAtual.id}/lista-compras`, {
+    const r = await api(`/api/projetos/${state.projetoAtual.id}/lista-compras`, {
       method: "POST", body: JSON.stringify({
         itens, status, cabecalho: window._comprasCabecalho || {}, lista_ids: window._comprasListaIdsSelecionados || [],
       }),
     });
     fecharModal();
-    toast(status === "rascunho" ? "Rascunho da Lista de Compras salvo" : "Nova versão da Lista de Compras emitida com sucesso");
-    document.getElementById("btn-revisar-compras").classList.add("oculto");
-    document.getElementById("btn-criar-compras").classList.remove("oculto");
+    toast(status === "rascunho"
+      ? `Rascunho da Lista de Compras ${r.documento} salvo`
+      : `Lista de Compras ${r.documento} v${r.versao} emitida`);
     carregarListaCompras();
   } catch (err) { toast(err.message, "erro"); }
 }

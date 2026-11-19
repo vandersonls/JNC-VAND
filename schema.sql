@@ -479,6 +479,10 @@ CREATE TABLE IF NOT EXISTS lista_pq_origens (
 CREATE TABLE IF NOT EXISTS lista_compras_versoes (
     id INT AUTO_INCREMENT PRIMARY KEY,
     projeto_id INT NOT NULL,
+    -- Qual Lista de Compras ("pasta") é esta versão: o Nº do cliente do
+    -- carimbo. Um projeto pode ter várias Listas de Compras, cada uma com a
+    -- própria numeração de versões, igual às Listas por Desenho.
+    documento VARCHAR(255) NULL,
     versao INT NOT NULL,
     status ENUM('rascunho', 'salvo') NOT NULL DEFAULT 'salvo',
     observacoes TEXT,
@@ -496,7 +500,7 @@ CREATE TABLE IF NOT EXISTS lista_compras_versoes (
     listas_origem JSON NULL,
     FOREIGN KEY (projeto_id) REFERENCES projetos(id) ON DELETE CASCADE,
     FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
-    UNIQUE KEY uq_compras_projeto_versao (projeto_id, versao)
+    UNIQUE KEY uq_compras_documento_versao (projeto_id, documento, versao)
 ) ENGINE=InnoDB;
 
 SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
@@ -512,6 +516,31 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lista_compras_versoes' AND COLUMN_NAME = 'listas_origem');
 SET @sql = IF(@col_exists = 0, 'ALTER TABLE lista_compras_versoes ADD COLUMN listas_origem JSON NULL AFTER cabecalho', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- Várias Listas de Compras por projeto (2026-11-19): cada versão pertence a
+-- um documento, o Nº do cliente do carimbo, e a numeração v1, v2... é por
+-- documento. As versões antigas ganham o Nº do cliente do próprio carimbo;
+-- as de antes do carimbo ficam em "SEM NÚMERO".
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lista_compras_versoes' AND COLUMN_NAME = 'documento');
+SET @sql = IF(@col_exists = 0, 'ALTER TABLE lista_compras_versoes ADD COLUMN documento VARCHAR(255) NULL AFTER projeto_id', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+UPDATE lista_compras_versoes
+   SET documento = COALESCE(NULLIF(TRIM(JSON_UNQUOTE(JSON_EXTRACT(cabecalho, '$.numero_cliente'))), ''), 'SEM NÚMERO')
+ WHERE documento IS NULL;
+
+-- Índice novo ANTES de tirar o antigo: o antigo começa por projeto_id e
+-- sustenta a chave estrangeira; o MySQL recusa apagá-lo sem outro no lugar.
+SET @idx_exists = (SELECT COUNT(*) FROM information_schema.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lista_compras_versoes' AND INDEX_NAME = 'uq_compras_documento_versao');
+SET @sql = IF(@idx_exists = 0, 'ALTER TABLE lista_compras_versoes ADD UNIQUE KEY uq_compras_documento_versao (projeto_id, documento, versao)', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @idx_exists = (SELECT COUNT(*) FROM information_schema.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lista_compras_versoes' AND INDEX_NAME = 'uq_compras_projeto_versao');
+SET @sql = IF(@idx_exists > 0, 'ALTER TABLE lista_compras_versoes DROP INDEX uq_compras_projeto_versao', 'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @fk_exists = (SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE

@@ -8,7 +8,7 @@ from auth import perfis_permitidos
 from auditoria import registrar
 from areas import projeto_permitido
 from projetos import CAMPOS_PADRAO_AUTOMATICO, _padrao_salvo, _carimbo_da_ultima_lista
-from versionamento import salvar_versao, obter_rascunho
+from versionamento import salvar_versao
 
 lista_compras_bp = Blueprint("lista_compras", __name__)
 
@@ -18,15 +18,19 @@ lista_compras_bp = Blueprint("lista_compras", __name__)
 # Desenho, com o mesmo carimbo - só que o documento é outro. Por isso o
 # carimbo é guardado em cada versão (lista_compras_versoes.cabecalho):
 #
-# - o que é do projeto (títulos, Nº do cliente, Nº do projetista) vem do
-#   carimbo padrão do projeto;
-# - o que é deste documento (Nº do documento, título, assinantes) vem da
-#   versão anterior da própria Lista de Compras - na primeira, do padrão;
+# Um projeto pode ter VÁRIAS Listas de Compras ("pastas"), como as Listas
+# por Desenho; cada uma é identificada pelo Nº do cliente do carimbo
+# (lista_compras_versoes.documento) e tem a própria numeração de versões.
+# O campo "Nº do documento" de 16/11 saiu em 19/11: o Nº do cliente já é o
+# nome da pasta.
+#
+# - Lista de Compras nova: o carimbo vem do padrão do projeto;
+# - nova versão de uma que já existe: vem da última versão emitida DELA;
 # - Rev. e Data de emissão NUNCA são herdados: são daquela emissão, e data
 #   velha num carimbo é o erro que passa despercebido (mesma regra das
 #   Listas por Desenho).
 CAMPOS_CABECALHO_COMPRAS = (
-    "numero_documento", "titulo", "subtitulo", "area_titulo", "disciplina",
+    "titulo", "subtitulo", "area_titulo", "disciplina",
     "numero_cliente", "numero_fornecedor", "rev_manual", "data_emissao_manual",
     "elaborador_nome", "elaborador_sigla", "verificador_nome", "verificador_sigla",
     "aprovador_nome", "aprovador_sigla", "autorizado_nome", "autorizado_sigla",
@@ -76,12 +80,20 @@ def _limpar_cabecalho(data):
     return limpo
 
 
+SEM_NUMERO = "SEM NÚMERO"
+
+
+def _documento(cabecalho):
+    return (cabecalho.get("numero_cliente") or "").strip() or SEM_NUMERO
+
+
 @lista_compras_bp.get("/api/projetos/<int:projeto_id>/lista-compras/cabecalho-inicial")
 @login_required
 def cabecalho_inicial_compras(projeto_id):
-    """Carimbo com que uma NOVA versão da Lista de Compras abre na tela.
-    Devolve também quantos campos vieram preenchidos e de onde, para a tela
-    avisar o usuário - igual à Nova Lista por Desenho."""
+    """Carimbo com que a tela abre. Sem ?documento= é uma Lista de Compras
+    NOVA (carimbo padrão do projeto); com ele, uma nova versão daquela, que
+    repete o carimbo e as listas de origem da última versão emitida dela.
+    Devolve quantos campos vieram preenchidos e de onde, para a tela avisar."""
     if not projeto_permitido(projeto_id):
         return jsonify({"erro": "Sem permissão para acessar este projeto"}), 403
     padrao = _padrao_salvo(projeto_id)
@@ -89,24 +101,63 @@ def cabecalho_inicial_compras(projeto_id):
         return jsonify({"erro": "Projeto não encontrado"}), 404
     padrao = padrao or _carimbo_da_ultima_lista(projeto_id)
 
-    anterior = db.query_one(
-        """SELECT cabecalho FROM lista_compras_versoes
-           WHERE projeto_id = %s AND status = 'salvo' ORDER BY versao DESC LIMIT 1""",
-        (projeto_id,),
-    )
+    documento = (request.args.get("documento") or "").strip()
+    anterior = None
+    if documento:
+        anterior = db.query_one(
+            """SELECT cabecalho, listas_origem FROM lista_compras_versoes
+               WHERE projeto_id = %s AND documento = %s AND status = 'salvo'
+               ORDER BY versao DESC LIMIT 1""",
+            (projeto_id, documento),
+        )
     cab_anterior = cabecalho_dict(anterior["cabecalho"]) if anterior else {}
 
     cabecalho = {c: padrao[c] for c in CAMPOS_PADRAO_AUTOMATICO if padrao.get(c) not in (None, "")}
     if cab_anterior:
         cabecalho.update(cab_anterior)
-        origem = "da última Lista de Compras emitida"
+        origem = "da última versão desta Lista de Compras"
     else:
         cabecalho["titulo"] = TITULO_SUGERIDO
         origem = "do carimbo padrão do projeto"
+    if documento and documento != SEM_NUMERO:
+        cabecalho["numero_cliente"] = documento
     for campo in CAMPOS_NAO_HERDADOS:
         cabecalho.pop(campo, None)
     cabecalho = _limpar_cabecalho(cabecalho)
-    return jsonify({"cabecalho": cabecalho, "herdados": len(cabecalho), "origem": origem})
+    lista_ids = [o.get("lista_desenho_id") for o in lista_json(anterior["listas_origem"])] if anterior else []
+    return jsonify({"cabecalho": cabecalho, "herdados": len(cabecalho), "origem": origem,
+                    "lista_ids": [i for i in lista_ids if i]})
+
+
+@lista_compras_bp.get("/api/projetos/<int:projeto_id>/listas-compras")
+@login_required
+def listar_listas_compras(projeto_id):
+    """As "pastas" da aba Lista de Compras: uma por documento (Nº do
+    cliente), no mesmo molde da relação de Listas por Desenho - data de
+    criação, Nº do projetista | Nº do cliente, título e a versão atual."""
+    if not projeto_permitido(projeto_id):
+        return jsonify({"erro": "Sem permissão para acessar este projeto"}), 403
+    rows = db.query_all(
+        """SELECT id, documento, versao, status, criado_em, cabecalho
+           FROM lista_compras_versoes WHERE projeto_id = %s ORDER BY versao""",
+        (projeto_id,),
+    )
+    pastas = {}
+    for r in rows:
+        doc = r["documento"] or SEM_NUMERO
+        p = pastas.setdefault(doc, {
+            "documento": doc, "criado_em": r["criado_em"], "versao_atual": None, "versao_atual_id": None,
+            "versao_criado_em": None, "tem_rascunho": False, "rascunho_id": None,
+            "numero_cliente": doc if doc != SEM_NUMERO else "", "numero_fornecedor": "", "titulo": "",
+        })
+        cab = cabecalho_dict(r["cabecalho"])
+        if r["status"] == "rascunho":
+            p["tem_rascunho"], p["rascunho_id"] = True, r["id"]
+            continue
+        p["versao_atual"], p["versao_atual_id"], p["versao_criado_em"] = r["versao"], r["id"], r["criado_em"]
+        p["numero_fornecedor"] = cab.get("numero_fornecedor") or ""
+        p["titulo"] = cab.get("titulo") or ""
+    return jsonify(sorted(pastas.values(), key=lambda p: p["criado_em"]))
 
 
 def _carregar_itens(versao_id):
@@ -231,12 +282,15 @@ def _carregar_origem_pq(pq_versao_id):
 def listar_versoes_compras(projeto_id):
     if not projeto_permitido(projeto_id):
         return jsonify({"erro": "Sem permissão para acessar este projeto"}), 403
-    rows = db.query_all(
-        """SELECT v.*, u.nome AS criado_por_nome
-           FROM lista_compras_versoes v LEFT JOIN usuarios u ON u.id = v.criado_por
-           WHERE v.projeto_id = %s ORDER BY v.versao DESC""",
-        (projeto_id,),
-    )
+    documento = (request.args.get("documento") or "").strip()
+    sql = """SELECT v.*, u.nome AS criado_por_nome
+             FROM lista_compras_versoes v LEFT JOIN usuarios u ON u.id = v.criado_por
+             WHERE v.projeto_id = %s"""
+    params = [projeto_id]
+    if documento:
+        sql += " AND v.documento = %s"
+        params.append(documento)
+    rows = db.query_all(sql + " ORDER BY v.criado_em DESC, v.id DESC", tuple(params))
     origem_pq_por_versao = _carregar_origens_pq_em_lote([r["pq_versao_id"] for r in rows])
     for row in rows:
         row["origem_pq"] = origem_pq_por_versao.get(row["pq_versao_id"])
@@ -266,7 +320,15 @@ def obter_rascunho_compras(projeto_id):
     retomar o trabalho de onde parou em vez de recomeçar do zero."""
     if not projeto_permitido(projeto_id):
         return jsonify({"erro": "Sem permissão para acessar este projeto"}), 403
-    versao = obter_rascunho("lista_compras_versoes", "projeto_id", projeto_id)
+    documento = (request.args.get("documento") or "").strip()
+    if documento:
+        versao = db.query_one(
+            "SELECT * FROM lista_compras_versoes WHERE projeto_id = %s AND documento = %s AND status = 'rascunho'",
+            (projeto_id, documento))
+    else:
+        versao = db.query_one(
+            """SELECT * FROM lista_compras_versoes WHERE projeto_id = %s AND status = 'rascunho'
+               ORDER BY id DESC LIMIT 1""", (projeto_id,))
     if not versao:
         return jsonify({"versao": None, "itens": []})
     versao["cabecalho"] = cabecalho_dict(versao.get("cabecalho"))
@@ -288,8 +350,9 @@ def salvar_lista_compras(projeto_id):
         return jsonify({"erro": "A Lista de Compras precisa ter pelo menos um item"}), 400
     status = "rascunho" if data.get("status") == "rascunho" else "salvo"
     cabecalho = _limpar_cabecalho(data.get("cabecalho"))
-    if status == "salvo" and not cabecalho.get("numero_documento"):
-        return jsonify({"erro": "Informe o número do documento da Lista de Compras no carimbo"}), 400
+    if not cabecalho.get("numero_cliente"):
+        return jsonify({"erro": "Informe o Número do Cliente no carimbo: ele é o nome desta Lista de Compras"}), 400
+    documento = _documento(cabecalho)
 
     # Saída direta das Listas por Desenho: a versão guarda de quais listas
     # (e de qual versão de cada uma) saiu. Sem lista informada é o fluxo
@@ -305,6 +368,7 @@ def salvar_lista_compras(projeto_id):
     versao_id, numero_versao = salvar_versao(
         "lista_compras_versoes", "projeto_id", projeto_id, status,
         data.get("observacoes", ""), current_user.id,
+        filtro={"documento": documento},
         extra_campos={
             "pq_versao_id": pq_versao_id,
             "cabecalho": json.dumps(cabecalho, ensure_ascii=False) if cabecalho else None,
@@ -323,7 +387,7 @@ def salvar_lista_compras(projeto_id):
 
     registrar(
         "criar" if status == "salvo" else "rascunho", "lista_compras", projeto_id,
-        f"{'Emitiu' if status == 'salvo' else 'Salvou o rascunho d'}a Lista de Compras v{numero_versao} do projeto #{projeto_id}",
+        f"{'Emitiu' if status == 'salvo' else 'Salvou o rascunho d'}a Lista de Compras {documento} v{numero_versao} do projeto #{projeto_id}",
         depois=data,
     )
-    return jsonify({"versao_id": versao_id, "versao": numero_versao, "status": status}), 201
+    return jsonify({"versao_id": versao_id, "versao": numero_versao, "status": status, "documento": documento}), 201
